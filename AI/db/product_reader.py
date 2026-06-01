@@ -108,4 +108,4 @@ def get_products_meta(product_ids: List[str]) -> Dict[str, ProductMeta]:
         .in_("product_id", product_ids)
         .execute()
     )
-    return {row["id"]: _row_to_meta(row) for row in (res.data or [])}
+    return {row["product_id"]: _row_to_meta(row) for row in (res.data or [])}

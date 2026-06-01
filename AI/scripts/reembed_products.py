@@ -30,7 +30,7 @@ def _fetch_products_with_features() -> List[Dict[str, Any]]:
     sb = get_supabase()
     res = (
         sb.table("products")
-        .select("id, category, product_features(feature_json)")
+        .select("product_id, category, product_features(feature_json)")
         .execute()
     )
     rows = []
@@ -43,7 +43,7 @@ def _fetch_products_with_features() -> List[Dict[str, Any]]:
             continue
         rows.append(
             {
-                "product_id": p["id"],
+                "product_id": p["product_id"],
                 "category": p["category"],
                 "feature_json": pf["feature_json"],
             }
