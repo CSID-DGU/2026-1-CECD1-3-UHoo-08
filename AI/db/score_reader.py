@@ -47,7 +47,7 @@ def get_insights(product_ids: List[str]) -> Dict[str, InsightRow]:
 
 
 def get_features(product_ids: List[str]) -> Dict[str, Dict[str, Any]]:
-    """{product_id: feature_json}."""
+    """{product_id: feature_json}. 문자열로 저장된 경우 파싱."""
     if not product_ids:
         return {}
     sb = get_supabase()
@@ -57,7 +57,17 @@ def get_features(product_ids: List[str]) -> Dict[str, Dict[str, Any]]:
         .in_("product_id", product_ids)
         .execute()
     )
-    return {row["product_id"]: row["feature_json"] for row in (res.data or [])}
+    
+    out: Dict[str, Dict[str, Any]] = {}
+    for row in res.data or []:
+        fj = row.get("feature_json")
+        if isinstance(fj, str):
+            try:
+                fj = json.loads(fj)
+            except (json.JSONDecodeError, TypeError):
+                fj = {}
+        out[row["product_id"]] = fj or {}
+    return out
 
 
 def get_similar_user_ids(
