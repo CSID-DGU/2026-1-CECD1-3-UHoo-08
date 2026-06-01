@@ -10,8 +10,6 @@ export default defineConfig({
         target: "http://localhost:8080",
         changeOrigin: true,
         bypass: (req) => {
-          // GET 요청은 OAuth 콜백 등 브라우저 네비게이션 → React가 처리
-          // POST/PATCH/DELETE 등 API 호출만 Spring으로 프록시
           if (req.method === "GET") return req.url;
         },
       },
@@ -20,7 +18,9 @@ export default defineConfig({
       "/users": "http://localhost:8080",
       "/notifications": "http://localhost:8080",
       "/onboarding": "http://localhost:8080",
+      "/wishlists": "http://localhost:8080",
       "/wishlist": "http://localhost:8080",
+      "/price-trackings": "http://localhost:8080",
       "/price-tracking": "http://localhost:8080",
       "/ai": {
         target: "http://localhost:8001",

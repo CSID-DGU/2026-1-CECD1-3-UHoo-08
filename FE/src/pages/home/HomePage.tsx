@@ -2,6 +2,7 @@ import { useEffect, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { type ProductSearchItem, getRecentlyViewed } from "../../api/productApi";
 import { getUnreadCount } from "../../api/notificationApi";
+import { getTrackings } from "../../api/priceTrackingApi";
 import { BottomNav } from "../../components/common/BottomNav";
 import { SearchField } from "../../components/common/SearchField";
 import { type LastSearch, getLastSearch } from "../../lib/localHistory";
@@ -12,6 +13,7 @@ export function HomePage() {
   const [hasUnread, setHasUnread] = useState(false);
   const [lastSearch, setLastSearch] = useState<LastSearch | null>(null);
   const [recentlyViewed, setRecentlyViewed] = useState<ProductSearchItem[]>([]);
+  const [trackingCount, setTrackingCount] = useState<number | null>(null);
 
   useEffect(() => {
     getUnreadCount()
@@ -23,6 +25,10 @@ export function HomePage() {
     getRecentlyViewed(10)
       .then((res) => setRecentlyViewed(res.data.products))
       .catch(() => setRecentlyViewed([]));
+
+    getTrackings()
+      .then((res) => setTrackingCount(res.data?.total ?? 0))
+      .catch(() => setTrackingCount(0));
   }, []);
 
   function handleSearch(query: string) {
@@ -32,7 +38,7 @@ export function HomePage() {
 
   return (
     <AppLayout>
-      <section className="min-h-screen overflow-hidden px-6 pb-[88px] pt-10">
+      <section className="min-h-screen overflow-hidden px-6 pb-[148px] pt-10">
         <header className="flex items-start justify-between">
           <div>
             <h1 className="text-h3 text-gray-500">BeautyMatch</h1>
@@ -152,6 +158,27 @@ export function HomePage() {
           </section>
         )}
       </section>
+
+      {trackingCount !== null && (
+        <div className="fixed bottom-[72px] left-1/2 z-30 w-full max-w-[430px] -translate-x-1/2 px-4">
+          <button
+            className="flex w-full items-center gap-3 rounded-2xl bg-gray-500 px-5 py-3.5 text-white shadow-xl"
+            onClick={() => navigate("/favorites")}
+            type="button"
+          >
+            <span className="grid h-9 w-9 shrink-0 place-items-center rounded-xl bg-primary-500 text-sm">
+              📊
+            </span>
+            <div className="flex-1 text-left">
+              <p className="text-caption text-primary-300">가격 추적</p>
+              <p className="text-body2">
+                {trackingCount > 0 ? `${trackingCount}개 제품 모니터링 중이에요` : "지금 바로 가격 추적을 시작해보세요"}
+              </p>
+            </div>
+            <span className="text-body1 text-gray-300">›</span>
+          </button>
+        </div>
+      )}
 
       <BottomNav />
     </AppLayout>
