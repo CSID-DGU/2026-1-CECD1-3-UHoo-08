@@ -10,6 +10,7 @@ class ExtractedProduct(BaseModel):
     attributes: dict | None = None     # {"shade", "type", "volume", "unit"}
     package_claims: list[str] = []
     detected_objects: list[str] = []
+    image_url: str | None = None
 
 
 class UserQuery(BaseModel):
