@@ -12,7 +12,7 @@ from db.product_reader import (
 
 def _row(pid="p1", name="네오쿠션", brand="LANEIGE"):
     return {
-        "id": pid,
+        "product_id": pid,
         "name": name,
         "brand": brand,
         "category": "base",
@@ -49,7 +49,7 @@ class TestProductReader:
         # products 조회 결과
         products_res = MagicMock()
         products_res.data = [{
-            "id": "p1", "name": "네오쿠션", "brand": "LANEIGE",
+            "product_id": "p1", "name": "네오쿠션", "brand": "LANEIGE",
             "category": "base", "image_url": None, "original_price": 30000,
         }]
         # product_embeddings 조회 결과
@@ -83,7 +83,7 @@ class TestProductReader:
         sb = MagicMock()
         products_res = MagicMock()
         products_res.data = [{
-            "id": "p1", "name": "네오쿠션", "brand": "LANEIGE",
+            "product_id": "p1", "name": "네오쿠션", "brand": "LANEIGE",
             "category": "base", "image_url": None, "original_price": 30000,
         }]
         emb_res = MagicMock()
