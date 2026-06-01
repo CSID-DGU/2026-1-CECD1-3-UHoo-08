@@ -1,7 +1,9 @@
 package com.capstone.backend.domain.recommendation.controller;
 
 import com.capstone.backend.common.response.ApiResponse;
+import com.capstone.backend.domain.recommendation.dto.request.ProductSearchRequest;
 import com.capstone.backend.domain.recommendation.dto.request.RecommendationRequest;
+import com.capstone.backend.domain.recommendation.dto.response.ProductSearchResponse;
 import com.capstone.backend.domain.recommendation.dto.response.RecommendationJobResponse;
 import com.capstone.backend.domain.recommendation.dto.response.RecommendationResultResponse;
 import com.capstone.backend.domain.recommendation.dto.response.RecommendationStatusResponse;
@@ -24,6 +26,15 @@ import java.util.UUID;
 public class RecommendationController {
 
     private final RecommendationService recommendationService;
+
+    @Operation(summary = "자연어 제품 검색", description = "검색창 자연어 입력 → FastAPI 벡터 검색 → 결과 반환 (동기)")
+    @PostMapping("/search")
+    public ResponseEntity<ApiResponse<ProductSearchResponse>> searchProducts(
+            @AuthenticationPrincipal UUID userId,
+            @Valid @RequestBody ProductSearchRequest request) {
+        return ResponseEntity.ok(ApiResponse.success(
+                recommendationService.searchProducts(userId, request.getQuery())));
+    }
 
     @Operation(summary = "제품 추천 요청", description = "비동기 처리. 즉시 jobId 반환 후 status 폴링으로 완료 확인.")
     @PostMapping

@@ -5,6 +5,7 @@ import com.capstone.backend.common.exception.ErrorCode;
 import com.capstone.backend.domain.product.entity.Product;
 import com.capstone.backend.domain.product.repository.ProductRepository;
 import com.capstone.backend.domain.recommendation.dto.request.RecommendationRequest;
+import com.capstone.backend.domain.recommendation.dto.response.ProductSearchResponse;
 import com.capstone.backend.domain.recommendation.dto.response.RecommendationJobResponse;
 import com.capstone.backend.domain.recommendation.dto.response.RecommendationResultResponse;
 import com.capstone.backend.domain.recommendation.dto.response.RecommendationStatusResponse;
@@ -221,6 +222,11 @@ public class RecommendationServiceImpl implements RecommendationService {
         if (o == null) return null;
         if (o instanceof Number) return ((Number) o).doubleValue();
         return null;
+    }
+
+    @Override
+    public ProductSearchResponse searchProducts(UUID userId, String query) {
+        return agentClient.searchProducts(query, userId != null ? userId.toString() : null);
     }
 
     private UUID parseUUID(Object o) {

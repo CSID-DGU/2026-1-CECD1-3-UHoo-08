@@ -4,11 +4,9 @@ const SUPABASE_URL = import.meta.env.VITE_SUPABASE_URL as string;
 
 export function getProfileImageUrl(stored: string | null): string | null {
   if (!stored) return null;
-  if (stored.startsWith("http")) {
-    return stored.replace("/profile_image/", "/profile-image/");
-  }
+  if (stored.startsWith("http")) return stored;
   const path = stored.startsWith("/") ? stored.slice(1) : stored;
-  return `${SUPABASE_URL}/storage/v1/object/public/profile-image/${path}`;
+  return `${SUPABASE_URL}/storage/v1/object/public/profile_image/${path}`;
 }
 
 interface ApiResponse<T> {
