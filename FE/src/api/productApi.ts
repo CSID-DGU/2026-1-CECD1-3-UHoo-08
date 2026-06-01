@@ -73,11 +73,5 @@ export interface AiSearchResponse {
 }
 
 export const aiSearch = (query: string): Promise<AiSearchResponse> =>
-  fetch("/ai/search", {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ query }),
-  }).then((r) => {
-    if (!r.ok) return r.json().then((e) => Promise.reject(e));
-    return r.json() as Promise<AiSearchResponse>;
-  });
+  api.post<{ success: boolean; data: AiSearchResponse }>("/recommendations/search", { query })
+    .then((res) => res.data);
