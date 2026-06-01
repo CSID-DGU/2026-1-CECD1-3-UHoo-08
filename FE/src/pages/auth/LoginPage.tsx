@@ -1,8 +1,13 @@
-import { useNavigate } from "react-router-dom";
+
 import AppLayout from "../../layouts/AppLayout";
 
+const KAKAO_AUTH_URL =
+  `https://kauth.kakao.com/oauth/authorize` +
+  `?client_id=${import.meta.env.VITE_KAKAO_CLIENT_ID}` +
+  `&redirect_uri=${encodeURIComponent(import.meta.env.VITE_KAKAO_REDIRECT_URI)}` +
+  `&response_type=code`;
+
 export function LoginPage() {
-  const navigate = useNavigate();
 
   return (
     <AppLayout>
@@ -20,6 +25,7 @@ export function LoginPage() {
             <button
               className="relative h-[54px] rounded-xl bg-[#FEE500] text-body1 text-gray-500"
               type="button"
+              onClick={() => { window.location.href = KAKAO_AUTH_URL; }}
             >
               <span className="absolute left-6 top-1/2 h-5 w-5 -translate-y-1/2 rounded-full bg-[#3C1E1E]" />
               카카오로 계속하기
@@ -40,20 +46,7 @@ export function LoginPage() {
         </div>
 
         <div className="mt-auto px-6 pb-5">
-          <button
-            className="h-14 w-full rounded-xl bg-primary-500 text-body1 font-semibold text-white"
-            onClick={() => navigate("/onboarding/profile")}
-            type="button"
-          >
-            로그인
-          </button>
-          <div className="mt-3 flex justify-end gap-2 text-caption">
-            <span className="text-gray-300">처음이신가요?</span>
-            <button className="text-primary-500" type="button">
-              회원가입
-            </button>
-          </div>
-          <p className="mt-9 text-center text-caption text-gray-200">
+          <p className="mt-3 text-center text-caption text-gray-200">
             로그인 시 이용약관 및 개인정보처리방침에 동의합니다
           </p>
         </div>

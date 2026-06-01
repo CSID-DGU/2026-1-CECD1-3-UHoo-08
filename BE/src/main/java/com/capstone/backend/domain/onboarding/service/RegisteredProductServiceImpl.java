@@ -10,6 +10,7 @@ import com.capstone.backend.domain.product.repository.ProductRepository;
 import com.capstone.backend.domain.product.repository.UserProductRepository;
 import com.capstone.backend.domain.onboarding.dto.RegisteredProductAddRequest;
 import com.capstone.backend.domain.onboarding.dto.RegisteredProductAddResponse;
+import com.capstone.backend.domain.onboarding.dto.RegisteredProductBatchRequest;
 import com.capstone.backend.domain.onboarding.entity.Registered;
 import com.capstone.backend.domain.onboarding.repository.RegisteredRepository;
 import com.capstone.backend.domain.user.entity.User;
@@ -19,6 +20,7 @@ import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
 import java.time.LocalDateTime;
+import java.util.List;
 import java.util.UUID;
 
 @Service
@@ -95,6 +97,40 @@ public class RegisteredProductServiceImpl implements RegisteredProductService {
                 product.getImageUrl(),
                 isNewProduct
         );
+    }
+
+    @Override
+    @Transactional
+    public int saveBatch(UUID userId, RegisteredProductBatchRequest request) {
+        if (request.getProductIds() == null || request.getProductIds().isEmpty()) return 0;
+
+        User user = userRepository.findById(userId)
+                .orElseThrow(() -> new BusinessException(ErrorCode.NOT_FOUND));
+
+        int saved = 0;
+        for (UUID productId : request.getProductIds()) {
+            Product product = productRepository.findById(productId).orElse(null);
+            if (product == null) continue;
+
+            if (!registeredRepository.existsByUserIdAndProductId(userId, productId)) {
+                registeredRepository.save(Registered.builder()
+                        .user(user)
+                        .product(product)
+                        .createdAt(LocalDateTime.now())
+                        .build());
+                saved++;
+            }
+
+            if (!userProductRepository.existsByUserIdAndProductId(userId, productId)) {
+                userProductRepository.save(UserProduct.builder()
+                        .userId(userId)
+                        .productId(productId)
+                        .usageType("ONBOARDING")
+                        .createdAt(LocalDateTime.now())
+                        .build());
+            }
+        }
+        return saved;
     }
 
     @Override

@@ -50,7 +50,7 @@ public class ProductTextSearchService {
         }
 
         List<Product> dbResults = productRepository
-                .findByNameContainingOrBrandContainingOrderByNameAsc(q, q, PageRequest.of(0, size));
+                .findByNameContainingIgnoreCaseOrBrandContainingIgnoreCaseOrderByNameAsc(q, q, PageRequest.of(0, size));
 
         if (!dbResults.isEmpty()) {
             LocalDateTime threshold = LocalDateTime.now().minusHours(CACHE_HOURS);

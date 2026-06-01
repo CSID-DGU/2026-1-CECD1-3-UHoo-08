@@ -1,13 +1,21 @@
+import { useState } from "react";
 import { useNavigate } from "react-router-dom";
 import AppLayout from "../../layouts/AppLayout";
-
-const registeredProducts = [
-  { name: "LANEIGE 네오쿠션 21N", brand: "라네즈 · 쿠션" },
-  { name: "이니스프리 그린티 세럼", brand: "이니스프리 · 세럼" },
-];
+import {
+  getRegisteredProducts,
+  removeRegisteredProduct,
+} from "../../lib/onboardingProducts";
 
 export function KnownProductSetupPage() {
   const navigate = useNavigate();
+  const [products, setProducts] = useState(getRegisteredProducts);
+
+  function handleRemove(id: string) {
+    setProducts(removeRegisteredProduct(id));
+  }
+
+  const count = products.length;
+  const progressPct = Math.min((count / 5) * 100, 100);
 
   return (
     <AppLayout>
@@ -54,30 +62,43 @@ export function KnownProductSetupPage() {
             </button>
           </div>
 
-          <p className="mt-4 text-body2 text-gray-500">등록된 제품 2개</p>
-          <div className="mt-3 grid gap-3">
-            {registeredProducts.map((product) => (
-              <div
-                className="flex items-center gap-3 rounded-xl border border-gray-200 bg-white p-3"
-                key={product.name}
-              >
-                <div className="flex h-11 w-11 items-center justify-center rounded-lg bg-primary-50">
-                  <div className="h-8 w-8 rounded-md bg-primary-100" />
-                </div>
-                <div className="min-w-0 flex-1">
-                  <p className="truncate text-body2 text-gray-500">{product.name}</p>
-                  <p className="text-caption text-gray-300">{product.brand}</p>
-                </div>
-                <button
-                  className="h-9 w-9 rounded-lg bg-gray-100 text-gray-300"
-                  type="button"
-                  aria-label={`${product.name} 삭제`}
-                >
-                  ×
-                </button>
+          {count > 0 && (
+            <>
+              <p className="mt-4 text-body2 text-gray-500">등록된 제품 {count}개</p>
+              <div className="mt-3 grid gap-3">
+                {products.map((product) => (
+                  <div
+                    className="flex items-center gap-3 rounded-xl border border-gray-200 bg-white p-3"
+                    key={product.id}
+                  >
+                    {product.imageUrl ? (
+                      <img
+                        src={product.imageUrl}
+                        alt={product.name}
+                        className="h-11 w-11 rounded-lg object-cover"
+                      />
+                    ) : (
+                      <div className="flex h-11 w-11 items-center justify-center rounded-lg bg-primary-50">
+                        <div className="h-8 w-8 rounded-md bg-primary-100" />
+                      </div>
+                    )}
+                    <div className="min-w-0 flex-1">
+                      <p className="truncate text-body2 text-gray-500">{product.name}</p>
+                      <p className="text-caption text-gray-300">{product.brand}</p>
+                    </div>
+                    <button
+                      className="h-9 w-9 rounded-lg bg-gray-100 text-gray-300"
+                      onClick={() => handleRemove(product.id)}
+                      type="button"
+                      aria-label={`${product.name} 삭제`}
+                    >
+                      ×
+                    </button>
+                  </div>
+                ))}
               </div>
-            ))}
-          </div>
+            </>
+          )}
 
           <button
             className="mt-3 h-[58px] w-full rounded-xl border border-dashed border-gray-200 bg-gray-100 text-h3 text-primary-500"
@@ -88,12 +109,17 @@ export function KnownProductSetupPage() {
           </button>
 
           <div className="mt-6 rounded-xl bg-primary-50 p-4">
-            <p className="text-body2 text-primary-500">지금까지 등록한 제품: 2개</p>
+            <p className="text-body2 text-primary-500">
+              지금까지 등록한 제품: {count}개
+            </p>
             <p className="mt-1 text-caption text-gray-400">
               5개 이상 등록하면 추천 정확도가 크게 높아져요
             </p>
             <div className="mt-3 h-2 rounded-full bg-primary-100">
-              <div className="h-full w-2/5 rounded-full bg-primary-500" />
+              <div
+                className="h-full rounded-full bg-primary-500 transition-all duration-300"
+                style={{ width: `${progressPct}%` }}
+              />
             </div>
           </div>
         </div>

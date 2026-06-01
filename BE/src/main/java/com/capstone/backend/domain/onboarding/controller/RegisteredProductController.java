@@ -3,6 +3,7 @@ package com.capstone.backend.domain.onboarding.controller;
 import com.capstone.backend.common.response.ApiResponse;
 import com.capstone.backend.domain.onboarding.dto.RegisteredProductAddRequest;
 import com.capstone.backend.domain.onboarding.dto.RegisteredProductAddResponse;
+import com.capstone.backend.domain.onboarding.dto.RegisteredProductBatchRequest;
 import com.capstone.backend.domain.onboarding.service.RegisteredProductService;
 import io.swagger.v3.oas.annotations.Operation;
 import io.swagger.v3.oas.annotations.tags.Tag;
@@ -29,6 +30,18 @@ public class RegisteredProductController {
             @RequestBody RegisteredProductAddRequest request) {
         return ResponseEntity.status(HttpStatus.CREATED)
                 .body(ApiResponse.success(registeredProductService.addFavoriteItem(userId, request)));
+    }
+
+    @Operation(
+            summary = "온보딩 제품 일괄 등록",
+            description = "온보딩 완료 시 localStorage의 제품 UUID 목록을 registered_products + user_products에 저장."
+    )
+    @PostMapping("/batch")
+    public ResponseEntity<ApiResponse<Integer>> saveBatch(
+            @AuthenticationPrincipal UUID userId,
+            @RequestBody RegisteredProductBatchRequest request) {
+        int saved = registeredProductService.saveBatch(userId, request);
+        return ResponseEntity.ok(ApiResponse.success(saved));
     }
 
     @Operation(summary = "자주 쓰는 제품 삭제")

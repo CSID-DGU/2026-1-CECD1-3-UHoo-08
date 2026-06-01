@@ -24,12 +24,12 @@ class ProductMetaWithVec(ProductMeta):
     feature_vec: List[float]
 
 
-_COLUMNS = "id, name, brand, category, image_url, original_price"
+_COLUMNS = "product_id, name, brand, category, image_url, original_price"
 
 
 def _row_to_meta(row: dict) -> ProductMeta:
     return ProductMeta(
-        id=row["id"],
+        id=row["product_id"],
         name=row["name"],
         brand=row["brand"],
         category=row["category"],
@@ -44,7 +44,7 @@ def get_product_meta(product_id: str) -> Optional[ProductMeta]:
     res = (
         sb.table("products")
         .select(_COLUMNS)
-        .eq("id", product_id)
+        .eq("product_id", product_id)
         .limit(1)
         .execute()
     )
@@ -69,7 +69,7 @@ def get_product_meta_with_vec(product_id: str) -> Optional[ProductMetaWithVec]:
     product_res = (
         sb.table("products")
         .select(_COLUMNS)
-        .eq("id", product_id)
+        .eq("product_id", product_id)
         .limit(1)
         .execute()
     )
@@ -105,7 +105,7 @@ def get_products_meta(product_ids: List[str]) -> Dict[str, ProductMeta]:
     res = (
         sb.table("products")
         .select(_COLUMNS)
-        .in_("id", product_ids)
+        .in_("product_id", product_ids)
         .execute()
     )
     return {row["id"]: _row_to_meta(row) for row in (res.data or [])}

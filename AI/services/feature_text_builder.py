@@ -5,17 +5,13 @@ product_embeddings.feature_vec을 생성하기 위해 사용된다.
 리뷰 어휘와 정합성을 맞추기 위해 한국어 자연 표현을 사용한다.
 null 필드는 문장에서 자동 제외.
 
-사용 예:
-    from services.feature_text_builder import build_product_text
-
-    text = build_product_text("base", {
-        "product_type": "쿠션",
-        "coverage": "중간",
-        "finish": "세미매트",
-        "skin_type": "지성",
-        "skin_concern": ["모공", "잡티"],
-        ...
-    })
+허용값 (스키마 기준):
+  coverage : 가벼운 | 중간 | 높음
+  finish   : 매트 | 세미매트 | 글로우 | 촉촉
+  skin_type: 건성 | 지성 | 복합 | 민감
+  texture  : 가벼운 | 중간 | 진한
+  personal_color: 웜톤 | 쿨톤 | 뉴트럴
+  lasting_power : 낮음 | 중간 | 높음
 """
 from typing import Any, Dict
 
@@ -47,11 +43,11 @@ def _build_base(f: Dict[str, Any]) -> str:
         concerns = "·".join(f["skin_concern"])
         parts.append(f"{concerns} 고민에 효과적")
     if f.get("personal_color"):
-        parts.append(f"{f['personal_color']} 톤에 어울림")
+        parts.append(f"{f['personal_color']}에 어울림")
     if f.get("lasting_power"):
-        parts.append(f"지속력은 {f['lasting_power']}")
+        parts.append(f"지속력 {f['lasting_power']}")
     if f.get("spf"):
-        parts.append(f"SPF는 {f['spf']}")
+        parts.append(f"자외선 차단 {f['spf']}")
     return ". ".join(parts) + "." if parts else ""
 
 
@@ -60,9 +56,9 @@ def _build_sun(f: Dict[str, Any]) -> str:
     if f.get("product_type"):
         parts.append(f"{f['product_type']} 제품")
     if f.get("spf"):
-        parts.append(f"SPF는 {f['spf']}")
+        parts.append(f"{f['spf']}")
     if f.get("pa"):
-        parts.append(f"PA는 {f['pa']}")
+        parts.append(f"{f['pa']}")
     if f.get("finish"):
         parts.append(f"{f['finish']} 마무리감")
     if f.get("skin_type"):
@@ -71,7 +67,7 @@ def _build_sun(f: Dict[str, Any]) -> str:
         concerns = "·".join(f["skin_concern"])
         parts.append(f"{concerns}에 도움")
     if f.get("lasting_power"):
-        parts.append(f"지속력은 {f['lasting_power']}")
+        parts.append(f"지속력 {f['lasting_power']}")
     if f.get("white_cast") is not None:
         parts.append(f"백탁 {'있음' if f['white_cast'] else '없음'}")
     return ". ".join(parts) + "." if parts else ""
@@ -84,11 +80,11 @@ def _build_lip(f: Dict[str, Any]) -> str:
     if f.get("finish"):
         parts.append(f"{f['finish']} 마무리감")
     if f.get("personal_color"):
-        parts.append(f"{f['personal_color']} 톤에 어울림")
+        parts.append(f"{f['personal_color']}에 어울림")
     if f.get("lasting_power"):
-        parts.append(f"지속력은 {f['lasting_power']}")
+        parts.append(f"지속력 {f['lasting_power']}")
     if f.get("moisturizing") is not None:
-        parts.append(f"보습력 {'있음' if f['moisturizing'] else '낮음'}")
+        parts.append(f"보습력 {'높음' if f['moisturizing'] else '낮음'}")
     if f.get("skin_concern"):
         concerns = "·".join(f["skin_concern"])
         parts.append(f"{concerns}에 도움")
@@ -108,7 +104,7 @@ def _build_skincare(f: Dict[str, Any]) -> str:
         parts.append(f"{concerns}에 효과적")
     if f.get("key_ingredient"):
         ings = "·".join(f["key_ingredient"])
-        parts.append(f"주요 성분은 {ings}")
+        parts.append(f"주요 성분 {ings}")
     if f.get("fragrance_free") is not None:
-        parts.append(f"무향 {'제품' if f['fragrance_free'] else '아님'}")
+        parts.append(f"{'무향 제품' if f['fragrance_free'] else '향 있음'}")
     return ". ".join(parts) + "." if parts else ""

@@ -116,6 +116,9 @@ public class RecommendationServiceImpl implements RecommendationService {
         String matchLabel = (String) resultMap.get("matchLabel");
         String aiReason = (String) resultMap.get("aiReason");
 
+        List<RecommendationResultResponse.MainRecommendation> mainRecommendations =
+                parseMainRecommendations(resultMap.get("mainRecommendations"));
+
         List<RecommendationResultResponse.SimilarProduct> similarProducts = parseProducts(
                 resultMap.get("similarUserProducts"), "satisfactionPercent");
 
@@ -133,6 +136,7 @@ public class RecommendationServiceImpl implements RecommendationService {
                 .matchScore(matchScore)
                 .matchLabel(matchLabel)
                 .aiReason(aiReason)
+                .mainRecommendations(mainRecommendations)
                 .similarUserProducts(similarProducts)
                 .alternativeProducts(alternativeProducts)
                 .createdAt(job.getCreatedAt())
@@ -147,6 +151,34 @@ public class RecommendationServiceImpl implements RecommendationService {
             log.warn("Failed to parse recommendation result JSON: {}", e.getMessage());
             return Map.of();
         }
+    }
+
+    @SuppressWarnings("unchecked")
+    private List<RecommendationResultResponse.MainRecommendation> parseMainRecommendations(Object raw) {
+        if (!(raw instanceof List)) return List.of();
+        return ((List<Map<String, Object>>) raw).stream()
+                .map(m -> {
+                    Map<String, Object> bd = (Map<String, Object>) m.get("breakdown");
+                    RecommendationResultResponse.ScoreBreakdown breakdown = null;
+                    if (bd != null) {
+                        breakdown = RecommendationResultResponse.ScoreBreakdown.builder()
+                                .budgetFit(toInt(bd.get("budgetFit")))
+                                .priceValue(toInt(bd.get("priceValue")))
+                                .reviewScore(toInt(bd.get("reviewScore")))
+                                .personalization(toInt(bd.get("personalization")))
+                                .build();
+                    }
+                    return RecommendationResultResponse.MainRecommendation.builder()
+                            .id(parseUUID(m.get("productId")))
+                            .name((String) m.get("name"))
+                            .brand((String) m.get("brand"))
+                            .imageUrl((String) m.get("imageUrl"))
+                            .price(toInt(m.get("price")))
+                            .totalScore(toInt(m.get("totalScore")))
+                            .breakdown(breakdown)
+                            .build();
+                })
+                .collect(Collectors.toList());
     }
 
     @SuppressWarnings("unchecked")

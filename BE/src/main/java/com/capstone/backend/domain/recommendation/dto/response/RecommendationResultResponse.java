@@ -16,6 +16,7 @@ public class RecommendationResultResponse {
     private Integer matchScore;
     private String matchLabel;
     private String aiReason;
+    private List<MainRecommendation> mainRecommendations;
     private List<SimilarProduct> similarUserProducts;
     private List<AlternativeProduct> alternativeProducts;
     private LocalDateTime createdAt;
@@ -27,6 +28,27 @@ public class RecommendationResultResponse {
         private String name;
         private String brand;
         private String imageUrl;
+    }
+
+    @Getter
+    @Builder
+    public static class MainRecommendation {
+        private UUID id;
+        private String name;
+        private String brand;
+        private String imageUrl;
+        private Integer price;
+        private Integer totalScore;
+        private ScoreBreakdown breakdown;
+    }
+
+    @Getter
+    @Builder
+    public static class ScoreBreakdown {
+        private Integer budgetFit;
+        private Integer priceValue;
+        private Integer reviewScore;
+        private Integer personalization;
     }
 
     @Getter

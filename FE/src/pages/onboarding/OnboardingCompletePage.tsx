@@ -1,8 +1,32 @@
+import { useState } from "react";
 import { useNavigate } from "react-router-dom";
+import { completeOnboarding, saveOnboardingProducts } from "../../api/userApi";
 import AppLayout from "../../layouts/AppLayout";
+import { getRegisteredProducts } from "../../lib/onboardingProducts";
+
+const KEY = "onboarding_products";
 
 export function OnboardingCompletePage() {
   const navigate = useNavigate();
+  const products = getRegisteredProducts();
+  const [loading, setLoading] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+
+  async function handleStart() {
+    setLoading(true);
+    setError(null);
+    try {
+      if (products.length > 0) {
+        await saveOnboardingProducts(products.map((p) => p.id));
+      }
+      await completeOnboarding();
+      localStorage.removeItem(KEY);
+      navigate("/home");
+    } catch {
+      setError("저장 중 오류가 발생했어요. 다시 시도해주세요.");
+      setLoading(false);
+    }
+  }
 
   return (
     <AppLayout>
@@ -31,37 +55,8 @@ export function OnboardingCompletePage() {
 
           <h1 className="mt-6 text-h2 text-gray-500">준비 완료!</h1>
           <p className="mt-3 text-body2 text-gray-300">
-            한지예님의 맞춤 설정이 완료됐어요
+            맞춤 설정이 완료됐어요
           </p>
-        </div>
-
-        <div className="mt-6 rounded-2xl border border-gray-200 bg-white p-4">
-          <p className="text-body2 text-gray-300">내 피부 정보</p>
-          <div className="mt-3 flex gap-2">
-            {["봄웜", "지성 피부", "여드름"].map((item) => (
-              <span
-                className="rounded-full bg-primary-100 px-4 py-1 text-caption text-primary-500"
-                key={item}
-              >
-                {item}
-              </span>
-            ))}
-          </div>
-
-          <div className="mt-4 grid gap-3 text-body2">
-            <div className="flex justify-between border-t border-gray-100 pt-3">
-              <span className="text-gray-300">등록한 제품</span>
-              <strong className="text-gray-500">2개</strong>
-            </div>
-            <div className="flex justify-between border-t border-gray-100 pt-3">
-              <span className="text-gray-300">가격 허용 폭</span>
-              <strong className="text-gray-500">±10%</strong>
-            </div>
-            <div className="flex justify-between border-t border-gray-100 pt-3">
-              <span className="text-gray-300">AI 분석 상태</span>
-              <strong className="text-primary-500">분석 준비 완료</strong>
-            </div>
-          </div>
         </div>
 
         <div className="mt-4 rounded-xl bg-primary-50 p-4">
@@ -71,12 +66,17 @@ export function OnboardingCompletePage() {
           </p>
         </div>
 
+        {error && (
+          <p className="mt-3 text-center text-caption text-red-500">{error}</p>
+        )}
+
         <button
-          className="mt-4 h-14 w-full rounded-xl bg-primary-500 text-body1 font-semibold text-white"
-          onClick={() => navigate("/")}
+          className="mt-4 h-14 w-full rounded-xl bg-primary-500 text-body1 font-semibold text-white disabled:opacity-50"
+          onClick={handleStart}
+          disabled={loading}
           type="button"
         >
-          BeautyMatch 시작하기
+          {loading ? "저장 중..." : "BeautyMatch 시작하기"}
         </button>
 
         <p className="mt-5 text-center text-caption text-gray-300">

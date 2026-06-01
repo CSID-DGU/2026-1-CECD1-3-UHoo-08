@@ -106,7 +106,7 @@ public class UserServiceImpl implements UserService {
             byte[] bytes = image.getBytes();
             String contentType = image.getContentType() != null ? image.getContentType() : "image/jpeg";
             String ext = contentType.contains("png") ? "png" : "jpg";
-            String path = "/profiles/" + userId + "." + ext;
+            String path = "/profile_image/" + userId + "." + ext;
 
             String uploadUrl = supabaseStorageUrl + path;
             log.info("[Storage] 업로드 시작: url={}, size={}, contentType={}", uploadUrl, bytes.length, contentType);

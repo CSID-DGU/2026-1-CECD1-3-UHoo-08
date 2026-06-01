@@ -1,13 +1,9 @@
 from fastapi import FastAPI
-from pydantic import BaseModel
-from app.llm_service import ask_llm
 
-app = FastAPI()
+from api.internal.admin_router import router as admin_router
+from api.search_router import router as search_router
 
-class ChatRequest(BaseModel):
-    message: str
+app = FastAPI(title="BeautyMatch AI Server")
 
-@app.post("/chat")
-def chat(req: ChatRequest):
-    response = ask_llm(req.message)
-    return {"response": response}
+app.include_router(admin_router)
+app.include_router(search_router)

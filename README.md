@@ -223,6 +223,8 @@ DGU-Capston1/
 
 ---
 
+## AI
+
 ## 시작하기
 
 ### 사전 요구사항
@@ -249,7 +251,7 @@ docker compose up -d
 > ⚠️ `.env` 와 `venv/` 는 절대 커밋하지 마세요.
 
 ---
-# Backend (Spring Boot)
+## Backend 
 
 ## 시작하기
 
@@ -259,36 +261,38 @@ docker compose up -d
 
 ### 설치 및 실행
 
-```bash
-# 1. 레포 클론 (이미 클론했다면 생략)
-git clone https://github.com/kelly0819/DGU-Capston1.git
-cd DGU-Capston1/BE
+```bash                                                                                           
+  # 1. 레포 클론 (이미 클론했다면 생략)                                                               
+  git clone https://github.com/kelly0819/DGU-Capston1.git   
+  cd DGU-Capston1/BE
+  # 2. BE/docker-compose.yml 파일 생성
+  내용은 노션에 있습니다.                                                                                 
+                    
+  # 3. 빌드 및 실행 (최초 실행 또는 코드 변경 후)                                                     
+  docker compose up --build -d                              
+                                                                                                      
+  # 이후 재실행 시 (코드 변경 없을 때)                      
+  docker compose up -d                                                                                
+                                                                                                      
+  ▎ 최초 빌드는 내부에서 Gradle 빌드가 함께 진행되므로 5~10분 소요됩니다.                           
+                                                                                       
+ ---
+  Swagger 접속
 
-# 2. 환경 변수 설정
-# application-local.yml 생성 방법은 노션 참고
-# 노션 > 종합설계 > 문서 > 📁 디렉토리 구조 (Spring + Python)
+  서버 실행 후 아래 주소로 접속합니다.
 
-# 3. 빌드 및 실행
-docker compose up -d
-```
+  http://localhost:8080/swagger-ui.html
 
-서버가 뜨면 아래 주소에서 API 명세 확인:
+  ---
+  로그 확인 / 종료
 
-```
-http://localhost:8080/swagger-ui.html
-```
+  # 로그 확인
+  docker compose logs -f
 
-### 로컬 직접 실행 (Java 17 설치된 경우)
-
-```bash
-cd BE
-./gradlew bootRun
-```
+  # 서버 종료
+  docker compose down
 
 ---
-
-⚠️ `application-local.yml` 은 절대 커밋하지 마세요.
-
 
 ## 개발 컨벤션
 

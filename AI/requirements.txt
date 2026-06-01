@@ -13,6 +13,30 @@ supabase>=2.5.0
 FlagEmbedding>=1.2.10
 numpy>=1.26.0
 
+# LLM / AI
+google-genai>=1.0.0
+langchain-google-genai>=1.0.0
+langchain-openai>=0.1.0
+langchain-core>=0.2.0
+langgraph>=0.1.0
+openai>=1.0.0
+
 # Testing
 pytest>=8.0.0
 pytest-asyncio>=0.23.0
+
+# LangChain / LangGraph
+langchain-core
+langchain-openai
+langchain-google-genai
+langgraph
+
+# Redis (input_agent cache)
+redis
+
+# HTTP client
+httpx
+cloudscraper
+
+# Openai
+openai>=1.30.0
