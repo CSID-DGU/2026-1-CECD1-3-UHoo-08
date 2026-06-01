@@ -1,8 +1,17 @@
+import os
+
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
+from config import settings
 from api.internal.recognize_router import router as recognize_router
 from api.internal.agent_router import router as agent_router
+
+# LangSmith 트레이싱 활성화 (LANGSMITH_API_KEY가 있을 때만)
+if settings.LANGSMITH_API_KEY:
+    os.environ["LANGCHAIN_TRACING_V2"] = "true"
+    os.environ["LANGCHAIN_API_KEY"] = settings.LANGSMITH_API_KEY
+    os.environ["LANGCHAIN_PROJECT"] = settings.LANGSMITH_PROJECT
 
 app = FastAPI(title="Cosmetic AI Service")
 
