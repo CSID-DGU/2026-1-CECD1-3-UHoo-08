@@ -12,6 +12,7 @@ bge-m3로 배치 임베딩하여 product_embeddings에 upsert한다.
 전제: products, product_features에 원본 데이터가 있어야 한다.
 """
 from __future__ import annotations
+import json
 
 import argparse
 from typing import Any, Dict, List
@@ -39,13 +40,24 @@ def _fetch_products_with_features() -> List[Dict[str, Any]]:
         # product_features는 1:1이라 dict 또는 list로 올 수 있음
         if isinstance(pf, list):
             pf = pf[0] if pf else None
-        if not pf or not pf.get("feature_json"):
+        if not pf:
             continue
+        
+        fj = pf.get("feature_json")
+        # feature_json이 JSON 문자열로 저장된 경우 파싱 (crawler가 json.dumps로 저장)
+        if isinstance(fj, str):
+            try:
+                fj = json.loads(fj)
+            except (json.JSONDecodeError, TypeError):
+                continue
+        if not isinstance(fj, dict) or not fj:
+            continue
+
         rows.append(
             {
                 "product_id": p["product_id"],
                 "category": p["category"],
-                "feature_json": pf["feature_json"],
+                "feature_json": fj,
             }
         )
     return rows
