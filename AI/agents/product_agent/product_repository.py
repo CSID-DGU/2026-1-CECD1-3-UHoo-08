@@ -143,3 +143,55 @@ def save_enriched(product_id: str, enriched: dict) -> None:
     }
 
     sb.table("product_insights").upsert(payload, on_conflict="product_id").execute()
+
+    # product_features 저장
+    feature_json = enriched.get("product_features") or {}
+    if feature_json:
+        sb.table("product_features").upsert(
+            {"product_id": product_id, "feature_json": feature_json},
+            on_conflict="product_id",
+        ).execute()
+
+    # review_embeddings 저장 (백그라운드 처리, 실패해도 무시)
+    review_data = enriched.get("review_data") or {}
+    if review_data:
+        _save_review_embeddings(product_id, review_data)
+
+
+def _save_review_embeddings(product_id: str, review_data: dict) -> None:
+    """Gemini 리뷰 데이터 → 청킹 → bge-m3 임베딩 → review_embeddings 저장."""
+    try:
+        from services.review_chunker import chunk_review
+        from services.embedding_service import EmbeddingService
+
+        sb = get_supabase()
+
+        # 재보강 시 기존 임베딩 교체
+        sb.table("review_embeddings").delete().eq("product_id", product_id).execute()
+
+        texts: list = []
+        for item in (review_data.get("positive") or []):
+            texts.extend(chunk_review(item))
+        for item in (review_data.get("negative") or []):
+            texts.extend(chunk_review(item))
+        summary = review_data.get("summary") or ""
+        if summary:
+            texts.extend(chunk_review(summary))
+
+        if not texts:
+            return
+
+        emb = EmbeddingService.get()
+        vecs = emb.embed_batch(texts)
+        rows = [
+            {
+                "product_id": product_id,
+                "review_text": text,
+                "embedding": vec,
+                "source": "GEMINI_EXTRACTED",
+            }
+            for text, vec in zip(texts, vecs)
+        ]
+        sb.table("review_embeddings").insert(rows).execute()
+    except Exception:
+        pass

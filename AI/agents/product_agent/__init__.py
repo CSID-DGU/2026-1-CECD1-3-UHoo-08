@@ -2,6 +2,27 @@ from models.extracted_product import ExtractedProduct
 from models.product_response import ProductResponse
 from agents.product_agent.gemini_enricher import enrich_product
 
+
+def _embed_and_save(product_id: str, category: str, feature_json: dict) -> None:
+    """feature_json → bge-m3 임베딩 → product_embeddings 저장. 실패해도 무시."""
+    try:
+        from services.feature_text_builder import build_product_text
+        from services.embedding_service import EmbeddingService
+        from db.supabase_client import get_supabase
+
+        text = build_product_text(category, feature_json)
+        if not text:
+            return
+        emb = EmbeddingService.get()
+        vec = emb.embed(text)
+        get_supabase().table("product_embeddings").upsert({
+            "product_id": product_id,
+            "feature_vec": vec,
+            "model_version": emb.model_version,
+        }).execute()
+    except Exception:
+        pass
+
 try:
     from agents.product_agent.product_repository import (
         find_by_name_brand,
@@ -37,6 +58,10 @@ def run(product: ExtractedProduct) -> ProductResponse:
         if _REPO_AVAILABLE:
             if db_product:
                 save_enriched(db_product["product_id"], enriched)
+                category_val = (product.category or {}).get("main") if isinstance(product.category, dict) else product.category
+                feature_json = enriched.get("product_features")
+                if feature_json and category_val:
+                    _embed_and_save(db_product["product_id"], category_val, feature_json)
             else:
                 category_val = (product.category or {}).get("main") if isinstance(product.category, dict) else product.category
                 original_price = (enriched.get("price_data") or {}).get("original_price")
@@ -50,6 +75,9 @@ def run(product: ExtractedProduct) -> ProductResponse:
                 })
                 db_product = {"product_id": new_id}
                 save_enriched(new_id, enriched)
+                feature_json = enriched.get("product_features")
+                if feature_json and category_val:
+                    _embed_and_save(new_id, category_val, feature_json)
 
     # 가격·리뷰·성분 결정: DB 캐시 우선, 없으면 Gemini 결과
     if db_product and not needs_enrich:
