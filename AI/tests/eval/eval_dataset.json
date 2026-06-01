@@ -1,0 +1,18 @@
+[
+    {
+      "_comment": "각 케이스: 기준 상품과 사람이 판단한 정답 대체 상품들. base_product_id, ground_truth_alternative_ids를 실제 uuid로 채우세요.",
+      "base_product_id": "REPLACE_WITH_REAL_UUID_1",
+      "ground_truth_alternative_ids": [
+        "REPLACE_WITH_REAL_UUID_A",
+        "REPLACE_WITH_REAL_UUID_B"
+      ],
+      "note": "라네즈 네오쿠션 → 비슷한 세미매트 쿠션들"
+    },
+    {
+      "base_product_id": "REPLACE_WITH_REAL_UUID_2",
+      "ground_truth_alternative_ids": [
+        "REPLACE_WITH_REAL_UUID_C"
+      ],
+      "note": "예시 — 실제 라벨링으로 교체"
+    }
+]
