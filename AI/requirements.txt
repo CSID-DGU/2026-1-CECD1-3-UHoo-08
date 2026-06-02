@@ -37,6 +37,7 @@ redis
 # HTTP client
 httpx
 cloudscraper
+beautifulsoup4
 
 # Openai
 openai>=1.30.0

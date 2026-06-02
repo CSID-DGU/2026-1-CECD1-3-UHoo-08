@@ -79,7 +79,10 @@ export function FavoriteTrackingPage() {
         <PageHeader title="가격 추적" onBack={() => navigate(-1)} />
 
         {/* 통계 카드 */}
-        <section className="mt-5 rounded-2xl bg-gray-500 p-6 text-white">
+        <section
+          className="mt-5 rounded-2xl p-6 text-white"
+          style={{ background: "linear-gradient(135deg, #4778C8, #7AAEE4)" }}
+        >
           <div className="grid grid-cols-2 divide-x divide-gray-400/40">
             <div>
               <p className="text-caption">추적 중인 제품</p>
@@ -139,7 +142,8 @@ export function FavoriteTrackingPage() {
 
             {/* 제품 추가 */}
             <button
-              className="mt-5 h-[58px] w-full rounded-xl border border-dashed border-primary-100 bg-primary-50 text-body1 text-primary-500"
+              className="mt-5 h-[58px] w-full rounded-xl text-body1 text-primary-500"
+              style={{ border: "1.5px dashed #4A90D9", background: "#F0F7FF" }}
               onClick={() => navigate("/price-tracking/add")}
               type="button"
             >
