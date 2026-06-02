@@ -58,7 +58,7 @@ async def run_search(query: str, top_k: int = 20) -> SearchResult:
     if category and features:
         try:
             feature_text = build_product_text(category, features)
-        except ValueError:
+        except Exception:
             feature_text = ""
     search_text = f"{query}. {feature_text}".strip() if feature_text else query
 
