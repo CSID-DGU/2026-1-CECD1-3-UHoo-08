@@ -96,4 +96,6 @@ def parse_nfc_url(url: str) -> ExtractedProduct:
     if raw.startswith("```"):
         raw = raw.strip("`").removeprefix("json").strip()
 
-    return ExtractedProduct(**json.loads(raw))
+    extracted = ExtractedProduct(**json.loads(raw))
+    extracted.image_url = scraped["image_url"] or None
+    return extracted

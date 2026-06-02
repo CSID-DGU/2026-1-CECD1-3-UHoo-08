@@ -84,7 +84,7 @@ def _build_lip(f: Dict[str, Any]) -> str:
     if f.get("lasting_power"):
         parts.append(f"지속력 {f['lasting_power']}")
     if f.get("moisturizing") is not None:
-        parts.append(f"보습력 {'높음' if f['moisturizing'] else '낮음'}")
+        parts.append(f"보습력 {'있음' if f['moisturizing'] else '없음'}")
     if f.get("skin_concern"):
         concerns = "·".join(f["skin_concern"])
         parts.append(f"{concerns}에 도움")
@@ -106,5 +106,5 @@ def _build_skincare(f: Dict[str, Any]) -> str:
         ings = "·".join(f["key_ingredient"])
         parts.append(f"주요 성분 {ings}")
     if f.get("fragrance_free") is not None:
-        parts.append(f"{'무향 제품' if f['fragrance_free'] else '향 있음'}")
+        parts.append(f"{'무향 제품' if f['fragrance_free'] else '무향 아님'}")
     return ". ".join(parts) + "." if parts else ""

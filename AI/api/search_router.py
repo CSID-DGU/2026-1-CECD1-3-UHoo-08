@@ -1,14 +1,17 @@
 """
 자연어 상품 검색 API.
 
-Qwen으로 쿼리에서 카테고리 + feature 추출 → bge-m3 임베딩 → pgvector 유사도 검색.
+검색창 입력을 Qwen으로 분석해 카테고리·feature를 추출하고,
+bge-m3 임베딩 + pgvector로 유사 상품을 검색한다.
+
+FE는 POST /search로 호출한다 (reverse proxy를 통해 /ai/search로 노출).
 """
 from typing import Optional
 
 from fastapi import APIRouter, HTTPException
 from pydantic import BaseModel
 
-from services.search_service import search as search_service
+from services.search_service import run_search
 
 router = APIRouter(prefix="/search", tags=["search"])
 
@@ -39,17 +42,14 @@ class SearchResponse(BaseModel):
     summary="자연어 상품 검색",
     description="자연어 쿼리를 Qwen으로 분석해 bge-m3 임베딩 후 pgvector 유사도 검색.",
 )
-async def search_products(body: SearchRequest) -> SearchResponse:
+async def search(body: SearchRequest) -> SearchResponse:
     if not body.query.strip():
         raise HTTPException(status_code=400, detail="검색어를 입력해주세요")
 
-    try:
-        result = await search_service(body.query)
-    except Exception as e:
-        raise HTTPException(status_code=500, detail=f"검색 실패: {e}")
+    result = await run_search(body.query)
 
     return SearchResponse(
         query=result["query"],
-        category=result["category"],
+        category=result.get("category") or "",
         products=[ProductResult(**p) for p in result["products"]],
     )
