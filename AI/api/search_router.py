@@ -32,7 +32,7 @@ class ProductResult(BaseModel):
 
 class SearchResponse(BaseModel):
     query: str
-    category: Optional[str] = None
+    category: str""
     products: list[ProductResult]
 
 
@@ -50,6 +50,6 @@ async def search(body: SearchRequest) -> SearchResponse:
 
     return SearchResponse(
         query=result["query"],
-        category=result["category"],
+        category=result.get("category") or "",
         products=[ProductResult(**p) for p in result["products"]],
     )
