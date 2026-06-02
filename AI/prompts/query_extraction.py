@@ -19,7 +19,7 @@ skincare: product_type(토너|에센스|세럼|크림|오일|로션), texture(�
 - category는 위 4개 중 하나. 판단 불가 시 null
 - features에는 쿼리에서 명확히 파악되는 값만 포함. 나머지 키는 아예 생략
 - 쿼리에 없는 값을 추측하지 마라
-- 계절·상황 표현은 가능한 feature로 변환 (예: "여름" "가벼운" → finish 또는 texture "가벼운", "무너지지 않는" → lasting_power "높음")
+- 계절·상황 표현은 가능한 feature로 변환 (예: "여름" "가벼운" → base는 coverage "가벼운" / skincare는 texture "가벼운", "무너지지 않는" → lasting_power "높음")
 
 [출력 예시]
 입력: "여름에 안 무너지는 세미매트 쿠션"
