@@ -119,8 +119,9 @@ def search_products_by_name(keyword: str, limit: int = 20) -> List[ProductMeta]:
     특정 상품 검색을 이름 부분일치로 빠르게 찾는다.
 
     name 또는 brand에 keyword가 포함되면 매칭.
+    PostgREST or 필터에서 쉼표·괄호는 구분 문자이므로 공백으로 치환해 깨짐 방지.
     """
-    kw = keyword.strip()
+    kw = keyword.strip().replace(",", " ").replace("(", " ").replace(")", " ")
     if not kw:
         return []
     sb = get_supabase()
