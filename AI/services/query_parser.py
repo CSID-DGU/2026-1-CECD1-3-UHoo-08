@@ -35,7 +35,10 @@ async def classify_intent(query: str) -> str:
         return "RECOMMENDATION"
 
     llm = get_qwen_llm()
-    result = await llm.chat_json(system=INTENT_CLASSIFICATION_SYSTEM, user=query)
+    try:
+        result = await llm.chat_json(system=INTENT_CLASSIFICATION_SYSTEM, user=query)
+    except Exception:
+        return "RECOMMENDATION"
 
     if not result or not isinstance(result, dict):
         return "RECOMMENDATION"
@@ -58,7 +61,10 @@ async def parse_query(query: str) -> ParsedQuery:
         return ParsedQuery(category=None, features={})
 
     llm = get_qwen_llm()
-    result = await llm.chat_json(system=QUERY_EXTRACTION_SYSTEM, user=query)
+    try:
+        result = await llm.chat_json(system=QUERY_EXTRACTION_SYSTEM, user=query)
+    except Exception:
+        return ParsedQuery(category=None, features={})
 
     if not result or not isinstance(result, dict):
         return ParsedQuery(category=None, features={})
