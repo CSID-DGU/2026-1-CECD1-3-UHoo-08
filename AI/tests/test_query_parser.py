@@ -7,6 +7,57 @@ import pytest
 class TestQueryParser:
     @pytest.mark.asyncio
     @patch("services.query_parser.get_qwen_llm")
+    async def test_product_name_intent(self, mock_get):
+        from services.query_parser import classify_intent
+
+        llm = AsyncMock()
+        llm.chat_json.return_value = {"intent": "PRODUCT_NAME"}
+        mock_get.return_value = llm
+
+        assert await classify_intent("라네즈 네오쿠션") == "PRODUCT_NAME"
+        
+    @pytest.mark.asyncio
+    @patch("services.query_parser.get_qwen_llm")
+    async def test_recommendation_intent(self, mock_get):
+        from services.query_parser import classify_intent
+
+        llm = AsyncMock()
+        llm.chat_json.return_value = {"intent": "RECOMMENDATION"}
+        mock_get.return_value = llm
+
+        assert await classify_intent("여름 가벼운 쿠션 추천") == "RECOMMENDATION"
+
+    @pytest.mark.asyncio
+    @patch("services.query_parser.get_qwen_llm")
+    async def test_invalid_intent_falls_back(self, mock_get):
+        from services.query_parser import classify_intent
+
+        llm = AsyncMock()
+        llm.chat_json.return_value = {"intent": "UNKNOWN"}
+        mock_get.return_value = llm
+
+        # 잘못된 값은 RECOMMENDATION 폴백
+        assert await classify_intent("x") == "RECOMMENDATION"
+
+    @pytest.mark.asyncio
+    @patch("services.query_parser.get_qwen_llm")
+    async def test_llm_none_falls_back(self, mock_get):
+        from services.query_parser import classify_intent
+
+        llm = AsyncMock()
+        llm.chat_json.return_value = None
+        mock_get.return_value = llm
+
+        assert await classify_intent("뭔가") == "RECOMMENDATION"
+
+    @pytest.mark.asyncio
+    async def test_empty_query_falls_back(self):
+        from services.query_parser import classify_intent
+
+        assert await classify_intent("   ") == "RECOMMENDATION"
+        
+    @pytest.mark.asyncio
+    @patch("services.query_parser.get_qwen_llm")
     async def test_valid_parse(self, mock_get):
         from services.query_parser import parse_query
 
