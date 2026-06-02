@@ -75,3 +75,21 @@ export interface AiSearchResponse {
 export const aiSearch = (query: string): Promise<AiSearchResponse> =>
   api.post<{ success: boolean; data: AiSearchResponse }>("/recommendations/search", { query })
     .then((res) => res.data);
+
+// ── AI 제품 인식 (FastAPI /internal/recognize) ────────────────────────────────
+
+export interface AiRecognizeResult {
+  productId: string | null;
+  name: string | null;
+  brand: string | null;
+  category: string | null;
+  geminiPrice: Record<string, unknown>;
+  reviewSummary: Record<string, unknown>;
+  ingredients: string[];
+}
+
+export const aiRecognizeProduct = (
+  type: "IMAGE" | "TEXT" | "NFC",
+  data: string,
+): Promise<AiRecognizeResult> =>
+  api.post<AiRecognizeResult>("/ai/internal/recognize", { type, data });

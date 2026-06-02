@@ -1,6 +1,6 @@
 import { useRef, useState } from "react";
 import { useNavigate } from "react-router-dom";
-import { recognizeProduct, searchProducts } from "../../api/productApi";
+import { aiRecognizeProduct, searchProducts } from "../../api/productApi";
 import { CameraMark } from "../../components/common/CameraMark";
 import { PageHeader } from "../../components/common/PageHeader";
 import AppLayout from "../../layouts/AppLayout";
@@ -18,8 +18,14 @@ export function ProductLookupPage() {
     setProcessing(true);
     try {
       const base64 = await fileToBase64(file);
-      const res = await recognizeProduct("IMAGE", base64);
-      navigate("/product/recognize", { state: { result: res.data } });
+      const res = await aiRecognizeProduct("IMAGE", base64);
+      const result = {
+        productId: res.productId ?? "",
+        name: res.name ?? "",
+        brand: res.brand ?? "",
+        imageUrl: null,
+      };
+      navigate("/product/recognize", { state: { result } });
     } catch {
       alert("이미지 인식에 실패했어요. 다시 시도해주세요.");
     } finally {

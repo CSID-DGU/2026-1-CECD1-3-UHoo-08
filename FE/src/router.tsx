@@ -25,6 +25,7 @@ import { SkinInfoEditPage } from "./pages/my/SkinInfoEditPage";
 import { SettingsPage } from "./pages/my/SettingsPage";
 import { FavoriteTrackingPage } from "./pages/my/FavoriteTrackingPage";
 import { FavoriteProductsPage } from "./pages/my/FavoriteProductsPage";
+import { WishlistPage } from "./pages/wishlist/WishlistPage";
 import { PriceTrackingAddPage } from "./pages/priceTracking/PriceTrackingAddPage";
 import { PriceHistoryPage } from "./pages/priceTracking/PriceHistoryPage";
 
@@ -60,6 +61,7 @@ export const router = createBrowserRouter([
       { path: "/my/settings", element: <SettingsPage /> },
       { path: "/favorites", element: <FavoriteTrackingPage /> },
       { path: "/favorites/products", element: <FavoriteProductsPage /> },
+      { path: "/wishlist", element: <WishlistPage /> },
       { path: "/price-tracking/add", element: <PriceTrackingAddPage /> },
       { path: "/price-tracking/:productId", element: <PriceHistoryPage /> },
     ],

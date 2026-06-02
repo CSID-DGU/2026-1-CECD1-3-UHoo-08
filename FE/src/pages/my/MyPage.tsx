@@ -70,7 +70,10 @@ export function MyPage() {
         </header>
 
         {/* 프로필 카드 */}
-        <section className="mt-4 rounded-2xl bg-gray-500 p-5 text-white">
+        <section
+          className="mt-4 rounded-2xl p-5 text-white"
+          style={{ background: "linear-gradient(135deg, #4778C8, #7AAEE4)" }}
+        >
           <div className="flex items-start justify-between">
             <div className="flex items-center gap-4">
               <div className="grid h-16 w-16 place-items-center rounded-full bg-primary-700">

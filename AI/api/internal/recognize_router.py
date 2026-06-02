@@ -11,9 +11,9 @@ router = APIRouter()
 
 
 class RecognizeRequest(BaseModel):
-    type: str         # IMAGE | NFC | TEXT
-    data: str         # base64 이미지 / 올리브영 URL / 평문 텍스트
-    userId: str
+    type: str                   # IMAGE | NFC | TEXT
+    data: str                   # base64 이미지 / 올리브영 URL / 평문 텍스트
+    userId: str | None = None
 
 
 @router.post("/recognize", response_model=ProductResponse)

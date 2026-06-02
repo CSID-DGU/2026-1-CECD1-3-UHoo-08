@@ -4,7 +4,7 @@
 운영 환경에서는 노출하지 않는다.
 product_features 테이블 초기 시딩 등 일회성 작업에 사용.
 """
-from typing import Literal, Optional
+from typing import Any, Dict, List, Literal, Optional
 
 from fastapi import APIRouter, HTTPException
 from pydantic import BaseModel, Field
@@ -21,11 +21,23 @@ class SeedRequest(BaseModel):
     limit: int = Field(10, ge=1, le=30, description="조회할 제품 수 (최대 30)")
 
 
+class ProductResult(BaseModel):
+    status: str
+    name: Optional[str] = None
+    brand: Optional[str] = None
+    original_price: Optional[int] = None
+    lowest_price: Optional[int] = None
+    average_score: Optional[float] = None
+    review_count: Optional[int] = None
+    reason: Optional[str] = None
+
+
 class SeedResponse(BaseModel):
     category: str
     saved: int
     skipped: int
-    errors: list
+    errors: List[Dict[str, Any]]
+    products: List[ProductResult]
 
 
 @router.post(
@@ -34,8 +46,8 @@ class SeedResponse(BaseModel):
     summary="올리브영 제품 시딩 (개발 전용)",
     description=(
         "Gemini Google Search로 올리브영 카테고리별 제품을 조회하고 "
-        "products + product_features 테이블에 저장한다. "
-        "이미 존재하는 제품(name+brand 기준)은 feature만 업데이트."
+        "products + product_insights + product_features 테이블에 저장한다. "
+        "이미 존재하는 제품(name+brand 기준)은 insight·feature만 업데이트."
     ),
 )
 def seed_products(body: SeedRequest) -> SeedResponse:
@@ -51,4 +63,5 @@ def seed_products(body: SeedRequest) -> SeedResponse:
         saved=result["saved"],
         skipped=result["skipped"],
         errors=result["errors"],
+        products=[ProductResult(**p) for p in result["products"]],
     )
