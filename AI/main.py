@@ -6,6 +6,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from config import settings
 from api.internal.recognize_router import router as recognize_router
 from api.internal.agent_router import router as agent_router
+from api.search_router import router as search_router
 
 # LangSmith 트레이싱 활성화 (LANGSMITH_API_KEY가 있을 때만)
 if settings.LANGSMITH_API_KEY:
@@ -25,6 +26,7 @@ app.add_middleware(
 
 app.include_router(recognize_router, prefix="/internal")
 app.include_router(agent_router, prefix="/internal")
+app.include_router(search_router)
 
 
 @app.on_event("startup")
