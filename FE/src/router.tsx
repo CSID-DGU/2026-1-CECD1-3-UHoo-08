@@ -26,6 +26,7 @@ import { SettingsPage } from "./pages/my/SettingsPage";
 import { FavoriteTrackingPage } from "./pages/my/FavoriteTrackingPage";
 import { FavoriteProductsPage } from "./pages/my/FavoriteProductsPage";
 import { WishlistPage } from "./pages/wishlist/WishlistPage";
+import { WishlistCategoryPage } from "./pages/wishlist/WishlistCategoryPage";
 import { PriceTrackingAddPage } from "./pages/priceTracking/PriceTrackingAddPage";
 import { PriceHistoryPage } from "./pages/priceTracking/PriceHistoryPage";
 
@@ -62,8 +63,9 @@ export const router = createBrowserRouter([
       { path: "/favorites", element: <FavoriteTrackingPage /> },
       { path: "/favorites/products", element: <FavoriteProductsPage /> },
       { path: "/wishlist", element: <WishlistPage /> },
+      { path: "/wishlist/:category", element: <WishlistCategoryPage /> },
       { path: "/price-tracking/add", element: <PriceTrackingAddPage /> },
-      { path: "/price-tracking/:productId", element: <PriceHistoryPage /> },
+      { path: "/price-tracking/:trackingId", element: <PriceHistoryPage /> },
     ],
   },
 ]);

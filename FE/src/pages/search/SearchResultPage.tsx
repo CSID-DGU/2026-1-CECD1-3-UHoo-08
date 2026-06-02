@@ -85,10 +85,10 @@ export function SearchResultPage() {
               </p>
             </div>
 
-            <div className="mt-3 grid gap-4">
+            <div className="mt-3 grid grid-cols-2 gap-3">
               {products.map((product) => (
                 <button
-                  className="flex items-center gap-4 rounded-2xl border border-gray-100 bg-white p-4 text-left shadow-sm"
+                  className="flex flex-col rounded-2xl border border-gray-100 bg-white text-left shadow-sm overflow-hidden"
                   key={product.productId}
                   onClick={() => {
                     recordProductView(product.productId).catch(() => {});
@@ -96,21 +96,31 @@ export function SearchResultPage() {
                   }}
                   type="button"
                 >
-                  <div className="h-[72px] w-[72px] shrink-0 rounded-xl bg-gray-100" />
-                  <div className="min-w-0 flex-1">
-                    <p className="truncate text-body2 font-semibold text-gray-500">{product.name}</p>
-                    <p className="mt-0.5 text-caption text-gray-300">{product.brand}</p>
-                    {product.originalPrice != null && (
-                      <p className="mt-1 text-body2 text-gray-500">
-                        {product.originalPrice.toLocaleString()}원
-                      </p>
+                  <div className="h-[130px] w-full bg-primary-50">
+                    {product.imageUrl && (
+                      <img
+                        src={product.imageUrl}
+                        alt={product.name}
+                        className="h-full w-full object-cover"
+                      />
                     )}
                   </div>
-                  {product.matchScore > 0 && (
-                    <span className="shrink-0 rounded-full bg-primary-50 px-2.5 py-1 text-caption font-semibold text-primary-500">
-                      {product.matchScore}%
-                    </span>
-                  )}
+                  <div className="min-w-0 p-3">
+                    <p className="line-clamp-2 text-caption font-semibold text-gray-500 leading-snug">{product.name}</p>
+                    <p className="mt-0.5 truncate text-[11px] text-gray-300">{product.brand}</p>
+                    <div className="mt-2 flex items-center justify-between">
+                      {product.originalPrice != null ? (
+                        <p className="text-caption text-gray-500">
+                          {product.originalPrice.toLocaleString()}원
+                        </p>
+                      ) : <span />}
+                      {product.matchScore > 0 && (
+                        <span className="rounded-full bg-primary-50 px-2 py-0.5 text-[11px] font-semibold text-primary-500">
+                          {product.matchScore}%
+                        </span>
+                      )}
+                    </div>
+                  </div>
                 </button>
               ))}
             </div>

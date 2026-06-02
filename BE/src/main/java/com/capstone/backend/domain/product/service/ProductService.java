@@ -11,7 +11,7 @@ public interface ProductService {
     ProductDto.Response getProduct(Long productId);
     ProductSearchResponse searchByKeyword(String keyword);
     List<ProductDto.Response> getProductsByCategory(String category);
-    ProductDetailResponse getProductDetail(UUID productId);
+    ProductDetailResponse getProductDetail(UUID userId, UUID productId);
     void recordView(UUID userId, UUID productId);
     ProductSearchResponse getRecentlyViewed(UUID userId, int limit);
 }

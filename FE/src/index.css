@@ -50,6 +50,16 @@ button:active {
   transform: scale(0.97);
 }
 
+/* ── Scrollbar hide ───────────────────────────────────────────── */
+
+.scrollbar-none {
+  -ms-overflow-style: none;
+  scrollbar-width: none;
+}
+.scrollbar-none::-webkit-scrollbar {
+  display: none;
+}
+
 /* ── Page enter animation ─────────────────────────────────────── */
 
 @keyframes fadeInUp {

@@ -5,10 +5,20 @@ import { PageHeader } from "../../components/common/PageHeader";
 import AppLayout from "../../layouts/AppLayout";
 import { recommendationPriceRanges, recommendationReasons } from "../../mocks/recommendations";
 
+interface ExtraInfoState {
+  productId?: string;
+  productName?: string;
+  productBrand?: string;
+  productImageUrl?: string | null;
+}
+
 export function ExtraInfoPage() {
   const navigate = useNavigate();
-  const { state } = useLocation() as { state: { productId?: string } | null };
+  const { state } = useLocation() as { state: ExtraInfoState | null };
   const productId = state?.productId;
+  const productName = state?.productName;
+  const productBrand = state?.productBrand;
+  const productImageUrl = state?.productImageUrl;
 
   const [reason, setReason] = useState("데일리");
   const [priceRange, setPriceRange] = useState("balanced");
@@ -55,7 +65,25 @@ export function ExtraInfoPage() {
           }
         />
 
-        <div className="mt-7">
+        {/* 대상 상품 컨텍스트 */}
+        {productName && (
+          <div className="mt-5 flex items-center gap-3 rounded-xl border border-primary-100 bg-primary-50 p-3">
+            <div className="h-12 w-12 shrink-0 overflow-hidden rounded-xl bg-primary-100">
+              {productImageUrl ? (
+                <img src={productImageUrl} alt={productName} className="h-full w-full object-cover" />
+              ) : (
+                <div className="h-full w-full" />
+              )}
+            </div>
+            <div className="min-w-0">
+              <p className="text-caption text-primary-500">분석할 제품</p>
+              <p className="truncate text-body2 text-gray-500">{productName}</p>
+              {productBrand && <p className="text-caption text-gray-300">{productBrand}</p>}
+            </div>
+          </div>
+        )}
+
+        <div className="mt-5">
           <h1 className="text-h2 text-gray-500">
             더 정확한 추천을 위해
             <br />

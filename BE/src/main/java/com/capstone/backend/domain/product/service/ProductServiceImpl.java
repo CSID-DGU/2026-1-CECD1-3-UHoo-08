@@ -13,6 +13,8 @@ import com.capstone.backend.domain.product.repository.ProductFeatureRepository;
 import com.capstone.backend.domain.product.repository.ProductInsightRepository;
 import com.capstone.backend.domain.product.repository.ProductRepository;
 import com.capstone.backend.domain.product.repository.UserProductRepository;
+import com.capstone.backend.domain.wishlist.entity.Wishlist;
+import com.capstone.backend.domain.wishlist.repository.WishlistRepository;
 import com.fasterxml.jackson.core.type.TypeReference;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import lombok.RequiredArgsConstructor;
@@ -26,6 +28,7 @@ import java.time.LocalDateTime;
 import java.util.List;
 import java.util.Map;
 import java.util.Objects;
+import java.util.Optional;
 import java.util.UUID;
 import java.util.function.Function;
 import java.util.stream.Collectors;
@@ -39,6 +42,7 @@ public class ProductServiceImpl implements ProductService {
     private final ProductFeatureRepository productFeatureRepository;
     private final ProductInsightRepository productInsightRepository;
     private final UserProductRepository userProductRepository;
+    private final WishlistRepository wishlistRepository;
     private final ObjectMapper objectMapper;
 
     @Override
@@ -73,7 +77,6 @@ public class ProductServiceImpl implements ProductService {
     @Override
     @Transactional
     public void recordView(UUID userId, UUID productId) {
-        // 기존 VIEWED 기록 삭제 후 재삽입 (최신 시각으로 갱신, 중복 방지)
         userProductRepository.deleteByUserIdAndProductIdAndUsageType(userId, productId, "VIEWED");
         userProductRepository.save(UserProduct.builder()
                 .userId(userId)
@@ -111,7 +114,7 @@ public class ProductServiceImpl implements ProductService {
 
     @Override
     @Transactional(readOnly = true)
-    public ProductDetailResponse getProductDetail(UUID productId) {
+    public ProductDetailResponse getProductDetail(UUID userId, UUID productId) {
         Product product = productRepository.findById(productId)
                 .orElseThrow(() -> new BusinessException(ErrorCode.PRODUCT_NOT_FOUND));
 
@@ -128,6 +131,17 @@ public class ProductServiceImpl implements ProductService {
             }
         }
 
+        List<ProductDetailResponse.StoreInfo> stores = null;
+        if (insight != null && insight.getStores() != null) {
+            try {
+                stores = objectMapper.readValue(insight.getStores(), new TypeReference<List<ProductDetailResponse.StoreInfo>>() {});
+            } catch (Exception e) {
+                log.warn("stores 파싱 실패 productId={}: {}", productId, e.getMessage());
+            }
+        }
+
+        Optional<Wishlist> wishlist = wishlistRepository.findByUserIdAndProductId(userId, productId);
+
         return ProductDetailResponse.builder()
                 .productId(product.getId())
                 .name(product.getName())
@@ -140,6 +154,9 @@ public class ProductServiceImpl implements ProductService {
                 .reviewSummary(insight != null ? insight.getReviewSummary() : null)
                 .averageScore(insight != null ? insight.getAverageScore() : null)
                 .reviewCount(insight != null ? insight.getReviewCount() : null)
+                .stores(stores)
+                .wishlisted(wishlist.isPresent())
+                .wishlistId(wishlist.map(Wishlist::getId).orElse(null))
                 .build();
     }
 }

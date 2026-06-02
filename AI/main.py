@@ -3,6 +3,7 @@ from fastapi.middleware.cors import CORSMiddleware
 
 from api.internal.recognize_router import router as recognize_router
 from api.internal.agent_router import router as agent_router
+from api.search_router import router as search_router
 
 app = FastAPI(title="Cosmetic AI Service")
 
@@ -16,6 +17,7 @@ app.add_middleware(
 
 app.include_router(recognize_router, prefix="/internal")
 app.include_router(agent_router, prefix="/internal")
+app.include_router(search_router, prefix="/internal")
 
 
 @app.on_event("startup")

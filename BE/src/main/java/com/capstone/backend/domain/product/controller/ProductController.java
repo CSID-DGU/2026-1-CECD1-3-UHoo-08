@@ -46,7 +46,7 @@ public class ProductController {
     public ResponseEntity<ApiResponse<ProductDetailResponse>> getProductDetail(
             @AuthenticationPrincipal UUID userId,
             @PathVariable UUID productId) {
-        return ResponseEntity.ok(ApiResponse.success(productService.getProductDetail(productId)));
+        return ResponseEntity.ok(ApiResponse.success(productService.getProductDetail(userId, productId)));
     }
 
     @Operation(
