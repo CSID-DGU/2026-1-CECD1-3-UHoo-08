@@ -8,7 +8,7 @@ function AppLayout({ children, className = "" }: AppLayoutProps) {
     <div className="min-h-screen bg-gray-100">
       <main
         className={`
-          mx-auto min-h-screen w-full max-w-[430px] bg-white
+          mx-auto min-h-screen w-full max-w-[430px] bg-white page-enter
           ${className}
         `}
       >

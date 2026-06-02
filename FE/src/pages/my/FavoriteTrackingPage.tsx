@@ -133,7 +133,7 @@ export function FavoriteTrackingPage() {
                       key={item.trackingId}
                       item={item}
                       onDelete={handleDeleteTracking}
-                      onNavigate={() => navigate(`/price-tracking/${item.product.id}`)}
+                      onNavigate={() => navigate(`/price-tracking/${item.trackingId}`)}
                     />
                   ))}
                 </div>
@@ -207,7 +207,11 @@ function AchievedCard({
 }) {
   return (
     <article className="flex items-center gap-3 rounded-xl border border-primary-500 bg-white p-3">
-      <div className="h-[60px] w-[60px] shrink-0 rounded-xl bg-primary-50" />
+      <div className="h-[60px] w-[60px] shrink-0 overflow-hidden rounded-xl bg-primary-50">
+        {item.product.imageUrl && (
+          <img src={item.product.imageUrl} alt={item.product.name} className="h-full w-full object-cover" />
+        )}
+      </div>
       <div className="min-w-0 flex-1">
         <p className="truncate text-body2 text-gray-500">{item.product.name}</p>
         <p className="text-caption text-gray-300">목표가 {item.targetPrice.toLocaleString()}원 달성!</p>
@@ -250,10 +254,14 @@ function TrackingCard({
     <article className="rounded-xl border border-gray-200 bg-white p-4">
       <div className="flex items-start gap-4">
         <button
-          className="h-[60px] w-[60px] shrink-0 rounded-xl bg-primary-50"
+          className="h-[60px] w-[60px] shrink-0 overflow-hidden rounded-xl bg-primary-50"
           onClick={onNavigate}
           type="button"
-        />
+        >
+          {item.product.imageUrl && (
+            <img src={item.product.imageUrl} alt={item.product.name} className="h-full w-full object-cover" />
+          )}
+        </button>
         <div className="min-w-0 flex-1">
           <div className="flex items-start justify-between gap-2">
             <button

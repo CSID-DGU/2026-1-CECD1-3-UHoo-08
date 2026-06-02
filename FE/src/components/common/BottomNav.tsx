@@ -68,7 +68,7 @@ export function BottomNav() {
       </button>
 
       <button
-        className={`mx-auto grid h-14 w-14 place-items-center rounded-full shadow-md ${centerActive ? "bg-primary-600" : "bg-primary-500"} text-white`}
+        className={`mx-auto grid h-14 w-14 cursor-pointer place-items-center rounded-full shadow-md ${centerActive ? "bg-primary-600" : "bg-primary-500"} text-white`}
         onClick={() => navigate("/recommendation/lookup")}
         type="button"
         aria-label="상품 조회"

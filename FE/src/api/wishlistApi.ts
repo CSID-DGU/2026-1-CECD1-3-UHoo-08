@@ -5,14 +5,21 @@ interface ApiResponse<T> {
   data: T;
 }
 
-export interface WishlistItem {
-  wishlistId: string;
-  productId: string;
+export interface WishlistProduct {
+  id: string;
   name: string;
   brand: string;
   imageUrl: string | null;
-  price: number | null;
+  currentPrice: number | null;
+  lowestPrice: number | null;
+  category: string;
+}
+
+export interface WishlistItem {
+  wishlistId: string;
+  product: WishlistProduct;
   matchScore: number | null;
+  createdAt: string;
 }
 
 export interface WishlistListData {

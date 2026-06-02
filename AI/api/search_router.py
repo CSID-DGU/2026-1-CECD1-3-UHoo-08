@@ -32,7 +32,7 @@ class ProductResult(BaseModel):
 
 class SearchResponse(BaseModel):
     query: str
-    category: str""
+    category: str
     products: list[ProductResult]
 
 
@@ -40,12 +40,12 @@ class SearchResponse(BaseModel):
     "",
     response_model=SearchResponse,
     summary="자연어 상품 검색",
-    description="자연어 쿼리를 Qwen으로 분석해 카테고리 + feature 추출 후 DB 유사도 검색.",
+    description="자연어 쿼리를 Qwen으로 분석해 bge-m3 임베딩 후 pgvector 유사도 검색.",
 )
 async def search(body: SearchRequest) -> SearchResponse:
     if not body.query.strip():
         raise HTTPException(status_code=400, detail="검색어를 입력해주세요")
-    
+
     result = await run_search(body.query)
 
     return SearchResponse(

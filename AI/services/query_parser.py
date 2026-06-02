@@ -38,7 +38,7 @@ async def parse_query(query: str) -> ParsedQuery:
 
     if not result or not isinstance(result, dict):
         return ParsedQuery(category=None, features={})
-    
+
     category = result.get("category")
     if category not in _VALID_CATEGORIES:
         category = None

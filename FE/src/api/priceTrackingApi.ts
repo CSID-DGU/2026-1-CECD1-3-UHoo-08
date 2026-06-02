@@ -55,6 +55,33 @@ export interface PriceTrackingCreateResponse {
   createdAt: string;
 }
 
+export interface PriceTrackingDetail {
+  trackingId: string;
+  product: {
+    id: string;
+    name: string;
+    brand: string;
+    imageUrl: string | null;
+  };
+  stats: {
+    originalPrice: number | null;
+    currentLowestPrice: number | null;
+    historicalLowest: number | null;
+    changePercent: number | null;
+    changeAmount: number | null;
+  };
+  targetPrice: number;
+  alertEnabled: boolean;
+  period: string;
+  priceHistory: { date: string; price: number }[];
+  stores: {
+    storeName: string;
+    price: number;
+    isLowest: boolean;
+    purchaseUrl: string | null;
+  }[];
+}
+
 // ── API 함수 ─────────────────────────────────────────────────────────────
 
 export const getTrackings = () =>
@@ -74,6 +101,9 @@ export const updateTracking = (
   trackingId: string,
   body: { targetPrice?: number; alertEnabled?: boolean },
 ) => api.patch<ApiResponse<unknown>>(`/price-trackings/${trackingId}`, body);
+
+export const getPriceTrackingDetail = (trackingId: string, period: string) =>
+  api.get<ApiResponse<PriceTrackingDetail>>(`/price-trackings/${trackingId}?period=${period}`);
 
 export const updateAlertSettings = (targetPriceAlert: boolean, weeklyReport: boolean) =>
   api.patch<ApiResponse<unknown>>("/price-trackings/alert-settings", {

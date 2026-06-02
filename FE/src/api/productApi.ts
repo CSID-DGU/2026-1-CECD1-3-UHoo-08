@@ -5,6 +5,12 @@ interface ApiResponse<T> {
   data: T;
 }
 
+export interface StoreInfo {
+  storeName: string;
+  price: number;
+  isLowest: boolean;
+}
+
 export interface ProductDetail {
   productId: string;
   name: string;
@@ -17,6 +23,9 @@ export interface ProductDetail {
   reviewSummary: string | null;
   averageScore: number | null;
   reviewCount: number | null;
+  stores: StoreInfo[] | null;
+  wishlisted: boolean;
+  wishlistId: string | null;
 }
 
 export const getProductDetail = (productId: string) =>
