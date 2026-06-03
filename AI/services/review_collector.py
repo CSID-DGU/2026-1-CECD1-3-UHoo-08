@@ -73,7 +73,7 @@ def _fetch_products(category: str, limit: int) -> List[Dict[str, Any]]:
 
 
 def _collect_for_product(
-    client, product: Dict[str, Any], per_product: int
+    product: Dict[str, Any], per_product: int
 ) -> Dict[str, Any]:
     """단일 상품의 실제 리뷰 수집 후 reviews 테이블에 저장."""
     brand = product["brand"]
@@ -81,6 +81,7 @@ def _collect_for_product(
     product_id = product["product_id"]
 
     try:
+        client = genai.Client(api_key=settings.GEMINI_API_KEY)
         response = client.models.generate_content(
             model=settings.GEMINI_MODEL,
             contents=_make_review_prompt(brand, name, per_product),
@@ -126,15 +127,13 @@ def collect_reviews(category: str, limit: int = 10, per_product: int = 8) -> Dic
     if not products:
         return {"category": category, "saved": 0, "skipped": 0, "errors": [], "results": []}
 
-    client = genai.Client(api_key=settings.GEMINI_API_KEY)
-
     saved_reviews, skipped, errors = 0, 0, []
     results: List[Dict[str, Any]] = []
 
     # 병렬 처리 (동시에 상품 5개 처리)
     with ThreadPoolExecutor(max_workers=5) as executor:
         futures = {
-            executor.submit(_collect_for_product, client, p, per_product): p
+            executor.submit(_collect_for_product, p, per_product): p
             for p in products
         }
         for future in as_completed(futures):
