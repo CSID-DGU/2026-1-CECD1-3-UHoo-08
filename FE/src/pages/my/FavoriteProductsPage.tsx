@@ -10,7 +10,9 @@ export function FavoriteProductsPage() {
 
   return (
     <AppLayout>
-      <section className="min-h-screen px-6 pb-8 pt-10">
+      <div className="flex h-screen flex-col overflow-hidden">
+        <div className="flex-1 overflow-y-auto scrollbar-none">
+      <section className="px-6 pb-8 pt-10">
         <PageHeader title="관심 제품" onBack={() => navigate(-1)} rightSlot={<button className="text-body2 text-primary-500" type="button">정렬</button>} />
 
         <section className="mt-5 rounded-xl bg-primary-50 p-4">
@@ -32,6 +34,8 @@ export function FavoriteProductsPage() {
           ))}
         </div>
       </section>
+        </div>
+      </div>
     </AppLayout>
   );
 }

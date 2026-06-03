@@ -15,7 +15,7 @@ class TestQueryParser:
         mock_get.return_value = llm
 
         assert await classify_intent("라네즈 네오쿠션") == "PRODUCT_NAME"
-        
+
     @pytest.mark.asyncio
     @patch("services.query_parser.get_qwen_llm")
     async def test_recommendation_intent(self, mock_get):
@@ -55,7 +55,7 @@ class TestQueryParser:
         from services.query_parser import classify_intent
 
         assert await classify_intent("   ") == "RECOMMENDATION"
-        
+
     @pytest.mark.asyncio
     @patch("services.query_parser.get_qwen_llm")
     async def test_valid_parse(self, mock_get):

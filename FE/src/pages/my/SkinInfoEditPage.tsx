@@ -96,10 +96,11 @@ export function SkinInfoEditPage() {
   return (
     <AppLayout>
       <div
-        className="min-h-screen"
+        className="flex h-screen flex-col overflow-hidden"
         style={{ background: "linear-gradient(160deg, #eef4fc 0%, #f8fbff 55%, #e8f1fb 100%)" }}
       >
-        <section className="flex min-h-screen flex-col px-5 pb-8 pt-10">
+        <div className="flex-1 overflow-y-auto scrollbar-none">
+        <section className="flex flex-col px-5 pb-8 pt-10">
           <PageHeader title="" onBack={() => navigate(-1)} />
 
           {/* 헤더 카드 */}
@@ -260,6 +261,7 @@ export function SkinInfoEditPage() {
             </PrimaryButton>
           </div>
         </section>
+        </div>
       </div>
     </AppLayout>
   );

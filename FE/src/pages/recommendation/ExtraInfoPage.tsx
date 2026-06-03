@@ -49,7 +49,9 @@ export function ExtraInfoPage() {
 
   return (
     <AppLayout>
-      <section className="flex min-h-screen flex-col px-6 pb-6 pt-10">
+      <div className="flex h-screen flex-col overflow-hidden">
+        <div className="flex-1 overflow-y-auto scrollbar-none">
+      <section className="flex flex-col px-6 pb-6 pt-10">
         <PageHeader
           title="추가 정보 입력"
           onBack={() => navigate(-1)}
@@ -172,6 +174,8 @@ export function ExtraInfoPage() {
           </p>
         )}
       </section>
+        </div>
+      </div>
     </AppLayout>
   );
 }

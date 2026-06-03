@@ -78,7 +78,9 @@ export function NotificationPage() {
 
   return (
     <AppLayout>
-      <section className="min-h-screen px-6 pb-20 pt-10">
+      <div className="flex h-screen flex-col overflow-hidden">
+        <div className="flex-1 overflow-y-auto scrollbar-none">
+        <section className="px-6 pb-8 pt-10">
         <PageHeader
           title="알림"
           onBack={() => navigate(-1)}
@@ -152,7 +154,9 @@ export function NotificationPage() {
             MY › 앱 설정 › 알림
           </button>
         </div>
-      </section>
+        </section>
+        </div>
+      </div>
     </AppLayout>
   );
 }

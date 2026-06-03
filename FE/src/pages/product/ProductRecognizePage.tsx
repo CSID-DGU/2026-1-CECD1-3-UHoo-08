@@ -20,7 +20,9 @@ export function ProductRecognizePage() {
 
   return (
     <AppLayout>
-      <section className="flex min-h-screen flex-col px-6 pb-8 pt-10">
+      <div className="flex h-screen flex-col overflow-hidden">
+        <div className="flex-1 overflow-y-auto scrollbar-none">
+      <section className="flex flex-col px-6 pb-8 pt-10">
         <PageHeader title="제품 확인" onBack={() => navigate(-1)} />
 
         <div className="mt-7">
@@ -72,6 +74,8 @@ export function ProductRecognizePage() {
           </button>
         </div>
       </section>
+        </div>
+      </div>
     </AppLayout>
   );
 }

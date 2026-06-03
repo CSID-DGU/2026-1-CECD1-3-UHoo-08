@@ -63,6 +63,20 @@ export const getRecentlyViewed = (limit = 10) =>
     `/products/recently-viewed?limit=${limit}`,
   );
 
+export interface SimilarUserProduct {
+  id: string;
+  name: string;
+  brand: string;
+  imageUrl?: string | null;
+  originalPrice?: number | null;
+  satisfactionPercent?: number | null;
+}
+
+export const getSimilarUserProducts = (limit = 10) =>
+  api.get<ApiResponse<{ products: SimilarUserProduct[] }>>(
+    `/products/similar-users?limit=${limit}`,
+  );
+
 // ── AI 자연어 검색 (FastAPI) ─────────────────────────────────────────────────
 
 export interface AiSearchProduct {

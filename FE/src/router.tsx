@@ -53,6 +53,7 @@ export const router = createBrowserRouter([
       { path: "/notifications", element: <NotificationPage /> },
       { path: "/recommendation/lookup", element: <ProductLookupPage /> },
       { path: "/recommendation/nfc-scan", element: <NfcScanPage /> },
+      { path: "/recommendation/nfc-scan/demo", element: <NfcScanPage /> },
       { path: "/recommendation/extra-info", element: <ExtraInfoPage /> },
       { path: "/recommendation/loading", element: <RecommendationLoadingPage /> },
       { path: "/recommendation/result", element: <RecommendationResultPage /> },

@@ -5,7 +5,7 @@
 - PRODUCT_NAME   : products 이름 ILIKE 직접 조회 (벡터 X)
 - RECOMMENDATION : 임베딩 + pgvector 추천 파이프라인
 
-FE는 POST /search로 호출한다 (reverse proxy를 통해 /ai/search로 노출).
+BE Spring이 POST /internal/search로 호출한다.
 """
 from typing import Optional
 

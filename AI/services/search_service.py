@@ -33,7 +33,7 @@ class SearchResultProduct(TypedDict):
 
 class SearchResult(TypedDict):
     query: str
-    intent: str # PRODUCT_NAME | RECOMMENDATION
+    intent: str  # PRODUCT_NAME | RECOMMENDATION
     category: Optional[str]
     products: List[SearchResultProduct]
 
@@ -50,7 +50,7 @@ async def run_search(query: str, top_k: int = 20) -> SearchResult:
         return SearchResult(
             query=query, intent="RECOMMENDATION", category=None, products=[]
         )
-    
+
     # 1. 의도 분류
     intent = await classify_intent(query)
 
@@ -85,14 +85,13 @@ async def _search_by_name(query: str, top_k: int) -> SearchResult:
 
 async def _search_by_recommendation(query: str, top_k: int) -> SearchResult:
     """
-    2-B. (RECOMMENDATION) 흐름:
+    RECOMMENDATION 흐름:
       1. query_parser: 쿼리 → category + features
       2. feature_text_builder: features → 자연어 (실패 시 원본 쿼리)
       3. embedding_service: 자연어 → query_vector
-      4. match_products: query_vector로 후보 검색 (제외 없음)
+      4. match_products: query_vector로 후보 검색
       5. product_reader: 메타 조인 + matchScore(=similarity X 100)
     """
-
     # 1. 쿼리 파싱
     parsed = await parse_query(query)
     category = parsed["category"]
@@ -111,7 +110,7 @@ async def _search_by_recommendation(query: str, top_k: int) -> SearchResult:
     emb = EmbeddingService.get()
     query_vector = await asyncio.to_thread(emb.embed, search_text)
 
-    # 4. 후보 검색 (base_product 없으니 exclude 빈 리스트)
+    # 4. 후보 검색
     matches = await asyncio.to_thread(
         match_products, query_vector, category, top_k, []
     )

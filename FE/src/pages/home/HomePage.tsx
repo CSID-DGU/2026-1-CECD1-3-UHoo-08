@@ -1,9 +1,9 @@
 import { useEffect, useState } from "react";
 import { useNavigate } from "react-router-dom";
-import { type ProductSearchItem, getRecentlyViewed } from "../../api/productApi";
+import { type ProductSearchItem, type SimilarUserProduct, getSimilarUserProducts } from "../../api/productApi";
 import { getUnreadCount } from "../../api/notificationApi";
 import { getTrackings } from "../../api/priceTrackingApi";
-import { TrendingUp } from "lucide-react";
+import { TrendingUp, Users } from "lucide-react";
 import { BottomNav } from "../../components/common/BottomNav";
 import { SearchField } from "../../components/common/SearchField";
 import { WishlistButton } from "../../components/common/WishlistButton";
@@ -15,7 +15,7 @@ export function HomePage() {
   const navigate = useNavigate();
   const [hasUnread, setHasUnread] = useState(false);
   const [lastSearch, setLastSearch] = useState<LastSearch | null>(null);
-  const [recentlyViewed, setRecentlyViewed] = useState<ProductSearchItem[]>([]);
+  const [similarUserProducts, setSimilarUserProducts] = useState<SimilarUserProduct[]>([]);
   const [trackingCount, setTrackingCount] = useState<number | null>(null);
 
   useEffect(() => {
@@ -25,9 +25,9 @@ export function HomePage() {
 
     setLastSearch(getLastSearch());
 
-    getRecentlyViewed(10)
-      .then((res) => setRecentlyViewed(res.data.products))
-      .catch(() => setRecentlyViewed([]));
+    getSimilarUserProducts(10)
+      .then((res) => setSimilarUserProducts(res.data.products))
+      .catch(() => setSimilarUserProducts([]));
 
     getTrackings()
       .then((res) => setTrackingCount(res.data?.summary?.totalTracking ?? 0))
@@ -189,30 +189,58 @@ export function HomePage() {
                 </p>
               </section>
 
-              {recentlyViewed.length > 0 && (
-                <section className="mt-4">
-                  <h2 className="text-body1 text-gray-500">최근 본 상품</h2>
-                  <div className="mt-3 flex gap-3 overflow-x-auto scrollbar-none">
-                    {recentlyViewed.map((product) => (
+              {/* 나와 비슷한 사용자들이 사용하는 제품 */}
+              <section className="mt-4">
+                <div className="mb-3 flex items-center gap-2">
+                  <span
+                    className="grid h-7 w-7 place-items-center rounded-full"
+                    style={{ background: "linear-gradient(135deg, #DBE6F8, #9DBFEE)" }}
+                  >
+                    <Users className="h-4 w-4 text-primary-600" strokeWidth={1.8} />
+                  </span>
+                  <h2 className="text-body1 text-gray-500">나와 비슷한 사용자들이 사용하는 제품</h2>
+                </div>
+
+                {similarUserProducts.length > 0 ? (
+                  <div className="flex gap-3 overflow-x-auto pb-1 scrollbar-none">
+                    {similarUserProducts.map((product) => (
                       <button
-                        className="min-w-[96px] rounded-xl border border-gray-100 bg-white p-2 text-center"
-                        style={{ boxShadow: "0 2px 8px rgba(45,125,210,0.06)" }}
-                        key={String(product.id)}
+                        className="min-w-[154px] rounded-2xl border border-gray-100 bg-white p-3 text-left"
+                        style={{ boxShadow: "0 2px 12px rgba(45,125,210,0.08)" }}
+                        key={product.id}
                         onClick={() => navigate(`/product/${product.id}`)}
                         type="button"
                       >
-                        <div className="h-[70px] overflow-hidden rounded-lg bg-gray-100">
+                        <div className="h-[94px] overflow-hidden rounded-xl bg-primary-50">
                           {product.imageUrl && (
                             <img src={product.imageUrl} alt={product.name} className="h-full w-full object-cover" />
                           )}
                         </div>
-                        <p className="mt-2 truncate text-caption text-gray-500">{product.name}</p>
-                        <p className="truncate text-[10px] text-gray-300">{product.brand}</p>
+                        <p className="mt-3 truncate text-body2 text-gray-500">{product.name}</p>
+                        <div className="mt-2 flex items-center justify-between">
+                          <span className="truncate text-caption text-gray-300">{product.brand}</span>
+                          {product.satisfactionPercent != null && (
+                            <span
+                              className="shrink-0 rounded-full px-2 py-0.5 text-caption"
+                              style={{ background: "#DBE6F8", color: "#3565B5" }}
+                            >
+                              {product.satisfactionPercent}%
+                            </span>
+                          )}
+                        </div>
                       </button>
                     ))}
                   </div>
-                </section>
-              )}
+                ) : (
+                  <div
+                    className="flex h-[120px] flex-col items-center justify-center gap-2 rounded-2xl"
+                    style={{ background: "#F0F5FD", border: "1px dashed #C5DDF5" }}
+                  >
+                    <Users className="h-7 w-7 text-primary-300" strokeWidth={1.5} />
+                    <p className="text-caption text-gray-300">데이터를 분석 중이에요</p>
+                  </div>
+                )}
+              </section>
             </div>
           </div>
         </div>
@@ -220,7 +248,7 @@ export function HomePage() {
 
       {/* 가격 추적 플로팅 바 — 고정 */}
       {trackingCount !== null && (
-        <div className="fixed bottom-[72px] left-1/2 z-30 w-full max-w-[430px] -translate-x-1/2 px-4">
+        <div className="fixed bottom-[84px] left-1/2 z-30 w-full max-w-[430px] -translate-x-1/2 px-4">
           <button
             className="relative flex w-full items-center gap-3 overflow-hidden rounded-2xl px-5 py-4"
             style={{

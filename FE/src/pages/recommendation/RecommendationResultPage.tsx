@@ -45,9 +45,13 @@ export function RecommendationResultPage() {
   if (loading) {
     return (
       <AppLayout>
-        <section className="flex min-h-screen items-center justify-center">
+        <div className="flex h-screen flex-col overflow-hidden">
+          <div className="flex-1 overflow-y-auto scrollbar-none">
+        <section className="flex items-center justify-center">
           <div className="h-8 w-8 animate-spin rounded-full border-2 border-primary-200 border-t-primary-500" />
         </section>
+          </div>
+        </div>
       </AppLayout>
     );
   }
@@ -56,7 +60,9 @@ export function RecommendationResultPage() {
 
   return (
     <AppLayout>
-      <section className="min-h-screen overflow-hidden px-6 pb-6 pt-10">
+      <div className="flex h-screen flex-col overflow-hidden">
+        <div className="flex-1 overflow-y-auto scrollbar-none">
+      <section className="overflow-hidden px-6 pb-6 pt-10">
         <PageHeader title="추천 결과 보고서" onBack={() => navigate(-1)} />
 
         {/* 매칭 점수 카드 */}
@@ -186,6 +192,8 @@ export function RecommendationResultPage() {
           홈으로 돌아가기
         </button>
       </section>
+        </div>
+      </div>
     </AppLayout>
   );
 }

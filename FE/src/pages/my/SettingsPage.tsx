@@ -57,7 +57,9 @@ export function SettingsPage() {
 
   return (
     <AppLayout>
-      <section className="min-h-screen px-6 pb-10 pt-10">
+      <div className="flex h-screen flex-col overflow-hidden">
+        <div className="flex-1 overflow-y-auto scrollbar-none">
+        <section className="px-6 pb-8 pt-10">
         <PageHeader title="앱 설정 및 고객센터" onBack={() => navigate(-1)} />
 
         {/* 알림 설정 */}
@@ -131,7 +133,9 @@ export function SettingsPage() {
         >
           로그아웃
         </button>
-      </section>
+        </section>
+        </div>
+      </div>
     </AppLayout>
   );
 }

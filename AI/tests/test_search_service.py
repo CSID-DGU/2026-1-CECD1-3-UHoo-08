@@ -126,7 +126,6 @@ class TestSearchServiceRecommendation:
         mock_metas.return_value = {"p1": _meta("p1", "토너", "브랜드")}
 
         result = await run_search("촉촉한 거 추천")
-        # match_products에 category=None 전달됐는지
         args = mock_match.call_args.args
         assert args[1] is None
         assert len(result["products"]) == 1

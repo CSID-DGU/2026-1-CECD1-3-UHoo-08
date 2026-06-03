@@ -1,5 +1,6 @@
 import { useEffect, useState } from "react";
-import { useNavigate } from "react-router-dom";
+import { useLocation, useNavigate } from "react-router-dom";
+import { AlertTriangle } from "lucide-react";
 import { recognizeProduct } from "../../api/productApi";
 import { PageHeader } from "../../components/common/PageHeader";
 import AppLayout from "../../layouts/AppLayout";
@@ -8,10 +9,18 @@ type ScanState = "idle" | "scanning" | "reading" | "error";
 
 export function NfcScanPage() {
   const navigate = useNavigate();
-  const [state, setState] = useState<ScanState>("idle");
+  const { pathname } = useLocation();
+  const isDemo = pathname.endsWith("/demo");
+
+  const [state, setState] = useState<ScanState>(isDemo ? "scanning" : "idle");
   const [errorMsg, setErrorMsg] = useState("");
 
   async function startNfcScan() {
+    if (isDemo) {
+      setState("scanning");
+      return;
+    }
+
     if (!("NDEFReader" in window)) {
       setErrorMsg("이 기기는 NFC를 지원하지 않아요.");
       setState("error");
@@ -61,62 +70,81 @@ export function NfcScanPage() {
 
   return (
     <AppLayout>
-      <section className="flex min-h-screen flex-col items-center px-6 pb-8 pt-10">
-        <div className="w-full">
-          <PageHeader title="NFC 태그 조회" onBack={() => navigate(-1)} />
-        </div>
+      <div className="flex h-screen flex-col overflow-hidden">
+        <div className="flex-1 overflow-y-auto scrollbar-none">
+          <section className="flex flex-col items-center px-6 pb-8 pt-10">
+            <div className="w-full">
+              <PageHeader title="NFC 태그 조회" onBack={() => navigate(-1)} />
+            </div>
 
-        <div className="mt-14 flex flex-1 flex-col items-center justify-center text-center">
-          {state !== "error" ? (
-            <>
-              <div className="relative flex h-40 w-40 items-center justify-center">
-                <div
-                  className={`absolute inset-0 rounded-full border-4 border-primary-300 ${
-                    state === "scanning" ? "animate-ping opacity-30" : "opacity-0"
-                  }`}
-                />
-                <div className="flex h-28 w-28 items-center justify-center rounded-full bg-primary-50">
-                  <svg className="h-12 w-12 text-primary-500" fill="none" viewBox="0 0 24 24">
-                    <path
-                      d="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm0 3a7 7 0 110 14A7 7 0 0112 5zm0 2a5 5 0 100 10A5 5 0 0012 7zm0 2a3 3 0 110 6 3 3 0 010-6z"
-                      fill="currentColor"
+            {isDemo && (
+              <div className="mt-4 w-full rounded-xl bg-primary-50 px-4 py-2">
+                <p className="text-caption text-primary-500">데모 모드 — 실제 NFC 태그를 읽지 않아요</p>
+              </div>
+            )}
+
+            <div className="mt-14 flex flex-1 flex-col items-center justify-center text-center">
+              {state !== "error" ? (
+                <>
+                  <div className="relative flex h-40 w-40 items-center justify-center">
+                    <div
+                      className={`absolute inset-0 rounded-full border-4 border-primary-300 ${
+                        state === "scanning" ? "animate-ping opacity-30" : "opacity-0"
+                      }`}
                     />
-                  </svg>
-                </div>
-              </div>
-              <h2 className="mt-8 text-h3 text-gray-500">
-                {state === "idle" && "NFC 스캔 준비 중..."}
-                {state === "scanning" && "제품 태그를 가져다 대세요"}
-                {state === "reading" && "제품 정보를 읽는 중..."}
-              </h2>
-              <p className="mt-3 text-body2 text-gray-300">
-                {state === "scanning"
-                  ? "스마트폰 후면을 제품 NFC 태그에 가까이 대주세요"
-                  : "잠시만 기다려주세요"}
-              </p>
-            </>
-          ) : (
-            <>
-              <div className="flex h-28 w-28 items-center justify-center rounded-full bg-gray-100">
-                <span className="text-[40px]">⚠️</span>
-              </div>
-              <h2 className="mt-8 text-h3 text-gray-500">스캔 실패</h2>
-              <p className="mt-3 text-body2 text-gray-300">{errorMsg}</p>
-              <button
-                className="mt-8 h-12 rounded-xl bg-primary-500 px-8 text-body2 text-white"
-                onClick={() => {
-                  setState("idle");
-                  setErrorMsg("");
-                  startNfcScan();
-                }}
-                type="button"
-              >
-                다시 시도
-              </button>
-            </>
-          )}
+                    <div
+                      className="flex h-28 w-28 items-center justify-center rounded-full"
+                      style={{
+                        background: "linear-gradient(135deg, #DBE6F8, #9DBFEE)",
+                        boxShadow: "0 8px 32px rgba(91,143,217,0.2)",
+                      }}
+                    >
+                      <svg className="h-12 w-12 text-primary-600" fill="none" viewBox="0 0 24 24">
+                        <path
+                          d="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm0 3a7 7 0 110 14A7 7 0 0112 5zm0 2a5 5 0 100 10A5 5 0 0012 7zm0 2a3 3 0 110 6 3 3 0 010-6z"
+                          fill="currentColor"
+                        />
+                      </svg>
+                    </div>
+                  </div>
+                  <h2 className="mt-8 text-h3 text-gray-500">
+                    {state === "idle" && "NFC 스캔 준비 중..."}
+                    {state === "scanning" && "제품 태그를 가져다 대세요"}
+                    {state === "reading" && "제품 정보를 읽는 중..."}
+                  </h2>
+                  <p className="mt-3 text-body2 text-gray-300">
+                    {state === "scanning"
+                      ? "스마트폰 후면을 제품 NFC 태그에 가까이 대주세요"
+                      : "잠시만 기다려주세요"}
+                  </p>
+                </>
+              ) : (
+                <>
+                  <div
+                    className="flex h-28 w-28 items-center justify-center rounded-full"
+                    style={{ background: "#FEF2F2" }}
+                  >
+                    <AlertTriangle className="h-12 w-12 text-red-400" strokeWidth={1.5} />
+                  </div>
+                  <h2 className="mt-8 text-h3 text-gray-500">스캔 실패</h2>
+                  <p className="mt-3 text-body2 text-gray-300">{errorMsg}</p>
+                  <button
+                    className="mt-8 h-12 rounded-xl bg-primary-500 px-8 text-body2 text-white"
+                    onClick={() => {
+                      setState("idle");
+                      setErrorMsg("");
+                      startNfcScan();
+                    }}
+                    type="button"
+                  >
+                    다시 시도
+                  </button>
+                </>
+              )}
+            </div>
+          </section>
         </div>
-      </section>
+      </div>
     </AppLayout>
   );
 }
