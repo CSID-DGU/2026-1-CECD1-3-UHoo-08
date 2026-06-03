@@ -9,8 +9,7 @@
     python -m scripts.reembed_reviews
     python -m scripts.reembed_reviews --batch 16
 
-전제: 리뷰 원본 테이블(raw_reviews 가정)에 데이터가 있어야 한다.
-원본 테이블 구조가 확정되면 _fetch_raw_reviews를 맞춰 수정.
+전제: 리뷰 원본 테이블(reviews)에 데이터가 있어야 한다.
 """
 from __future__ import annotations
 
@@ -28,19 +27,14 @@ def _text_hash(product_id: str, text: str) -> str:
     return hashlib.sha256(f"{product_id}::{text}".encode("utf-8")).hexdigest()
 
 
-def _fetch_raw_reviews() -> List[Dict[str, Any]]:
-    """
-    리뷰 원본 조회.
-
-    원본 테이블 스키마가 확정되지 않았으므로 raw_reviews(product_id, content, source)를
-    가정. 실제 스키마 확정 시 본 함수만 수정하면 됨.
-    """
+def _fetch_reviews() -> List[Dict[str, Any]]:
+    """reviews 테이블에서 원본 리뷰 조회. review_embeddings의 단일 소스."""
     sb = get_supabase()
     try:
-        res = sb.table("raw_reviews").select("product_id, content, source").execute()
+        res = sb.table("reviews").select("product_id, content, source").execute()
         return res.data or []
     except Exception as e:
-        print(f"raw_reviews 조회 실패 (테이블 미존재 가능): {e}")
+        print(f"reviews 조회 실패 (테이블 미존재 가능): {e}")
         return []
 
 
@@ -56,7 +50,7 @@ def _existing_hashes() -> set:
 
 def reembed_reviews(batch_size: int = 32) -> int:
     """리뷰 청크 임베딩 후 INSERT. 적재 건수 반환."""
-    raw = _fetch_raw_reviews()
+    raw = _fetch_reviews()
     if not raw:
         print("임베딩할 리뷰가 없습니다.")
         return 0
