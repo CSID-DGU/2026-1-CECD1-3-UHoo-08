@@ -1,10 +1,11 @@
 """
 자연어 상품 검색 API.
 
-검색창 입력을 Qwen으로 분석해 카테고리·feature를 추출하고,
-bge-m3 임베딩 + pgvector로 유사 상품을 검색한다.
+검색창 입력을 Qwen으로 의도 분류 후 분기:
+- PRODUCT_NAME   : products 이름 ILIKE 직접 조회 (벡터 X)
+- RECOMMENDATION : 임베딩 + pgvector 추천 파이프라인
 
-FE는 POST /search로 호출한다 (reverse proxy를 통해 /ai/search로 노출).
+BE Spring이 POST /internal/search로 호출한다.
 """
 from typing import Optional
 
@@ -32,6 +33,7 @@ class ProductResult(BaseModel):
 
 class SearchResponse(BaseModel):
     query: str
+    intent: str
     category: str
     products: list[ProductResult]
 
@@ -40,7 +42,7 @@ class SearchResponse(BaseModel):
     "",
     response_model=SearchResponse,
     summary="자연어 상품 검색",
-    description="자연어 쿼리를 Qwen으로 분석해 bge-m3 임베딩 후 pgvector 유사도 검색.",
+    description="Qwen으로 검색 의도를 분류해 상품명 직접 조회 또는 추천 파이프라인으로 분기.",
 )
 async def search(body: SearchRequest) -> SearchResponse:
     if not body.query.strip():
@@ -50,6 +52,7 @@ async def search(body: SearchRequest) -> SearchResponse:
 
     return SearchResponse(
         query=result["query"],
+        intent=result["intent"],
         category=result.get("category") or "",
         products=[ProductResult(**p) for p in result["products"]],
     )

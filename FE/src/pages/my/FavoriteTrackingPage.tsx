@@ -75,7 +75,9 @@ export function FavoriteTrackingPage() {
 
   return (
     <AppLayout>
-      <section className="min-h-screen px-6 pb-28 pt-10">
+      <div className="flex h-screen flex-col overflow-hidden">
+        <div className="flex-1 overflow-y-auto scrollbar-none">
+        <section className="px-6 pb-8 pt-10">
         <PageHeader title="가격 추적" onBack={() => navigate(-1)} />
 
         {/* 통계 카드 */}
@@ -169,8 +171,10 @@ export function FavoriteTrackingPage() {
           </>
         )}
 
-        <BottomNav />
-      </section>
+        </section>
+        </div>
+      </div>
+      <BottomNav />
     </AppLayout>
   );
 }

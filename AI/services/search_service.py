@@ -1,21 +1,24 @@
 """
-검색창 자연어 추천 흐름.
+검색창 자연어 검색 흐름.
 
-base_product 없이 자연어 쿼리만으로 상품을 추천한다.
-추천 파이프라인의 building block(query_parser, feature_text_builder,
-embedding_service, match_products, product_reader)을 재사용하되,
-RAG·score_agent 없이 경량으로 동작해 빠른 동기 응답을 제공한다.
+intent 분류로 두 경로 분기:
+- PRODUCT_NAME   : products.name/brand ILIKE 직접 조회 (벡터 연산 없음)
+- RECOMMENDATION : 기존 추천 파이프라인 (query 파싱 → 자연어 → 임베딩 → pgvector)
+
+추천 경로는 building block(query_parser, feature_text_builder,
+embedding_service, match_products, product_reader)을 재사용하며,
+RAG·score_agent 없이 경량으로 동작한다.
 """
 from __future__ import annotations
 
 import asyncio
 from typing import List, Optional, TypedDict
 
-from db.product_reader import get_products_meta
+from db.product_reader import get_products_meta, search_products_by_name
 from db.vector_search import match_products
 from services.embedding_service import EmbeddingService
 from services.feature_text_builder import build_product_text
-from services.query_parser import parse_query
+from services.query_parser import classify_intent, parse_query
 
 
 class SearchResultProduct(TypedDict):
@@ -30,6 +33,7 @@ class SearchResultProduct(TypedDict):
 
 class SearchResult(TypedDict):
     query: str
+    intent: str  # PRODUCT_NAME | RECOMMENDATION
     category: Optional[str]
     products: List[SearchResultProduct]
 
@@ -38,16 +42,55 @@ async def run_search(query: str, top_k: int = 20) -> SearchResult:
     """
     검색 핵심 로직.
 
-    흐름:
+    1. classify_intent: 쿼리 의도 분류
+    2-A. PRODUCT_NAME    → search_products_by_name (ILIKE, 벡터 X)
+    2-B. RECOMMENDATION  → parse → 자연어 → 임베딩 → match_products
+    """
+    if not query or not query.strip():
+        return SearchResult(
+            query=query, intent="RECOMMENDATION", category=None, products=[]
+        )
+
+    # 1. 의도 분류
+    intent = await classify_intent(query)
+
+    # 2-A. 상품명 직접 조회 (벡터 연산 없음)
+    if intent == "PRODUCT_NAME":
+        return await _search_by_name(query, top_k)
+
+    # 2-B. 추천 파이프라인
+    return await _search_by_recommendation(query, top_k)
+
+
+async def _search_by_name(query: str, top_k: int) -> SearchResult:
+    """상품명·브랜드 ILIKE 직접 조회. matchScore는 100 고정(정확 매칭 의미)."""
+    metas = await asyncio.to_thread(search_products_by_name, query, top_k)
+    products: List[SearchResultProduct] = [
+        SearchResultProduct(
+            productId=m["id"],
+            name=m["name"],
+            brand=m["brand"],
+            category=m["category"],
+            imageUrl=m["image_url"],
+            originalPrice=m["price"],
+            matchScore=100,
+        )
+        for m in metas
+    ]
+    return SearchResult(
+        query=query, intent="PRODUCT_NAME", category=None, products=products
+    )
+
+
+async def _search_by_recommendation(query: str, top_k: int) -> SearchResult:
+    """
+    RECOMMENDATION 흐름:
       1. query_parser: 쿼리 → category + features
       2. feature_text_builder: features → 자연어 (실패 시 원본 쿼리)
       3. embedding_service: 자연어 → query_vector
-      4. match_products: query_vector로 후보 검색 (제외 없음)
+      4. match_products: query_vector로 후보 검색
       5. product_reader: 메타 조인 + matchScore(=similarity X 100)
     """
-    if not query or not query.strip():
-        return SearchResult(query=query, category=None, products=[])
-
     # 1. 쿼리 파싱
     parsed = await parse_query(query)
     category = parsed["category"]
@@ -66,12 +109,14 @@ async def run_search(query: str, top_k: int = 20) -> SearchResult:
     emb = EmbeddingService.get()
     query_vector = await asyncio.to_thread(emb.embed, search_text)
 
-    # 4. 후보 검색 (base_product 없으니 exclude 빈 리스트)
+    # 4. 후보 검색
     matches = await asyncio.to_thread(
         match_products, query_vector, category, top_k, []
     )
     if not matches:
-        return SearchResult(query=query, category=category, products=[])
+        return SearchResult(
+            query=query, intent="RECOMMENDATION", category=category, products=[]
+        )
 
     # 5. 메타 조인 + matchScore
     product_ids = [m["product_id"] for m in matches]
@@ -95,4 +140,6 @@ async def run_search(query: str, top_k: int = 20) -> SearchResult:
             )
         )
 
-    return SearchResult(query=query, category=category, products=products)
+    return SearchResult(
+        query=query, intent="RECOMMENDATION", category=category, products=products
+    )

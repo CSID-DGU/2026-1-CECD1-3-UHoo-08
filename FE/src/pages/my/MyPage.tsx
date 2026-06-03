@@ -10,6 +10,7 @@ import {
   getMyProfile,
   getProfileImageUrl,
 } from "../../api/userApi";
+import { type ProductSearchItem, getRecentlyViewed } from "../../api/productApi";
 import { getUnreadCount } from "../../api/notificationApi";
 import { clearTokens } from "../../lib/auth";
 import { BottomNav } from "../../components/common/BottomNav";
@@ -42,6 +43,7 @@ export function MyPage() {
   const navigate = useNavigate();
   const [user, setUser] = useState<UserMeResponse | null>(null);
   const [hasUnread, setHasUnread] = useState(false);
+  const [recentlyViewed, setRecentlyViewed] = useState<ProductSearchItem[]>([]);
 
   useEffect(() => {
     getMyProfile()
@@ -49,6 +51,9 @@ export function MyPage() {
       .catch(() => {});
     getUnreadCount()
       .then((count) => setHasUnread(count > 0))
+      .catch(() => {});
+    getRecentlyViewed(10)
+      .then((res) => setRecentlyViewed(res.data.products))
       .catch(() => {});
   }, []);
 
@@ -72,10 +77,11 @@ export function MyPage() {
   return (
     <AppLayout>
       <div
-        className="min-h-screen"
+        className="flex h-screen flex-col overflow-hidden"
         style={{ background: "linear-gradient(160deg, #eef4fc 0%, #f8fbff 55%, #e8f1fb 100%)" }}
       >
-        <section className="px-5 pb-32 pt-6">
+        <div className="flex-1 overflow-y-auto scrollbar-none">
+        <section className="px-5 pb-8 pt-6">
           {/* 헤더 */}
           <header className="flex items-center justify-between">
             <h1 className="font-bold text-h2 text-gray-500">My</h1>
@@ -193,6 +199,38 @@ export function MyPage() {
             })}
           </div>
 
+          {/* 최근 본 상품 */}
+          {recentlyViewed.length > 0 && (
+            <section className="mt-4">
+              <h2 className="mb-3 text-body2 font-medium text-gray-500">최근 본 상품</h2>
+              <div className="flex gap-3 overflow-x-auto scrollbar-none pb-1">
+                {recentlyViewed.map((product) => (
+                  <button
+                    key={String(product.id)}
+                    className="min-w-[88px] rounded-xl p-2 text-center"
+                    style={{
+                      background: "rgba(255,255,255,0.68)",
+                      backdropFilter: "blur(14px)",
+                      WebkitBackdropFilter: "blur(14px)",
+                      border: "1px solid rgba(255,255,255,0.9)",
+                      boxShadow: "0 4px 24px rgba(91,143,217,0.09)",
+                    }}
+                    onClick={() => navigate(`/product/${product.id}`)}
+                    type="button"
+                  >
+                    <div className="h-[64px] w-[64px] overflow-hidden rounded-lg bg-primary-50">
+                      {product.imageUrl && (
+                        <img src={product.imageUrl} alt={product.name} className="h-full w-full object-cover" />
+                      )}
+                    </div>
+                    <p className="mt-2 w-[64px] truncate text-caption text-gray-500">{product.name}</p>
+                    <p className="w-[64px] truncate text-[10px] text-gray-300">{product.brand}</p>
+                  </button>
+                ))}
+              </div>
+            </section>
+          )}
+
           {/* 메뉴 */}
           <div className="mt-4 grid gap-3">
             {MENU_ITEMS.map((item) => (
@@ -231,9 +269,10 @@ export function MyPage() {
             로그아웃
           </button>
 
-          <BottomNav />
         </section>
+        </div>
       </div>
+      <BottomNav />
     </AppLayout>
   );
 }

@@ -37,7 +37,9 @@ export function WishlistCategoryPage() {
 
   return (
     <AppLayout>
-      <section className="min-h-screen overflow-x-hidden px-5 pb-8 pt-10">
+      <div className="flex h-screen flex-col overflow-hidden">
+        <div className="flex-1 overflow-y-auto scrollbar-none">
+        <section className="overflow-x-hidden px-5 pb-8 pt-10">
         <PageHeader
           title={decoded === "all" ? "전체" : decoded.charAt(0).toUpperCase() + decoded.slice(1)}
           onBack={() => navigate(-1)}
@@ -128,7 +130,9 @@ export function WishlistCategoryPage() {
             </div>
           </>
         )}
-      </section>
+        </section>
+        </div>
+      </div>
     </AppLayout>
   );
 }

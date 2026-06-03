@@ -51,7 +51,9 @@ export function ProfileEditPage() {
 
   return (
     <AppLayout>
-      <section className="flex min-h-screen flex-col px-6 pb-8 pt-10">
+      <div className="flex h-screen flex-col overflow-hidden">
+        <div className="flex-1 overflow-y-auto scrollbar-none">
+      <section className="flex flex-col px-6 pb-8 pt-10">
         <PageHeader title="프로필 수정" onBack={() => navigate(-1)} />
 
         {/* 프로필 사진 */}
@@ -138,6 +140,8 @@ export function ProfileEditPage() {
           {loading ? "저장 중..." : "저장하기"}
         </button>
       </section>
+        </div>
+      </div>
     </AppLayout>
   );
 }

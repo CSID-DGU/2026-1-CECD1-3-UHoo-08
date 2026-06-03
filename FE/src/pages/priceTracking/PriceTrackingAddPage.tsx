@@ -136,7 +136,9 @@ export function PriceTrackingAddPage() {
 
   return (
     <AppLayout>
-      <section className="min-h-screen px-6 pb-6 pt-10">
+      <div className="flex h-screen flex-col overflow-hidden">
+        <div className="flex-1 overflow-y-auto scrollbar-none">
+      <section className="px-6 pb-6 pt-10">
         <PageHeader title="가격 추적 추가" onBack={() => navigate(-1)} />
 
         <div className="mt-7">
@@ -318,6 +320,8 @@ export function PriceTrackingAddPage() {
           </>
         )}
       </section>
+        </div>
+      </div>
 
       {modalOpen && (
         <TargetPriceModal

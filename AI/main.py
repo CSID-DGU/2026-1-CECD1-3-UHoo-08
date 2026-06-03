@@ -26,7 +26,7 @@ app.add_middleware(
 
 app.include_router(recognize_router, prefix="/internal")
 app.include_router(agent_router, prefix="/internal")
-app.include_router(search_router)
+app.include_router(search_router, prefix="/internal")
 
 
 @app.on_event("startup")

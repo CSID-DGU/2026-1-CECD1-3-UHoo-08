@@ -109,3 +109,27 @@ def get_products_meta(product_ids: List[str]) -> Dict[str, ProductMeta]:
         .execute()
     )
     return {row["product_id"]: _row_to_meta(row) for row in (res.data or [])}
+
+
+def search_products_by_name(keyword: str, limit: int = 20) -> List[ProductMeta]:
+    """
+    상품명·브랜드 ILIKE 직접 조회. 벡터 연산 없음.
+
+    검색 의도가 PRODUCT_NAME일 때 사용. "라네즈 네오쿠션" 같은
+    특정 상품 검색을 이름 부분일치로 빠르게 찾는다.
+
+    PostgREST or 필터에서 쉼표·괄호는 구분 문자이므로 공백으로 치환해 깨짐 방지.
+    """
+    kw = keyword.strip().replace(",", " ").replace("(", " ").replace(")", " ")
+    if not kw:
+        return []
+    sb = get_supabase()
+    pattern = f"%{kw}%"
+    res = (
+        sb.table("products")
+        .select(_COLUMNS)
+        .or_(f"name.ilike.{pattern},brand.ilike.{pattern}")
+        .limit(limit)
+        .execute()
+    )
+    return [_row_to_meta(row) for row in (res.data or [])]

@@ -1,15 +1,22 @@
 import { useRef, useState } from "react";
 import { useNavigate } from "react-router-dom";
-import { aiRecognizeProduct, searchProducts } from "../../api/productApi";
+import { Camera, ImageIcon, Wifi } from "lucide-react";
+import { type ProductSearchItem, aiRecognizeProduct, searchProducts } from "../../api/productApi";
 import { CameraMark } from "../../components/common/CameraMark";
 import { PageHeader } from "../../components/common/PageHeader";
 import AppLayout from "../../layouts/AppLayout";
 
+const iconBox = {
+  background: "linear-gradient(135deg, rgba(91,143,217,0.35), rgba(53,101,181,0.25))",
+  border: "1px solid rgba(255,255,255,0.6)",
+  boxShadow: "0 2px 8px rgba(91,143,217,0.2)",
+};
+
 export function ProductLookupPage() {
   const navigate = useNavigate();
-  const [showCameraToggle, setShowCameraToggle] = useState(false);
   const [text, setText] = useState("");
   const [searching, setSearching] = useState(false);
+  const [searchResults, setSearchResults] = useState<ProductSearchItem[]>([]);
   const [processing, setProcessing] = useState(false);
   const cameraRef = useRef<HTMLInputElement>(null);
   const albumRef = useRef<HTMLInputElement>(null);
@@ -39,145 +46,189 @@ export function ProductLookupPage() {
     setSearching(true);
     try {
       const res = await searchProducts(q);
-      const first = res.data.products[0];
-      if (!first) {
-        alert("검색 결과가 없어요.");
-        return;
-      }
-      const result = {
-        productId: first.id,
-        name: first.name,
-        brand: first.brand,
-        imageUrl: first.imageUrl ?? null,
-      };
-      navigate("/product/recognize", { state: { result } });
+      setSearchResults(res.data.products ?? []);
     } catch {
-      alert("검색에 실패했어요. 다시 시도해주세요.");
+      setSearchResults([]);
     } finally {
       setSearching(false);
     }
   }
 
+  function handleSelectResult(product: ProductSearchItem) {
+    const result = {
+      productId: product.id,
+      name: product.name,
+      brand: product.brand,
+      imageUrl: product.imageUrl ?? null,
+    };
+    setText("");
+    setSearchResults([]);
+    navigate("/product/recognize", { state: { result } });
+  }
+
   return (
     <AppLayout>
-      <section className="flex min-h-screen flex-col px-6 pb-6 pt-10">
-        <PageHeader title="제품 조회" onBack={() => navigate(-1)} />
+      <div className="flex h-screen flex-col overflow-hidden">
+        <div className="flex-1 overflow-y-auto scrollbar-none">
+          <section className="flex flex-col px-6 pb-6 pt-10">
+            <PageHeader title="제품 조회" onBack={() => navigate(-1)} />
 
-        <div className="mt-7">
-          <h1 className="text-h2 text-gray-500">
-            어떤 방법으로
-            <br />
-            조회할까요?
-          </h1>
-          <p className="mt-2 text-body2 text-gray-300">제품을 찾아 내 피부와 비교해드려요</p>
-        </div>
+            <div className="mt-7">
+              <h1 className="text-h2 text-gray-500">
+                어떤 방법으로
+                <br />
+                조회할까요?
+              </h1>
+              <p className="mt-2 text-body2 text-gray-300">제품을 찾아 내 피부와 비교해드려요</p>
+            </div>
 
-        {/* 숨겨진 파일 인풋 */}
-        <input
-          ref={cameraRef}
-          accept="image/*"
-          capture="environment"
-          className="hidden"
-          type="file"
-          onChange={(e) => {
-            const f = e.target.files?.[0];
-            if (f) handleImageFile(f);
-            e.target.value = "";
-          }}
-        />
-        <input
-          ref={albumRef}
-          accept="image/*"
-          className="hidden"
-          type="file"
-          onChange={(e) => {
-            const f = e.target.files?.[0];
-            if (f) handleImageFile(f);
-            e.target.value = "";
-          }}
-        />
-
-        {/* 카메라 영역 */}
-        <button
-          className="mt-5 flex min-h-[220px] flex-col items-center justify-center rounded-2xl border border-dashed border-primary-100 bg-primary-50 px-8 text-center"
-          disabled={processing}
-          onClick={() => setShowCameraToggle((v) => !v)}
-          type="button"
-        >
-          {processing ? (
-            <div className="h-8 w-8 animate-spin rounded-full border-2 border-primary-200 border-t-primary-500" />
-          ) : (
-            <>
-              <CameraMark className="mb-4 h-[64px] w-[72px]" />
-              <p className="text-body2 text-primary-500">사진으로 스캔</p>
-              <p className="mt-1 text-caption text-primary-500">이미지 업로드 · AI 자동 인식</p>
-              <p className="mt-2 text-caption text-gray-300">탭하여 카메라 열기</p>
-            </>
-          )}
-        </button>
-
-        {/* 카메라 토글 버튼 */}
-        {showCameraToggle && (
-          <div className="mt-3 grid grid-cols-2 gap-3">
-            <button
-              className="flex h-11 items-center justify-center gap-2 rounded-xl bg-gray-500 text-body2 text-white"
-              onClick={() => {
-                setShowCameraToggle(false);
-                cameraRef.current?.click();
+            {/* 숨겨진 파일 인풋 */}
+            <input
+              ref={cameraRef}
+              accept="image/*"
+              capture="environment"
+              className="hidden"
+              type="file"
+              onChange={(e) => {
+                const f = e.target.files?.[0];
+                if (f) handleImageFile(f);
+                e.target.value = "";
               }}
+            />
+            <input
+              ref={albumRef}
+              accept="image/*"
+              className="hidden"
+              type="file"
+              onChange={(e) => {
+                const f = e.target.files?.[0];
+                if (f) handleImageFile(f);
+                e.target.value = "";
+              }}
+            />
+
+            {/* 촬영하기 */}
+            <button
+              className="mt-5 flex min-h-[200px] flex-col items-center justify-center rounded-2xl border border-dashed border-primary-100 bg-primary-50 px-8 text-center"
+              disabled={processing}
+              onClick={() => cameraRef.current?.click()}
               type="button"
             >
-              <span>📷</span> 촬영하기
+              {processing ? (
+                <div className="h-8 w-8 animate-spin rounded-full border-2 border-primary-200 border-t-primary-500" />
+              ) : (
+                <>
+                  <CameraMark className="mb-4 h-[64px] w-[72px]" />
+                  <p className="text-body2 text-primary-500">사진으로 스캔</p>
+                  <p className="mt-1 text-caption text-primary-500">이미지 업로드 · AI 자동 인식</p>
+                </>
+              )}
             </button>
+
+            {/* 촬영하기 + 앨범 버튼 */}
+            <div className="mt-3 grid grid-cols-2 gap-3">
+              <button
+                className="flex h-12 items-center justify-center gap-2 rounded-xl text-body2 text-white"
+                style={{ background: "linear-gradient(135deg, #5B8FD9, #3565B5)" }}
+                onClick={() => cameraRef.current?.click()}
+                disabled={processing}
+                type="button"
+              >
+                <span className="grid h-7 w-7 place-items-center rounded-lg" style={iconBox}>
+                  <Camera className="h-4 w-4 text-white" strokeWidth={1.8} />
+                </span>
+                촬영하기
+              </button>
+              <button
+                className="flex h-12 items-center justify-center gap-2 rounded-xl border border-gray-200 bg-white text-body2 text-gray-500"
+                onClick={() => albumRef.current?.click()}
+                disabled={processing}
+                type="button"
+              >
+                <span className="grid h-7 w-7 place-items-center rounded-lg" style={iconBox}>
+                  <ImageIcon className="h-4 w-4 text-primary-600" strokeWidth={1.8} />
+                </span>
+                앨범에서 선택
+              </button>
+            </div>
+
+            {/* NFC */}
             <button
-              className="flex h-11 items-center justify-center gap-2 rounded-xl border border-gray-200 bg-white text-body2 text-gray-500"
-              onClick={() => {
-                setShowCameraToggle(false);
-                albumRef.current?.click();
-              }}
+              className="mt-4 flex h-[56px] items-center gap-3 rounded-xl border border-gray-200 bg-white px-5 text-body2 text-gray-500"
+              onClick={() => navigate("/recommendation/nfc-scan")}
               type="button"
             >
-              <span>🖼</span> 앨범에서 선택
+              <span className="grid h-9 w-9 place-items-center rounded-lg" style={iconBox}>
+                <Wifi className="h-5 w-5 text-primary-600" strokeWidth={1.8} />
+              </span>
+              NFC 태그로 조회
             </button>
-          </div>
-        )}
 
-        {/* NFC */}
-        <button
-          className="mt-4 flex h-[56px] items-center gap-3 rounded-xl border border-gray-200 bg-white px-5 text-body2 text-gray-500"
-          onClick={() => navigate("/recommendation/nfc-scan")}
-          type="button"
-        >
-          <span className="grid h-9 w-9 place-items-center rounded-lg bg-primary-50 text-lg">📡</span>
-          NFC 태그로 조회
-        </button>
+            {/* 텍스트 검색 */}
+            <div className="mt-4">
+              <div className="flex h-[52px] items-center gap-3 rounded-xl border border-gray-200 bg-white px-3">
+                <input
+                  className="h-10 flex-1 rounded-xl bg-gray-100 px-4 text-body2 text-gray-500 outline-none placeholder:text-gray-300"
+                  placeholder="브랜드명, 제품명으로 검색..."
+                  value={text}
+                  onChange={(e) => {
+                    setText(e.target.value);
+                    if (!e.target.value.trim()) setSearchResults([]);
+                  }}
+                  onKeyDown={(e) => e.key === "Enter" && handleTextSearch()}
+                />
+                <button
+                  className="h-10 rounded-xl bg-primary-500 px-4 text-caption text-white disabled:opacity-50"
+                  disabled={searching || !text.trim()}
+                  onClick={handleTextSearch}
+                  type="button"
+                >
+                  {searching ? "···" : "검색"}
+                </button>
+              </div>
 
-        {/* 텍스트 검색 */}
-        <div className="mt-4 flex h-[68px] items-center gap-3 rounded-xl border border-gray-200 bg-white px-3">
-          <input
-            className="h-11 flex-1 rounded-xl bg-gray-100 px-4 text-body2 text-gray-500 outline-none placeholder:text-gray-300"
-            placeholder="브랜드명, 제품명 검색..."
-            value={text}
-            onChange={(e) => setText(e.target.value)}
-            onKeyDown={(e) => e.key === "Enter" && handleTextSearch()}
-          />
-          <button
-            className="h-11 rounded-xl bg-primary-500 px-4 text-caption text-white disabled:opacity-50"
-            disabled={searching || !text.trim()}
-            onClick={handleTextSearch}
-            type="button"
-          >
-            {searching ? "..." : "검색"}
-          </button>
+              {searchResults.length > 0 && (
+                <div className="mt-2 overflow-hidden rounded-xl border border-gray-200 bg-white">
+                  {searchResults.map((product) => (
+                    <button
+                      key={product.id}
+                      className="flex w-full items-center gap-3 border-b border-gray-100 p-3 text-left last:border-b-0 active:bg-gray-50"
+                      onClick={() => handleSelectResult(product)}
+                      type="button"
+                    >
+                      <div className="h-11 w-11 shrink-0 overflow-hidden rounded-xl bg-primary-50">
+                        {product.imageUrl && (
+                          <img src={product.imageUrl} alt={product.name} className="h-full w-full object-cover" />
+                        )}
+                      </div>
+                      <div className="min-w-0 flex-1">
+                        <p className="truncate text-body2 text-gray-500">{product.name}</p>
+                        <p className="text-caption text-gray-300">{product.brand}</p>
+                      </div>
+                      {product.originalPrice != null && (
+                        <span className="shrink-0 text-caption text-gray-400">
+                          {product.originalPrice.toLocaleString()}원
+                        </span>
+                      )}
+                    </button>
+                  ))}
+                </div>
+              )}
+
+              {!searching && text.trim() && searchResults.length === 0 && (
+                <p className="mt-2 text-caption text-gray-300">검색 결과가 없어요</p>
+              )}
+            </div>
+
+            <div className="mt-6 rounded-xl bg-primary-50 p-4">
+              <p className="text-body2 text-primary-500">✦ BeautyMatch AI Tip</p>
+              <p className="mt-1 text-caption leading-5 text-gray-500">
+                목적과 예산을 함께 입력하면 피부 데이터와 결합해 최적의 가성비 제품을 찾아드려요
+              </p>
+            </div>
+          </section>
         </div>
-
-        <div className="mt-6 rounded-xl bg-primary-50 p-4">
-          <p className="text-body2 text-primary-500">✦ BeautyMatch AI Tip</p>
-          <p className="mt-1 text-caption leading-5 text-gray-500">
-            목적과 예산을 함께 입력하면 피부 데이터와 결합해 최적의 가성비 제품을 찾아드려요
-          </p>
-        </div>
-      </section>
+      </div>
     </AppLayout>
   );
 }

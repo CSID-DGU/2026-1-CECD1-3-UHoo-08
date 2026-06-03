@@ -53,7 +53,9 @@ export function SearchResultPage() {
 
   return (
     <AppLayout>
-      <section className="flex min-h-screen flex-col px-6 pb-[88px] pt-10">
+      <div className="flex h-screen flex-col overflow-hidden">
+        <div className="flex-1 overflow-y-auto scrollbar-none">
+        <section className="flex flex-col px-6 pb-8 pt-10">
         <PageHeader title="검색 결과" onBack={() => navigate(-1)} />
 
         <div className="mt-5">
@@ -140,8 +142,9 @@ export function SearchResultPage() {
             <p className="text-caption text-gray-300">다른 표현으로 다시 검색해 보세요</p>
           </div>
         )}
-      </section>
-
+        </section>
+        </div>
+      </div>
       <BottomNav />
     </AppLayout>
   );
