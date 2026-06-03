@@ -4,7 +4,7 @@
 
 CREATE TABLE IF NOT EXISTS product_embeddings (
     id              UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-    product_id      UUID         NOT NULL UNIQUE REFERENCES products(id) ON DELETE CASCADE,
+    product_id      UUID         NOT NULL UNIQUE REFERENCES products(product_id) ON DELETE CASCADE,
     feature_vec     vector(1024) NOT NULL,
     model_version   VARCHAR(50)  NOT NULL,
     created_at      TIMESTAMP    NOT NULL DEFAULT now()

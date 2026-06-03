@@ -22,7 +22,7 @@ BEGIN
         pe.product_id,
         1 - (pe.feature_vec <=> query_embedding) AS similarity
     FROM product_embeddings pe
-    JOIN products p ON p.id = pe.product_id
+    JOIN products p ON p.product_id = pe.product_id
     WHERE
         (match_category IS NULL OR p.category = match_category)
         AND pe.product_id <> ALL(exclude_ids)

@@ -22,7 +22,7 @@ BEGIN
     SELECT pe.feature_vec, p.category
       INTO base_vec, base_category
     FROM product_embeddings pe
-    JOIN products p ON p.id = pe.product_id
+    JOIN products p ON p.product_id = pe.product_id
     WHERE pe.product_id = base_product_id;
 
     IF base_vec IS NULL THEN
@@ -34,7 +34,7 @@ BEGIN
         pe.product_id,
         1 - (pe.feature_vec <=> base_vec) AS similarity
     FROM product_embeddings pe
-    JOIN products p ON p.id = pe.product_id
+    JOIN products p ON p.product_id = pe.product_id
     WHERE
         p.category = base_category
         AND pe.product_id <> base_product_id

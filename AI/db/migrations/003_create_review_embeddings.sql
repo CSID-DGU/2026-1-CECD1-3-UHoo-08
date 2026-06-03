@@ -4,7 +4,7 @@
 
 CREATE TABLE IF NOT EXISTS review_embeddings (
     id           UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-    product_id   UUID         NOT NULL REFERENCES products(id) ON DELETE CASCADE,
+    product_id   UUID         NOT NULL REFERENCES products(product_id) ON DELETE CASCADE,
     review_text  TEXT         NOT NULL,
     embedding    vector(1024) NOT NULL,
     source       VARCHAR(50)  NOT NULL,
