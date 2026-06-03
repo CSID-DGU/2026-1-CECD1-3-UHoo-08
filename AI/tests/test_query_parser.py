@@ -36,6 +36,7 @@ class TestQueryParser:
         llm.chat_json.return_value = {"intent": "UNKNOWN"}
         mock_get.return_value = llm
 
+        # 잘못된 값은 RECOMMENDATION 폴백
         assert await classify_intent("x") == "RECOMMENDATION"
 
     @pytest.mark.asyncio

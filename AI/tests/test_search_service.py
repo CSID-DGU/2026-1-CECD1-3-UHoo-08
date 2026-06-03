@@ -32,6 +32,7 @@ class TestSearchServiceProductName:
         assert result["intent"] == "PRODUCT_NAME"
         assert result["category"] is None
         assert len(result["products"]) == 2
+        # 상품명 매칭은 matchScore 100 고정
         assert result["products"][0]["matchScore"] == 100
 
     @pytest.mark.asyncio
@@ -115,6 +116,7 @@ class TestSearchServiceRecommendation:
     ):
         from services.search_service import run_search
 
+        # 카테고리 판단 불가 → None으로 전체 검색
         mock_intent.return_value = "RECOMMENDATION"
         mock_parse.return_value = {"category": None, "features": {}}
         emb = MagicMock()
@@ -151,6 +153,7 @@ class TestSearchServiceRecommendation:
         mock_metas.return_value = {"p1": _meta("p1", "쿠션", "브랜드")}
 
         result = await run_search("쿠션")
+        # 메타 없는 ghost는 결과에서 제외
         assert len(result["products"]) == 1
         assert result["products"][0]["productId"] == "p1"
 

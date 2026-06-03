@@ -77,6 +77,7 @@ async def _search_by_name(query: str, top_k: int) -> SearchResult:
         )
         for m in metas
     ]
+    # 상품명 검색은 카테고리 개념이 약하므로 None
     return SearchResult(
         query=query, intent="PRODUCT_NAME", category=None, products=products
     )

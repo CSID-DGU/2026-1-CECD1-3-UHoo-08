@@ -118,6 +118,7 @@ def search_products_by_name(keyword: str, limit: int = 20) -> List[ProductMeta]:
     검색 의도가 PRODUCT_NAME일 때 사용. "라네즈 네오쿠션" 같은
     특정 상품 검색을 이름 부분일치로 빠르게 찾는다.
 
+    name 또는 brand에 keyword가 포함되면 매칭.
     PostgREST or 필터에서 쉼표·괄호는 구분 문자이므로 공백으로 치환해 깨짐 방지.
     """
     kw = keyword.strip().replace(",", " ").replace("(", " ").replace(")", " ")
@@ -128,6 +129,7 @@ def search_products_by_name(keyword: str, limit: int = 20) -> List[ProductMeta]:
     res = (
         sb.table("products")
         .select(_COLUMNS)
+        # name 또는 brand 부분일치 (Supabase or 필터)
         .or_(f"name.ilike.{pattern},brand.ilike.{pattern}")
         .limit(limit)
         .execute()
