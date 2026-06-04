@@ -1,4 +1,4 @@
-import { useRef, useState } from "react";
+﻿import { useRef, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { Camera, ImageIcon, Wifi } from "lucide-react";
 import { type ProductSearchItem, aiRecognizeProduct, searchProducts } from "../../api/productApi";
@@ -9,7 +9,6 @@ import AppLayout from "../../layouts/AppLayout";
 const iconBox = {
   background: "linear-gradient(135deg, rgba(91,143,217,0.35), rgba(53,101,181,0.25))",
   border: "1px solid rgba(255,255,255,0.6)",
-  boxShadow: "0 2px 8px rgba(91,143,217,0.2)",
 };
 
 export function ProductLookupPage() {
@@ -221,7 +220,7 @@ export function ProductLookupPage() {
             </div>
 
             <div className="mt-6 rounded-xl bg-primary-50 p-4">
-              <p className="text-body2 text-primary-500">✦ BeautyMatch AI Tip</p>
+              <p className="text-body2 text-primary-500">✦ 화담 AI Tip</p>
               <p className="mt-1 text-caption leading-5 text-gray-500">
                 목적과 예산을 함께 입력하면 피부 데이터와 결합해 최적의 가성비 제품을 찾아드려요
               </p>

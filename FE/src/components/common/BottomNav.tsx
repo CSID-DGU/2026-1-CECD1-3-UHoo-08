@@ -1,4 +1,4 @@
-import { useLocation, useNavigate } from "react-router-dom";
+﻿import { useLocation, useNavigate } from "react-router-dom";
 
 const HomeIcon = ({ active }: { active: boolean }) => (
   <svg fill="none" height="24" viewBox="0 0 24 24" width="24" xmlns="http://www.w3.org/2000/svg">
@@ -68,7 +68,7 @@ export function BottomNav() {
       </button>
 
       <button
-        className={`mx-auto grid h-14 w-14 cursor-pointer place-items-center rounded-full shadow-md ${centerActive ? "bg-primary-600" : "bg-primary-500"} text-white`}
+        className={`mx-auto grid h-14 w-14 cursor-pointer place-items-center rounded-full ${centerActive ? "bg-primary-600" : "bg-primary-500"} text-white`}
         onClick={() => navigate("/recommendation/lookup")}
         type="button"
         aria-label="상품 조회"

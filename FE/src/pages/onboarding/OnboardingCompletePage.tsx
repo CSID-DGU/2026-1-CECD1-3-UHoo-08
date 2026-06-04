@@ -1,4 +1,4 @@
-import { useState } from "react";
+﻿import { useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { completeOnboarding, saveOnboardingProducts } from "../../api/userApi";
 import AppLayout from "../../layouts/AppLayout";
@@ -76,7 +76,7 @@ export function OnboardingCompletePage() {
           disabled={loading}
           type="button"
         >
-          {loading ? "저장 중..." : "BeautyMatch 시작하기"}
+          {loading ? "저장 중..." : "화담 시작하기"}
         </button>
 
         <p className="mt-5 text-center text-caption text-gray-300">

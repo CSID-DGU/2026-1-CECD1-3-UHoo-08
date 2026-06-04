@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from "react";
+﻿import { useEffect, useRef, useState } from "react";
 import { useLocation, useNavigate } from "react-router-dom";
 import { type ProductSearchItem, getProductDetail, searchProducts } from "../../api/productApi";
 import { addTracking } from "../../api/priceTrackingApi";
@@ -354,7 +354,7 @@ function TargetPriceModal({
         </p>
         <div className="mt-3 flex h-[76px] items-center justify-between rounded-2xl bg-gray-100 px-3">
           <button
-            className="grid h-12 w-12 place-items-center rounded-xl bg-white text-h3 shadow-sm"
+            className="grid h-12 w-12 place-items-center rounded-xl bg-white text-h3"
             onClick={() => setLocal((p) => Math.max(1000, p - 1000))}
             type="button"
           >
@@ -362,7 +362,7 @@ function TargetPriceModal({
           </button>
           <strong className="text-h2 text-gray-500">{local.toLocaleString()}원</strong>
           <button
-            className="grid h-12 w-12 place-items-center rounded-xl bg-white text-h3 shadow-sm"
+            className="grid h-12 w-12 place-items-center rounded-xl bg-white text-h3"
             onClick={() => setLocal((p) => p + 1000)}
             type="button"
           >

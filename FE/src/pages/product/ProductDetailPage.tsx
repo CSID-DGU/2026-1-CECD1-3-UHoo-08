@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+﻿import { useEffect, useState } from "react";
 import { useNavigate, useParams } from "react-router-dom";
 import { Heart, Smile, Layers, Sun, Droplets, Folder } from "lucide-react";
 import { type ProductDetail, type StoreInfo, getProductDetail, recordProductView } from "../../api/productApi";
@@ -289,7 +289,7 @@ export function ProductDetailPage() {
 
       {/* 카테고리 선택 바텀시트 */}
       <div
-        className="fixed inset-x-0 bottom-0 z-50 mx-auto max-w-[430px] rounded-t-2xl bg-white p-6 shadow-2xl"
+        className="fixed inset-x-0 bottom-0 z-50 mx-auto max-w-[430px] rounded-t-2xl bg-white p-6"
         style={{
           transform: showCategorySheet ? "translateY(0)" : "translateY(105%)",
           transition: sheetEverOpened ? "transform 0.32s cubic-bezier(0.32, 0.72, 0, 1)" : "none",

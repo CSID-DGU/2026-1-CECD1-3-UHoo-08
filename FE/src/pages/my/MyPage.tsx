@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+﻿import { useEffect, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { Droplets, Heart, Settings, Bell } from "lucide-react";
 import type { LucideIcon } from "lucide-react";
@@ -28,7 +28,6 @@ const glass = {
   backdropFilter: "blur(14px)",
   WebkitBackdropFilter: "blur(14px)",
   border: "1px solid rgba(255,255,255,0.9)",
-  boxShadow: "0 4px 24px rgba(91,143,217,0.09)",
 };
 
 const menuGlass = {
@@ -36,7 +35,6 @@ const menuGlass = {
   backdropFilter: "blur(12px)",
   WebkitBackdropFilter: "blur(12px)",
   border: "1px solid rgba(255,255,255,0.85)",
-  boxShadow: "0 4px 20px rgba(91,143,217,0.1), 0 1px 0 rgba(255,255,255,0.8) inset",
 };
 
 export function MyPage() {
@@ -114,7 +112,6 @@ export function MyPage() {
             style={{
               background: "linear-gradient(135deg, #7AAEE4, #B8D8F5)",
               border: "1px solid rgba(255,255,255,0.5)",
-              boxShadow: "0 8px 32px rgba(91,143,217,0.2), 0 1px 0 rgba(255,255,255,0.6) inset",
             }}
           >
             {/* shine line */}
@@ -213,7 +210,6 @@ export function MyPage() {
                       backdropFilter: "blur(14px)",
                       WebkitBackdropFilter: "blur(14px)",
                       border: "1px solid rgba(255,255,255,0.9)",
-                      boxShadow: "0 4px 24px rgba(91,143,217,0.09)",
                     }}
                     onClick={() => navigate(`/product/${product.id}`)}
                     type="button"
@@ -243,7 +239,7 @@ export function MyPage() {
               >
                 <div
                   className="grid h-12 w-12 shrink-0 place-items-center rounded-full"
-                  style={{ background: "rgba(255,255,255,0.6)", boxShadow: "0 2px 8px rgba(91,143,217,0.15)" }}
+                  style={{ background: "rgba(255,255,255,0.6)" }}
                 >
                   <item.Icon className="h-6 w-6 text-primary-600" strokeWidth={1.8} />
                 </div>

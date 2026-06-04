@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+﻿import { useEffect, useState } from "react";
 import { useNavigate, useParams } from "react-router-dom";
 import {
   type PriceTrackingDetail,
@@ -120,7 +120,7 @@ export function PriceHistoryPage() {
               key={tab.label}
               className={`h-9 rounded-lg text-caption transition-colors ${
                 i === activeTab
-                  ? "bg-white text-gray-500 shadow-sm"
+                  ? "bg-white text-gray-500"
                   : "text-gray-300"
               }`}
               onClick={() => setActiveTab(i)}
@@ -246,7 +246,7 @@ export function PriceHistoryPage() {
 
       {/* 바텀시트 */}
       <div
-        className="fixed inset-x-0 bottom-0 z-50 mx-auto max-w-[430px] rounded-t-2xl bg-white p-6 shadow-2xl"
+        className="fixed inset-x-0 bottom-0 z-50 mx-auto max-w-[430px] rounded-t-2xl bg-white p-6"
         style={{
           transform: showSheet ? "translateY(0)" : "translateY(105%)",
           transition: sheetEverOpened ? "transform 0.32s cubic-bezier(0.32, 0.72, 0, 1)" : "none",

@@ -1,4 +1,4 @@
-import { useEffect, useRef } from "react";
+﻿import { useEffect, useRef } from "react";
 import { useLocation, useNavigate } from "react-router-dom";
 import { getRecommendationStatus } from "../../api/recommendationApi";
 import AppLayout from "../../layouts/AppLayout";
@@ -40,7 +40,7 @@ export function RecommendationLoadingPage() {
       <div className="flex h-screen flex-col overflow-hidden">
         <div className="flex-1 overflow-y-auto scrollbar-none">
       <section className="flex flex-col px-6 pb-10 pt-10">
-        <p className="text-h4 text-gray-500">BeautyMatch</p>
+        <p className="text-h4 text-gray-500">화담</p>
 
         <div className="mt-10 text-center">
           <LoadingOrb />
