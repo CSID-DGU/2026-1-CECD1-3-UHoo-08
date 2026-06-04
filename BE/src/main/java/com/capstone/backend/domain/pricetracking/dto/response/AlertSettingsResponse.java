@@ -1,6 +1,6 @@
 package com.capstone.backend.domain.pricetracking.dto.response;
 
-import com.capstone.backend.domain.pricetracking.entity.PriceTrackingAlertSettings;
+import com.capstone.backend.domain.user.entity.User;
 import lombok.Builder;
 import lombok.Getter;
 
@@ -13,11 +13,11 @@ public class AlertSettingsResponse {
     private boolean weeklyReport;
     private LocalDateTime updatedAt;
 
-    public static AlertSettingsResponse from(PriceTrackingAlertSettings s) {
+    public static AlertSettingsResponse from(User u) {
         return AlertSettingsResponse.builder()
-                .targetPriceAlert(s.isTargetPriceAlert())
-                .weeklyReport(s.isWeeklyReport())
-                .updatedAt(s.getUpdatedAt())
+                .targetPriceAlert(u.isTargetPriceAlert())
+                .weeklyReport(u.isWeeklyReport())
+                .updatedAt(u.getUpdatedAt())
                 .build();
     }
 

@@ -12,9 +12,7 @@ import com.capstone.backend.domain.recommendation.dto.response.RecommendationSta
 import com.capstone.backend.domain.recommendation.entity.Recommendation;
 import com.capstone.backend.domain.recommendation.repository.RecommendationRepository;
 import com.capstone.backend.domain.user.entity.User;
-import com.capstone.backend.domain.user.entity.UserSkinProfile;
 import com.capstone.backend.domain.user.repository.UserRepository;
-import com.capstone.backend.domain.user.repository.UserSkinProfileRepository;
 import com.fasterxml.jackson.core.type.TypeReference;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import lombok.RequiredArgsConstructor;
@@ -38,7 +36,6 @@ public class RecommendationServiceImpl implements RecommendationService {
     private final RecommendationRepository recommendationRepository;
     private final ProductRepository productRepository;
     private final UserRepository userRepository;
-    private final UserSkinProfileRepository skinProfileRepository;
     private final AgentClient agentClient;
     private final ObjectMapper objectMapper;
 
@@ -48,11 +45,12 @@ public class RecommendationServiceImpl implements RecommendationService {
         Product product = productRepository.findById(request.getBaseProductId())
                 .orElseThrow(() -> new BusinessException(ErrorCode.PRODUCT_NOT_FOUND));
 
-        UserSkinProfile skinProfile = skinProfileRepository.findByUserId(userId)
-                .orElseThrow(() -> new BusinessException(ErrorCode.SKIN_PROFILE_NOT_FOUND));
-
         User user = userRepository.findById(userId)
                 .orElseThrow(() -> new BusinessException(ErrorCode.NOT_FOUND));
+
+        if (user.getSkinType() == null && user.getPersonalColor() == null) {
+            throw new BusinessException(ErrorCode.SKIN_PROFILE_NOT_FOUND);
+        }
 
         int tolerancePercent = request.getPriceTolerancePercent() != null
                 ? request.getPriceTolerancePercent() : 10;
@@ -71,7 +69,6 @@ public class RecommendationServiceImpl implements RecommendationService {
 
         Recommendation saved = recommendationRepository.save(job);
 
-        // Fire-and-forget: FastAPI 비동기 호출
         Map<String, Object> agentPayload = new HashMap<>();
         agentPayload.put("jobId", saved.getId().toString());
         agentPayload.put("baseProductId", request.getBaseProductId().toString());
@@ -80,10 +77,10 @@ public class RecommendationServiceImpl implements RecommendationService {
         agentPayload.put("priceTolerancePercent", tolerancePercent);
 
         Map<String, Object> userProfile = new HashMap<>();
-        userProfile.put("skinType", skinProfile.getSkinType());
-        userProfile.put("skinConcerns", skinProfile.getSkinConcerns() != null
-                ? Arrays.asList(skinProfile.getSkinConcerns()) : List.of());
-        userProfile.put("personalColor", skinProfile.getPersonalColor());
+        userProfile.put("skinType", user.getSkinType());
+        userProfile.put("skinConcerns", user.getSkinConcerns() != null
+                ? Arrays.asList(user.getSkinConcerns()) : List.of());
+        userProfile.put("personalColor", user.getPersonalColor());
         agentPayload.put("userProfile", userProfile);
 
         agentClient.runAgent(agentPayload);
@@ -110,7 +107,6 @@ public class RecommendationServiceImpl implements RecommendationService {
         }
 
         Product baseProduct = job.getProduct();
-
         Map<String, Object> resultMap = parseResult(job.getResult());
 
         Integer matchScore = toInt(resultMap.get("matchScore"));
@@ -119,10 +115,8 @@ public class RecommendationServiceImpl implements RecommendationService {
 
         List<RecommendationResultResponse.MainRecommendation> mainRecommendations =
                 parseMainRecommendations(resultMap.get("mainRecommendations"));
-
         List<RecommendationResultResponse.SimilarProduct> similarProducts = parseProducts(
                 resultMap.get("similarUserProducts"), "satisfactionPercent");
-
         List<RecommendationResultResponse.AlternativeProduct> alternativeProducts =
                 parseAlternativeProducts(resultMap.get("alternativeProducts"));
 

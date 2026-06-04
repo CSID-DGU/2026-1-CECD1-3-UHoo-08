@@ -272,16 +272,16 @@ def _build_stores(price_options: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
     return stores
 
 
-def _upsert_insight(product_id: str, product: Dict[str, Any]) -> None:
+def _upsert_product_data(product_id: str, product: Dict[str, Any], feature_json: Dict[str, Any]) -> None:
+    """가격·리뷰·feature 데이터를 products 테이블에 단일 upsert."""
     sb = get_supabase()
     original_price = product.get("original_price")
     price_options = product.get("price_options") or []
     stores = _build_stores(price_options)
     lowest_price = min((s["price"] for s in stores if s["price"]), default=None)
     savings = (original_price - lowest_price) if (original_price and lowest_price) else None
-    payload = {
+    payload: Dict[str, Any] = {
         "product_id": product_id,
-        "original_price": original_price,
         "lowest_price": lowest_price,
         "savings": savings,
         "stores": stores,
@@ -289,34 +289,12 @@ def _upsert_insight(product_id: str, product: Dict[str, Any]) -> None:
         "average_score": product.get("average_score"),
         "review_count": product.get("review_count"),
         "skin_type_satisfaction": product.get("skin_type_satisfaction"),
+        "feature_json": json.dumps(feature_json, ensure_ascii=False),
         "last_updated_at": datetime.utcnow().isoformat(),
     }
-    sb.table("product_insights").upsert(payload, on_conflict="product_id").execute()
-
-
-def _upsert_feature(product_id: str, feature_json: Dict[str, Any]) -> None:
-    sb = get_supabase()
-    existing = (
-        sb.table("product_features")
-        .select("id")
-        .eq("product_id", product_id)
-        .limit(1)
-        .execute()
-    )
-    if existing.data:
-        sb.table("product_features").update({
-            "feature_json": json.dumps(feature_json, ensure_ascii=False),
-            "updated_at": datetime.utcnow().isoformat(),
-        }).eq("product_id", product_id).execute()
-    else:
-        now = datetime.utcnow().isoformat()
-        sb.table("product_features").insert({
-            "id": str(uuid.uuid4()),
-            "product_id": product_id,
-            "feature_json": json.dumps(feature_json, ensure_ascii=False),
-            "created_at": now,
-            "updated_at": now,
-        }).execute()
+    if original_price:
+        payload["original_price"] = original_price
+    sb.table("products").upsert(payload, on_conflict="product_id").execute()
 
 
 # ── 공개 함수 ──────────────────────────────────────────────────────────────
@@ -347,8 +325,7 @@ def crawl_and_seed(category: str, limit: int = 10) -> Dict[str, Any]:
         product_id = _upsert_product(p, category)
         if not product_id:
             return {"status": "skipped", "name": p.get("name"), "brand": p.get("brand"), "reason": "upsert 실패"}
-        _upsert_insight(product_id, p)
-        _upsert_feature(product_id, feature_json)
+        _upsert_product_data(product_id, p, feature_json)
         price_options = p.get("price_options") or []
         lowest = min((o.get("final_price") or o.get("price") or 0 for o in price_options), default=None)
         return {

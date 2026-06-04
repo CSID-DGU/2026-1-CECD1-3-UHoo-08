@@ -3,9 +3,7 @@ package com.capstone.backend.domain.onboarding.service;
 import com.capstone.backend.common.exception.BusinessException;
 import com.capstone.backend.common.exception.ErrorCode;
 import com.capstone.backend.domain.product.entity.Product;
-import com.capstone.backend.domain.product.entity.ProductInsight;
 import com.capstone.backend.domain.product.entity.UserProduct;
-import com.capstone.backend.domain.product.repository.ProductInsightRepository;
 import com.capstone.backend.domain.product.repository.ProductRepository;
 import com.capstone.backend.domain.product.repository.UserProductRepository;
 import com.capstone.backend.domain.onboarding.dto.RegisteredProductAddRequest;
@@ -28,7 +26,6 @@ import java.util.UUID;
 public class RegisteredProductServiceImpl implements RegisteredProductService {
 
     private final ProductRepository productRepository;
-    private final ProductInsightRepository productInsightRepository;
     private final UserProductRepository userProductRepository;
     private final RegisteredRepository registeredRepository;
     private final UserRepository userRepository;
@@ -50,16 +47,10 @@ public class RegisteredProductServiceImpl implements RegisteredProductService {
                     .category(request.getCategory())
                     .imageUrl(request.getImageUrl())
                     .originalPrice(request.getLowestPrice())
-                    .build();
-            product = productRepository.save(product);
-
-            ProductInsight insight = ProductInsight.builder()
-                    .product(product)
                     .lowestPrice(request.getLowestPrice())
-                    .originalPrice(request.getLowestPrice())
                     .lastUpdatedAt(now)
                     .build();
-            productInsightRepository.save(insight);
+            product = productRepository.save(product);
         }
 
         // 2. 중복 등록 확인

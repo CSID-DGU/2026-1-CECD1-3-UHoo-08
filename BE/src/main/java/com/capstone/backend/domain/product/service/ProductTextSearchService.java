@@ -4,8 +4,6 @@ import com.capstone.backend.common.exception.BusinessException;
 import com.capstone.backend.common.exception.ErrorCode;
 import com.capstone.backend.domain.product.dto.response.ProductSearchResponse;
 import com.capstone.backend.domain.product.entity.Product;
-import com.capstone.backend.domain.product.entity.ProductInsight;
-import com.capstone.backend.domain.product.repository.ProductInsightRepository;
 import com.capstone.backend.domain.product.repository.ProductRepository;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
@@ -28,7 +26,6 @@ import java.util.List;
 public class ProductTextSearchService {
 
     private final ProductRepository productRepository;
-    private final ProductInsightRepository productInsightRepository;
     private final WebClient webClient;
     private final ObjectMapper objectMapper;
 
@@ -57,24 +54,18 @@ public class ProductTextSearchService {
             List<ProductSearchResponse.ProductItem> items = new ArrayList<>();
 
             for (Product p : dbResults) {
-                ProductInsight insight = productInsightRepository.findByProduct_Id(p.getId()).orElse(null);
-
-                // 캐시 만료 시 Naver API로 업데이트
-                if (insight == null || insight.getLastUpdatedAt().isBefore(threshold)) {
+                if (p.getLastUpdatedAt() == null || p.getLastUpdatedAt().isBefore(threshold)) {
                     try {
-                        updateFromNaver(p, insight, q);
-                        insight = productInsightRepository.findByProduct_Id(p.getId()).orElse(insight);
+                        updateFromNaver(p);
                     } catch (Exception e) {
                         log.warn("Naver API update failed for product {}: {}", p.getId(), e.getMessage());
                     }
                 }
-
-                items.add(toProductItem(p, insight));
+                items.add(toProductItem(p));
             }
             return new ProductSearchResponse(items);
         }
 
-        // DB에 없으면 Naver API에서 가져와서 저장
         return fetchAndSaveFromNaver(q, size);
     }
 
@@ -134,7 +125,6 @@ public class ProductTextSearchService {
             String category = mapCategory(category1, name);
             int originalPrice = hprice > 0 ? hprice : lprice;
 
-            // DB에 저장
             Product product = productRepository.findByNameAndBrand(name, brand).orElseGet(() -> {
                 Product newProduct = Product.builder()
                         .name(name).brand(brand).category(category)
@@ -145,26 +135,10 @@ public class ProductTextSearchService {
 
             String mallName = item.path("mallName").asText("네이버쇼핑");
             String storesJson = buildStoresJson(mallName, lprice, link);
+            product.updatePriceData(lprice, storesJson, LocalDateTime.now());
+            productRepository.save(product);
 
-            ProductInsight insight = productInsightRepository.findByProduct_Id(product.getId()).orElseGet(() ->
-                    ProductInsight.builder().product(product).build());
-
-            ProductInsight updatedInsight = ProductInsight.builder()
-                    .id(insight.getId())
-                    .product(product)
-                    .originalPrice(originalPrice)
-                    .lowestPrice(lprice)
-                    .stores(storesJson)
-                    .reviewSummary(insight.getReviewSummary())
-                    .averageScore(insight.getAverageScore())
-                    .reviewCount(insight.getReviewCount())
-                    .skinTypeSatisfaction(insight.getSkinTypeSatisfaction())
-                    .savings(insight.getSavings())
-                    .lastUpdatedAt(LocalDateTime.now())
-                    .build();
-            productInsightRepository.save(updatedInsight);
-
-            return toProductItem(product, updatedInsight);
+            return toProductItem(product);
 
         } catch (Exception e) {
             log.warn("Failed to process Naver item: {}", e.getMessage());
@@ -172,7 +146,7 @@ public class ProductTextSearchService {
         }
     }
 
-    private void updateFromNaver(Product product, ProductInsight insight, String q) {
+    private void updateFromNaver(Product product) {
         try {
             String responseBody = webClient.get()
                     .uri(naverShopSearchUrl + "?query={q}&display=1", product.getName() + " " + product.getBrand())
@@ -192,15 +166,8 @@ public class ProductTextSearchService {
             String link = item.path("link").asText(null);
             String storesJson = buildStoresJson(mallName, lprice, link);
 
-            ProductInsight toSave = ProductInsight.builder()
-                    .id(insight != null ? insight.getId() : null)
-                    .product(product)
-                    .originalPrice(product.getOriginalPrice())
-                    .lowestPrice(lprice)
-                    .stores(storesJson)
-                    .lastUpdatedAt(LocalDateTime.now())
-                    .build();
-            productInsightRepository.save(toSave);
+            product.updatePriceData(lprice, storesJson, LocalDateTime.now());
+            productRepository.save(product);
         } catch (Exception e) {
             log.warn("Failed to update product {} from Naver: {}", product.getId(), e.getMessage());
         }
@@ -219,7 +186,7 @@ public class ProductTextSearchService {
         return "skincare";
     }
 
-    private ProductSearchResponse.ProductItem toProductItem(Product p, ProductInsight insight) {
+    private ProductSearchResponse.ProductItem toProductItem(Product p) {
         return ProductSearchResponse.ProductItem.builder()
                 .id(p.getId())
                 .name(p.getName())
@@ -227,7 +194,7 @@ public class ProductTextSearchService {
                 .category(p.getCategory())
                 .imageUrl(p.getImageUrl())
                 .originalPrice(p.getOriginalPrice())
-                .currentLowestPrice(insight != null ? insight.getLowestPrice() : null)
+                .currentLowestPrice(p.getLowestPrice())
                 .build();
     }
 }

@@ -1,6 +1,6 @@
 package com.capstone.backend.domain.user.dto.response;
 
-import com.capstone.backend.domain.user.entity.UserSkinProfile;
+import com.capstone.backend.domain.user.entity.User;
 import lombok.Builder;
 import lombok.Getter;
 
@@ -13,21 +13,21 @@ import java.util.UUID;
 @Builder
 public class SkinProfileResponse {
 
-    private UUID skinProfileId;
+    private UUID userId;
     private String personalColor;
     private String skinType;
     private List<String> skinConcerns;
     private List<String> notes;
     private LocalDateTime updatedAt;
 
-    public static SkinProfileResponse from(UserSkinProfile p) {
+    public static SkinProfileResponse from(User u) {
         return SkinProfileResponse.builder()
-                .skinProfileId(p.getId())
-                .personalColor(p.getPersonalColor())
-                .skinType(p.getSkinType())
-                .skinConcerns(p.getSkinConcerns() != null ? Arrays.asList(p.getSkinConcerns()) : List.of())
-                .notes(p.getNotes() != null ? Arrays.asList(p.getNotes()) : null)
-                .updatedAt(p.getUpdatedAt())
+                .userId(u.getId())
+                .personalColor(u.getPersonalColor())
+                .skinType(u.getSkinType())
+                .skinConcerns(u.getSkinConcerns() != null ? Arrays.asList(u.getSkinConcerns()) : List.of())
+                .notes(u.getNotes() != null ? Arrays.asList(u.getNotes()) : null)
+                .updatedAt(u.getUpdatedAt())
                 .build();
     }
 }

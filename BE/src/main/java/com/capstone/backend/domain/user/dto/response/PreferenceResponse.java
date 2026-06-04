@@ -1,6 +1,6 @@
 package com.capstone.backend.domain.user.dto.response;
 
-import com.capstone.backend.domain.user.entity.UserPreference;
+import com.capstone.backend.domain.user.entity.User;
 import lombok.Builder;
 import lombok.Getter;
 
@@ -11,17 +11,17 @@ import java.util.UUID;
 @Builder
 public class PreferenceResponse {
 
-    private UUID preferenceId;
+    private UUID userId;
     private String searchPurpose;
     private Integer priceTolerancePercent;
     private LocalDateTime updatedAt;
 
-    public static PreferenceResponse from(UserPreference p) {
+    public static PreferenceResponse from(User u) {
         return PreferenceResponse.builder()
-                .preferenceId(p.getId())
-                .searchPurpose(p.getSearchPurpose())
-                .priceTolerancePercent(p.getPriceTolerancePercent())
-                .updatedAt(p.getUpdatedAt())
+                .userId(u.getId())
+                .searchPurpose(u.getSearchPurpose())
+                .priceTolerancePercent(u.getPriceTolerancePercent())
+                .updatedAt(u.getUpdatedAt())
                 .build();
     }
 }

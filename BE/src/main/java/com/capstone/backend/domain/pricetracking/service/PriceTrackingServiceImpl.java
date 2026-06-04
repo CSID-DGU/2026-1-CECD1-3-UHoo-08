@@ -12,13 +12,9 @@ import com.capstone.backend.domain.pricetracking.dto.response.PriceTrackingDetai
 import com.capstone.backend.domain.pricetracking.dto.response.PriceTrackingListResponse;
 import com.capstone.backend.domain.pricetracking.dto.response.PriceTrackingUpdateResponse;
 import com.capstone.backend.domain.pricetracking.entity.PriceTracking;
-import com.capstone.backend.domain.pricetracking.entity.PriceTrackingAlertSettings;
-import com.capstone.backend.domain.pricetracking.repository.PriceTrackingAlertSettingsRepository;
 import com.capstone.backend.domain.pricetracking.repository.PriceTrackingRepository;
 import com.capstone.backend.domain.product.entity.Product;
-import com.capstone.backend.domain.product.entity.ProductInsight;
 import com.capstone.backend.domain.product.repository.PriceHistoryRepository;
-import com.capstone.backend.domain.product.repository.ProductInsightRepository;
 import com.capstone.backend.domain.product.repository.ProductRepository;
 import com.capstone.backend.domain.user.entity.User;
 import com.capstone.backend.domain.user.repository.UserRepository;
@@ -31,7 +27,6 @@ import org.springframework.transaction.annotation.Transactional;
 
 import java.time.LocalDate;
 import java.time.LocalDateTime;
-import java.time.format.DateTimeFormatter;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
@@ -44,9 +39,7 @@ import java.util.stream.Collectors;
 public class PriceTrackingServiceImpl implements PriceTrackingService {
 
     private final PriceTrackingRepository trackingRepository;
-    private final PriceTrackingAlertSettingsRepository alertSettingsRepository;
     private final ProductRepository productRepository;
-    private final ProductInsightRepository productInsightRepository;
     private final PriceHistoryRepository priceHistoryRepository;
     private final UserRepository userRepository;
     private final ObjectMapper objectMapper;
@@ -64,15 +57,14 @@ public class PriceTrackingServiceImpl implements PriceTrackingService {
 
         for (PriceTracking pt : allTrackings) {
             Product p = pt.getProduct();
-            ProductInsight insight = productInsightRepository.findByProduct_Id(p.getId()).orElse(null);
-            Integer lowestPrice = insight != null ? insight.getLowestPrice() : null;
+            Integer lowestPrice = p.getLowestPrice();
 
             PriceTrackingListResponse.ProductInfo productInfo = PriceTrackingListResponse.ProductInfo.builder()
                     .id(p.getId()).name(p.getName()).brand(p.getBrand()).imageUrl(p.getImageUrl())
                     .build();
 
             if (pt.isAchieved()) {
-                String lowestStoreUrl = extractLowestStoreUrl(insight);
+                String lowestStoreUrl = extractLowestStoreUrl(p);
                 achieved.add(PriceTrackingListResponse.AchievedItemDto.builder()
                         .trackingId(pt.getId())
                         .product(productInfo)
@@ -92,9 +84,9 @@ public class PriceTrackingServiceImpl implements PriceTrackingService {
             }
         }
 
-        PriceTrackingAlertSettings alertSettings = alertSettingsRepository.findByUser_Id(userId).orElse(null);
-        AlertSettingsResponse alertSettingsDto = alertSettings != null
-                ? AlertSettingsResponse.from(alertSettings)
+        User user = userRepository.findById(userId).orElse(null);
+        AlertSettingsResponse alertSettingsDto = user != null
+                ? AlertSettingsResponse.from(user)
                 : AlertSettingsResponse.defaultSettings();
 
         return PriceTrackingListResponse.builder()
@@ -118,9 +110,7 @@ public class PriceTrackingServiceImpl implements PriceTrackingService {
             throw new BusinessException(ErrorCode.ALREADY_TRACKING);
         }
 
-        ProductInsight insight = productInsightRepository.findByProduct_Id(request.getProductId()).orElse(null);
-        if (insight != null && insight.getLowestPrice() != null
-                && request.getTargetPrice() >= insight.getLowestPrice()) {
+        if (product.getLowestPrice() != null && request.getTargetPrice() >= product.getLowestPrice()) {
             throw new BusinessException(ErrorCode.VALIDATION_ERROR);
         }
 
@@ -138,14 +128,7 @@ public class PriceTrackingServiceImpl implements PriceTrackingService {
                 .updatedAt(now)
                 .build();
 
-        PriceTracking saved = trackingRepository.save(priceTracking);
-
-        alertSettingsRepository.findByUser_Id(userId).orElseGet(() -> {
-            PriceTrackingAlertSettings settings = PriceTrackingAlertSettings.defaultSettings(user);
-            return alertSettingsRepository.save(settings);
-        });
-
-        return PriceTrackingCreateResponse.from(saved);
+        return PriceTrackingCreateResponse.from(trackingRepository.save(priceTracking));
     }
 
     @Override
@@ -160,13 +143,10 @@ public class PriceTrackingServiceImpl implements PriceTrackingService {
     @Override
     @Transactional
     public AlertSettingsResponse updateAlertSettings(UUID userId, AlertSettingsUpdateRequest request) {
-        PriceTrackingAlertSettings settings = alertSettingsRepository.findByUser_Id(userId)
+        User user = userRepository.findById(userId)
                 .orElseThrow(() -> new BusinessException(ErrorCode.NOT_FOUND));
-
-        alertSettingsRepository.updateAlertSettings(userId, request.getTargetPriceAlert(), request.getWeeklyReport());
-
-        PriceTrackingAlertSettings updated = alertSettingsRepository.findByUser_Id(userId).orElseThrow();
-        return AlertSettingsResponse.from(updated);
+        user.updateAlertSettings(request.getTargetPriceAlert(), request.getWeeklyReport());
+        return AlertSettingsResponse.from(userRepository.save(user));
     }
 
     @Override
@@ -176,9 +156,8 @@ public class PriceTrackingServiceImpl implements PriceTrackingService {
                 .orElseThrow(() -> new BusinessException(ErrorCode.NOT_FOUND));
 
         if (request.getTargetPrice() != null) {
-            ProductInsight insight = productInsightRepository.findByProduct_Id(pt.getProduct().getId()).orElse(null);
-            if (insight != null && insight.getLowestPrice() != null
-                    && request.getTargetPrice() >= insight.getLowestPrice()) {
+            Product product = pt.getProduct();
+            if (product.getLowestPrice() != null && request.getTargetPrice() >= product.getLowestPrice()) {
                 throw new BusinessException(ErrorCode.VALIDATION_ERROR);
             }
         }
@@ -207,10 +186,8 @@ public class PriceTrackingServiceImpl implements PriceTrackingService {
                 .orElseThrow(() -> new BusinessException(ErrorCode.NOT_FOUND));
 
         Product product = pt.getProduct();
-        ProductInsight insight = productInsightRepository.findByProduct_Id(product.getId()).orElse(null);
-
-        Integer currentLowestPrice = insight != null ? insight.getLowestPrice() : null;
-        Integer originalPrice = insight != null ? insight.getOriginalPrice() : product.getOriginalPrice();
+        Integer currentLowestPrice = product.getLowestPrice();
+        Integer originalPrice = product.getOriginalPrice();
         Integer historicalLowest = priceHistoryRepository.findHistoricalLowest(product.getId());
 
         double changePercent = 0.0;
@@ -230,7 +207,7 @@ public class PriceTrackingServiceImpl implements PriceTrackingService {
                         .build())
                 .collect(Collectors.toList());
 
-        List<PriceTrackingDetailResponse.StoreInfo> stores = parseStores(insight);
+        List<PriceTrackingDetailResponse.StoreInfo> stores = parseStores(product);
 
         return PriceTrackingDetailResponse.builder()
                 .trackingId(pt.getId())
@@ -269,11 +246,11 @@ public class PriceTrackingServiceImpl implements PriceTrackingService {
         };
     }
 
-    private String extractLowestStoreUrl(ProductInsight insight) {
-        if (insight == null || insight.getStores() == null) return null;
+    private String extractLowestStoreUrl(Product product) {
+        if (product.getStores() == null) return null;
         try {
             List<Map<String, Object>> storeList = objectMapper.readValue(
-                    insight.getStores(), new TypeReference<>() {});
+                    product.getStores(), new TypeReference<>() {});
             return storeList.stream()
                     .filter(s -> Boolean.TRUE.equals(s.get("isLowest")))
                     .map(s -> (String) s.get("purchaseUrl"))
@@ -284,11 +261,11 @@ public class PriceTrackingServiceImpl implements PriceTrackingService {
         }
     }
 
-    private List<PriceTrackingDetailResponse.StoreInfo> parseStores(ProductInsight insight) {
-        if (insight == null || insight.getStores() == null) return List.of();
+    private List<PriceTrackingDetailResponse.StoreInfo> parseStores(Product product) {
+        if (product.getStores() == null) return List.of();
         try {
             List<Map<String, Object>> storeList = objectMapper.readValue(
-                    insight.getStores(), new TypeReference<>() {});
+                    product.getStores(), new TypeReference<>() {});
             return storeList.stream().map(s -> PriceTrackingDetailResponse.StoreInfo.builder()
                     .storeName((String) s.get("storeName"))
                     .price(((Number) s.get("price")).intValue())
