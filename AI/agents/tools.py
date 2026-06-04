@@ -99,7 +99,11 @@ async def run_score_agent(
     resolved_intent_vector = (_intent_store.pop(job_id, None) if job_id else None) or []
 
     # candidates JSON → candidate_ids 추출
-    candidate_list = json.loads(candidates) if isinstance(candidates, str) else candidates
+    parsed = json.loads(candidates) if isinstance(candidates, str) else candidates
+    if isinstance(parsed, dict) and "candidates" in parsed:
+        candidate_list = parsed["candidates"]
+    else:
+        candidate_list = parsed if isinstance(parsed, list) else []
     candidate_ids = [c["product_id"] for c in candidate_list if "product_id" in c]
 
     # user_profile camelCase → snake_case (personalization_scorer 요구사항)
