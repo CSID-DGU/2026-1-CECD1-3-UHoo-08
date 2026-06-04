@@ -53,7 +53,10 @@ async def run_discovery_agent(
     if not base_product_id:
         return json.dumps({"candidates": [], "error": "base_product_id 필요"})
 
-    profile_dict = json.loads(user_profile) if isinstance(user_profile, str) else user_profile
+    if isinstance(user_profile, str):
+        profile_dict = json.loads(user_profile) if user_profile.strip() else {}
+    else:
+        profile_dict = user_profile or {}
     profile = UserProfile(
         user_id=user_id,
         skin_type=profile_dict.get("skinType"),
@@ -100,7 +103,10 @@ async def run_score_agent(
     candidate_ids = [c["product_id"] for c in candidate_list if "product_id" in c]
 
     # user_profile camelCase → snake_case (personalization_scorer 요구사항)
-    profile_dict = json.loads(user_profile) if isinstance(user_profile, str) else user_profile
+    if isinstance(user_profile, str):
+        profile_dict = json.loads(user_profile) if user_profile.strip() else {}
+    else:
+        profile_dict = user_profile or {}
     profile_snake = {
         "skin_type": profile_dict.get("skinType"),
         "personal_color": profile_dict.get("personalColor"),
