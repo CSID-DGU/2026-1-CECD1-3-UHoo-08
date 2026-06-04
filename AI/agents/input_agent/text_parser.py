@@ -4,6 +4,7 @@ from langchain_core.messages import HumanMessage
 
 from config import settings
 from models.extracted_product import ExtractedProduct
+from agents.input_agent.brand_map import BRAND_MAP
 
 PROMPT = """너는 화장품 상품 정보 추출 전문가이다.
 텍스트에서 아래 JSON 형식으로만 응답하라. 설명, 마크다운, 코드블록 금지.
@@ -89,4 +90,10 @@ def parse_text(text: str) -> ExtractedProduct:
     if raw.startswith("```"):
         raw = raw.strip("`").removeprefix("json").strip()
 
-    return ExtractedProduct(**json.loads(raw))
+    result = ExtractedProduct(**json.loads(raw))
+
+    first_word = text.strip().split()[0] if text.strip() else ""
+    if first_word in BRAND_MAP:
+        result.brand = BRAND_MAP[first_word]
+
+    return result
