@@ -6,15 +6,10 @@ from config import settings
 from models.extracted_product import ExtractedProduct
 
 PROMPT = """너는 화장품 상품 정보 추출 전문가이다.
+텍스트에서 아래 JSON 형식으로만 응답하라. 설명, 마크다운, 코드블록 금지.
+텍스트에 없는 정보는 null로 출력하라.
 
-주어진 텍스트에서 언급된 정보만 근거로 상품 정보를 추출하라.
-텍스트에 없는 정보는 절대 추측하지 말고 null로 출력하라.
-
-반드시 유효한 JSON만 출력하라.
-설명 문장, 마크다운, 코드블록은 출력하지 마라.
-
-[추출 대상]
-
+[출력 형식]
 {
   "product_name": null,
   "brand": null,
@@ -30,23 +25,52 @@ PROMPT = """너는 화장품 상품 정보 추출 전문가이다.
   }
 }
 
-[카테고리 분류 기준]
-category.main은 아래 4개 코드 중 하나로만 입력하라.
-category.sub는 해당 main에 속하는 세부 제품 유형(한국어)을 입력하라.
-
-- main=base → sub: 쿠션, 파운데이션, 프라이머, 컨실러 중 하나
-- main=sun  → sub: 선크림, 선스틱, 선쿠션, 선스프레이 중 하나
-- main=lip  → sub: 틴트, 립스틱, 립글로스, 립밤 중 하나
-- main=skincare → sub: 토너, 에센스, 세럼, 크림, 오일, 로션 중 하나
-
 [규칙]
-- brand: 텍스트 맨 앞 단어는 화장품 브랜드일 가능성이 매우 높다. 반드시 추출하라.
-  한글 브랜드는 영문으로 변환하라 (예: 달바→DALBA, 라운드랩→ROUNDLAB, 롬앤→ROMAND, 클리오→CLIO, 헤라→HERA, 미샤→MISSHA, 토니모리→TONYMOLY, 이니스프리→INNISFREE, 에뛰드→ETUDE).
-  영문 브랜드는 대문자로 표기 (예: HERA, LANEIGE, PRETTYSKIN).
-  product_name에서 브랜드명은 제외하라.
-- volume: 숫자만 추출 (예: "15g" → 15, "100mL" → 100)
-- unit: g 또는 ml 중 하나만
-- 모르는 값은 null."""
+1. brand: 텍스트 첫 단어가 브랜드다. 한글→영문 공식 브랜드명으로 변환.
+   웨이크메이크=WAKEMAKE, 롬앤=ROMAND, 클리오=CLIO, 달바=DALBA, 헤라=HERA,
+   미샤=MISSHA, 토니모리=TONYMOLY, 이니스프리=INNISFREE, 에뛰드=ETUDE,
+   라운드랩=ROUNDLAB, 어퓨=APIEU, 조선미녀=BEAUTY OF JOSEON
+2. product_name: 브랜드명 제외한 나머지
+3. category.main: base(쿠션·파운데이션·프라이머·컨실러) / sun(선크림·선스틱·선쿠션·선스프레이) / lip(틴트·립스틱·립글로스·립밤·밤스틱) / skincare(토너·에센스·세럼·크림·오일·로션)
+4. category.sub: main에 해당하는 세부 유형 한국어 (예: 립밤, 틴트, 쿠션, 선크림, 세럼)
+5. volume: 숫자만 (15g→15), unit: g 또는 ml
+
+[예시]
+입력: 웨이크메이크 소프트 블러링 밤 스틱
+출력:
+{
+  "product_name": "소프트 블러링 밤 스틱",
+  "brand": "WAKEMAKE",
+  "category": {"main": "lip", "sub": "립밤"},
+  "attributes": {"shade": null, "type": null, "volume": null, "unit": null}
+}
+
+입력: 롬앤 쥬시 라스팅 틴트 피그 로즈
+출력:
+{
+  "product_name": "쥬시 라스팅 틴트 피그 로즈",
+  "brand": "ROMAND",
+  "category": {"main": "lip", "sub": "틴트"},
+  "attributes": {"shade": "피그 로즈", "type": null, "volume": null, "unit": null}
+}
+
+입력: 달바 화이트 트러플 퍼스트 스프레이 세럼 100mL
+출력:
+{
+  "product_name": "화이트 트러플 퍼스트 스프레이 세럼",
+  "brand": "DALBA",
+  "category": {"main": "skincare", "sub": "세럼"},
+  "attributes": {"shade": null, "type": null, "volume": 100, "unit": "ml"}
+}
+
+입력: LANEIGE 립 슬리핑 마스크 베리
+출력:
+{
+  "product_name": "립 슬리핑 마스크",
+  "brand": "LANEIGE",
+  "category": {"main": "lip", "sub": "립밤"},
+  "attributes": {"shade": "베리", "type": null, "volume": null, "unit": null}
+}"""
 
 _client = ChatOpenAI(
     model=settings.QWEN_LLM_MODEL,
