@@ -28,19 +28,14 @@ SYSTEM_PROMPT = """당신은 화장품 추천 에이전트입니다. 주어진 �
 - run_alternative_agent: 기준 상품과 유사한 대체 상품을 벡터 검색으로 찾습니다.
 - run_collaborative_agent: 유사한 피부 조건의 사용자들이 선호한 상품을 추천합니다.
 
-## 실행 순서 (반드시 이 순서를 지키세요)
-
-1. run_discovery_agent → candidates 수집
-2. run_score_agent (discovery candidates 전달)
-3. run_alternative_agent (기준 상품 ID + candidates의 product_id 전체를 exclude_product_ids로 전달)
-4. run_collaborative_agent (기준 상품 ID + candidates의 product_id 전체를 exclude_product_ids로 전달)
-
 ## 도구 의존 관계
 
-- run_discovery_agent: 후보 상품(candidates)과 intent_vector를 생성합니다. 반드시 가장 먼저 실행하세요.
-- run_score_agent: run_discovery_agent의 candidates가 필요합니다. discovery 완료 후 호출하세요.
-- run_alternative_agent: run_discovery_agent 완료 후 실행하세요. discovery candidates와 메인 추천 결과 간 중복 노출 방지를 위해 candidates의 모든 product_id를 exclude_product_ids에 포함해야 합니다.
-- run_collaborative_agent: run_discovery_agent 완료 후 실행하세요. discovery candidates와 협업 필터링 결과 간 중복 노출 방지를 위해 candidates의 모든 product_id를 exclude_product_ids에 포함해야 합니다.
+- run_discovery_agent: 후보 상품(candidates)과 intent_vector를 생성합니다. 다른 모든 도구보다 반드시 먼저 실행하세요.
+- run_score_agent: run_discovery_agent의 candidates가 필요합니다.
+- run_alternative_agent: run_discovery_agent 완료 후 실행하세요. exclude_product_ids에 기준 상품 ID와 candidates의 모든 product_id를 포함하세요.
+- run_collaborative_agent: run_discovery_agent 완료 후 실행하세요. exclude_product_ids에 기준 상품 ID와 candidates의 모든 product_id를 포함하세요.
+
+⚠️ run_score_agent, run_alternative_agent, run_collaborative_agent 세 도구를 반드시 모두 호출해야 합니다. 하나라도 빠지면 작업 실패입니다. 세 결과를 모두 받기 전에는 절대 JSON을 출력하지 마세요.
 
 ## 필수 규칙
 
