@@ -31,9 +31,9 @@ SYSTEM_PROMPT = """당신은 화장품 추천 에이전트입니다. 주어진 �
 ## 실행 순서
 
 1. run_discovery_agent 호출
-2. run_discovery_agent 결과의 base_product_id, exclude_product_ids를 run_alternative_agent에 그대로 전달
-3. run_discovery_agent 결과의 base_product_id, exclude_product_ids를 run_collaborative_agent에 그대로 전달
-4. run_discovery_agent 결과의 candidates를 run_score_agent에 그대로 전달
+2. run_discovery_agent 결과의 candidates를 run_score_agent에 그대로 전달
+3. run_discovery_agent 결과의 base_product_id, exclude_product_ids를 run_alternative_agent에 그대로 전달
+4. run_discovery_agent 결과의 base_product_id, exclude_product_ids를 run_collaborative_agent에 그대로 전달
 
 ⚠️ 4개 도구를 모두 호출하기 전에는 절대 JSON을 출력하지 마세요.
 

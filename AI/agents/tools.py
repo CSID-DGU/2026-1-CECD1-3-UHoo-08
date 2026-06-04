@@ -168,8 +168,8 @@ async def run_score_agent(
 
 @tool
 async def run_alternative_agent(
-    base_product_id: str,
-    exclude_product_ids: str = "[]",
+    base_product_id: str = "",
+    exclude_product_ids=None,
     top_k: int = 5,
     job_id: str = "",
 ) -> str:
@@ -200,10 +200,10 @@ async def run_alternative_agent(
 
 @tool
 async def run_collaborative_agent(
-    user_id: str,
+    user_id: str = "",
     skin_type: str = "",
     personal_color: str = "",
-    exclude_product_ids: str = "[]",
+    exclude_product_ids=None,
     top_k: int = 5,
     job_id: str = "",
 ) -> str:
