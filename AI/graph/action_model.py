@@ -46,7 +46,7 @@ SYSTEM_PROMPT = """당신은 화장품 추천 에이전트입니다. 주어진 �
 모든 도구 호출이 끝나면 반드시 아래 JSON만 출력하라. 설명, 마크다운, 코드블록 없이 순수 JSON만.
 도구가 빈 배열이나 오류를 반환해도 반드시 아래 형식의 JSON을 출력하라.
 
-{"matchScore": <run_score_agent 최고 점수, 없으면 0>, "matchLabel": <점수 기반: 90이상="인생템 확률 매칭", 70이상="높은 적합도", 50이상="괜찮은 선택", 나머지="추천 상품">, "aiReason": <사용자 피부·예산 조건 기반 추천 이유 1~2문장 한국어>, "similarUserProducts": <run_collaborative_agent 반환값, 없으면 []>, "alternativeProducts": <run_alternative_agent 반환값, 없으면 []>}
+{"matchScore": <run_score_agent 최고 점수, 없으면 0>, "matchLabel": <점수 기반: 90이상="인생템 확률 매칭", 70이상="높은 적합도", 50이상="괜찮은 선택", 나머지="추천 상품">, "aiReason": <추천 이유 1~2문장 한국어. 상품 ID·UUID 절대 사용 금지. 상품 카테고리에 맞는 조건(립이면 퍼스널컬러·발색·제형, 베이스면 커버력·지속력, 스킨케어면 성분·피부고민)을 근거로 작성>, "similarUserProducts": <run_collaborative_agent 반환값, 없으면 []>, "alternativeProducts": <run_alternative_agent 반환값, 없으면 []>}
 """
 
 agent_graph = create_react_agent(
