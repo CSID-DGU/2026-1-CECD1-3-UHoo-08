@@ -85,12 +85,33 @@ def run(product: ExtractedProduct) -> ProductResponse:
         review_summary = db_product.get("review_summary") or {}
         ingredients    = db_product.get("ingredients") or []
     elif enriched:
-        gemini_price = enriched.get("price_data") or {}
-        review_data  = enriched.get("review_data") or {}
+        price_data = enriched.get("price_data") or {}
+        best = price_data.get("best_option") or {}
+        options = price_data.get("options") or []
+        lowest_price = best.get("final_price")
+        original_price = price_data.get("original_price")
+        savings = (original_price - lowest_price) if (original_price and lowest_price) else None
+        best_platform = best.get("platform", "")
+        gemini_price = {
+            "lowestPrice": lowest_price,
+            "savings": savings,
+            "stores": [
+                {
+                    "storeName": opt.get("platform", ""),
+                    "price": opt.get("final_price"),
+                    "shippingInfo": "무료배송" if not opt.get("shipping_fee") else f"배송비 {opt['shipping_fee']}원",
+                    "isLowest": opt.get("platform") == best_platform,
+                }
+                for opt in options
+            ],
+        }
+
+        review_data = enriched.get("review_data") or {}
         review_summary = {
             "aiSummary": review_data.get("summary", ""),
-            "positive":  review_data.get("positive", []),
-            "negative":  review_data.get("negative", []),
+            "averageScore": review_data.get("average_score"),
+            "totalCount": review_data.get("review_count"),
+            "skinTypeSatisfaction": review_data.get("skin_type_satisfaction"),
         }
         ingredients = (enriched.get("ingredient_data") or {}).get("key_ingredients") or []
     else:

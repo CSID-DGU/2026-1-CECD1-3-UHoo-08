@@ -142,7 +142,9 @@ def build_prompt(product_name: str, brand: str, category_main: str,
   }},
   "product_features": {{}},
   "ingredient_data": {{
-    "key_ingredients": [],
+    "key_ingredients": [
+      {{"name": "성분명", "benefit": "효능·특징"}}
+    ],
     "warnings": [],
     "skin_suitability": ""
   }},
