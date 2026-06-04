@@ -62,9 +62,17 @@ initial_state = {
 setup_job()
 try:
     result = asyncio.run(agent_graph.ainvoke(initial_state))
+    print("=== 전체 메시지 수:", len(result["messages"]))
+    for i, msg in enumerate(result["messages"]):
+        print(f"[{i}] {type(msg).__name__}: {str(msg.content)[:200]}")
+    print()
     last = result["messages"][-1].content.strip()
     if last.startswith("```"):
         last = last.strip("`").removeprefix("json").strip()
-    print(json.dumps(json.loads(last), ensure_ascii=False, indent=2))
+    try:
+        print(json.dumps(json.loads(last), ensure_ascii=False, indent=2))
+    except Exception as e:
+        print("JSON 파싱 실패:", e)
+        print("마지막 메시지 원본:", repr(last))
 finally:
     cleanup_job()
