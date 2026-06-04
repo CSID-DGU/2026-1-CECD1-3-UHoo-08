@@ -126,9 +126,14 @@ async def run_score_agent(
     # intent_vector를 사이드채널에서 읽고 삭제 (메모리 누수 방지)
     resolved_intent_vector = (_intent_store.pop(job_id, None) if job_id else None) or []
 
-    # candidates → candidate_ids 추출
+    # candidates → candidate_ids 추출 (객체 배열 또는 UUID 문자열 배열 모두 처리)
     candidate_list = _parse_json_list(candidates, key="candidates")
-    candidate_ids = [c["product_id"] for c in candidate_list if "product_id" in c]
+    candidate_ids = []
+    for c in candidate_list:
+        if isinstance(c, dict) and "product_id" in c:
+            candidate_ids.append(c["product_id"])
+        elif isinstance(c, str) and c.strip():
+            candidate_ids.append(c.strip())
 
     # user_profile camelCase → snake_case
     profile_dict = _parse_profile(user_profile)
