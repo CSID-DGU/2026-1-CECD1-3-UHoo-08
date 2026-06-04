@@ -1,9 +1,8 @@
 ﻿import Spline from "@splinetool/react-spline";
-import type { CSSProperties } from "react";
-
 import appleIcon from "../../assets/Apple.png";
 import googleIcon from "../../assets/Google.png";
 import kakaoIcon from "../../assets/Kakao.png";
+import HwadamLogo from "../../assets/Hwadam.svg";
 
 const KAKAO_AUTH_URL =
   `https://kauth.kakao.com/oauth/authorize` +
@@ -12,25 +11,17 @@ const KAKAO_AUTH_URL =
   `&response_type=code`;
 
 const COPY = {
-  tagline: "나에게 맞는 뷰티 루틴",
-  socialStart: "소셜 계정으로 시작하기",
   kakao: "카카오로 계속하기",
   apple: "Apple으로 계속하기",
   google: "Google으로 계속하기",
   terms: "로그인 시 이용약관 및 개인정보처리방침에 동의합니다",
 };
 
-const glassBtn: CSSProperties = {
-  backdropFilter: "blur(16px)",
-  WebkitBackdropFilter: "blur(16px)",
-  border: "1px solid rgba(255,255,255,0.35)",
-};
-
 const socialButtons = [
   {
     label: COPY.kakao,
     icon: kakaoIcon,
-    background: "rgba(254,229,0,0.88)",
+    className: "bg-[#fee500]",
     onClick: () => {
       window.location.href = KAKAO_AUTH_URL;
     },
@@ -38,12 +29,12 @@ const socialButtons = [
   {
     label: COPY.apple,
     icon: appleIcon,
-    background: "rgba(255,255,255,0.86)",
+    className: "bg-white",
   },
   {
     label: COPY.google,
     icon: googleIcon,
-    background: "rgba(255,255,255,0.86)",
+    className: "bg-white",
   },
 ];
 
@@ -51,6 +42,10 @@ export function LoginPage() {
   return (
     <div className="min-h-screen bg-[#0d1b2a]">
       <div className="relative mx-auto min-h-screen w-full max-w-[430px] overflow-hidden">
+        {/* <Spline
+          className="pointer-events-none absolute left-0 top-0 z-0 h-[calc(100%+80px)] w-full"
+          scene="https://prod.spline.design/10xOe1-aIf1GHnfd/scene.splinecode"
+        /> */}
         <Spline
           scene="https://prod.spline.design/10xOe1-aIf1GHnfd/scene.splinecode"
           style={{
@@ -65,48 +60,17 @@ export function LoginPage() {
         />
 
         <section className="relative z-10 flex min-h-screen flex-col">
-          <div className="px-6 pb-10 pt-24 text-center">
-            <div
-              className="mx-auto inline-block px-10 py-8"
-              style={{
-                background: "rgba(10,20,40,0.55)",
-                backdropFilter: "blur(20px)",
-                WebkitBackdropFilter: "blur(20px)",
-                border: "1px solid rgba(255,255,255,0.18)",
-                borderRadius: 28,
-              }}
-            >
-              <h1
-                style={{
-                  color: "#ffffff",
-                  fontWeight: 700,
-                  fontSize: 34,
-                  margin: 0,
-                }}
-              >
-                화담
-              </h1>
-              <p
-                style={{
-                  color: "rgba(255,255,255,0.75)",
-                  margin: "10px 0 0",
-                  fontSize: 14,
-                }}
-              >
-                {COPY.tagline}
-              </p>
-            </div>
+          <div className="flex items-end mx-auto pb-10 pt-24 justify-between gap-6">
+            <img src={HwadamLogo} alt="HwaDam Logo" className="w-25" />
+            <h1 className="text-[48px] font-bold text-black">HwaDam</h1>
           </div>
 
           <div className="px-6">
-            <p className="mb-4 text-caption">{COPY.socialStart}</p>
-
             <div className="grid gap-3">
-              {socialButtons.map(({ label, icon, background, onClick }) => (
+              {socialButtons.map(({ label, icon, className, onClick }) => (
                 <button
-                  className="relative flex h-[54px] items-center justify-center rounded-xl text-black"
+                  className={`relative flex h-[54px] items-center justify-center rounded-xl text-black backdrop-blur-lg ${className}`}
                   key={label}
-                  style={{ ...glassBtn, background }}
                   type="button"
                   onClick={onClick}
                 >
@@ -123,7 +87,9 @@ export function LoginPage() {
           </div>
 
           <div className="mt-auto px-6 pb-6">
-            <p className="text-center text-caption">{COPY.terms}</p>
+            <p className="text-center text-caption text-gray-300">
+              {COPY.terms}
+            </p>
           </div>
         </section>
       </div>
