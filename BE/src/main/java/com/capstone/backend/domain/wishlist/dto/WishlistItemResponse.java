@@ -1,7 +1,6 @@
 package com.capstone.backend.domain.wishlist.dto;
 
 import com.capstone.backend.domain.product.entity.Product;
-import com.capstone.backend.domain.product.entity.ProductInsight;
 import com.capstone.backend.domain.wishlist.entity.Wishlist;
 import lombok.Builder;
 import lombok.Getter;
@@ -24,12 +23,12 @@ public class WishlistItemResponse {
         private String name;
         private String brand;
         private String imageUrl;
-        private Integer currentPrice;   // product.originalPrice (정가)
-        private Integer lowestPrice;    // productInsight.lowestPrice (현재 최저가)
+        private Integer currentPrice;
+        private Integer lowestPrice;
         private String category;
     }
 
-    public static WishlistItemResponse of(Wishlist wishlist, ProductInsight insight) {
+    public static WishlistItemResponse of(Wishlist wishlist) {
         Product p = wishlist.getProduct();
         return WishlistItemResponse.builder()
                 .wishlistId(wishlist.getId())
@@ -39,7 +38,7 @@ public class WishlistItemResponse {
                         .brand(p.getBrand())
                         .imageUrl(p.getImageUrl())
                         .currentPrice(p.getOriginalPrice())
-                        .lowestPrice(insight != null ? insight.getLowestPrice() : null)
+                        .lowestPrice(p.getLowestPrice())
                         .category(p.getCategory())
                         .build())
                 .matchScore(wishlist.getMatchScore())

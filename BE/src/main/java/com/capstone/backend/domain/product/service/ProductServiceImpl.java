@@ -6,11 +6,7 @@ import com.capstone.backend.domain.product.dto.ProductDto;
 import com.capstone.backend.domain.product.dto.response.ProductDetailResponse;
 import com.capstone.backend.domain.product.dto.response.ProductSearchResponse;
 import com.capstone.backend.domain.product.entity.Product;
-import com.capstone.backend.domain.product.entity.ProductFeature;
-import com.capstone.backend.domain.product.entity.ProductInsight;
 import com.capstone.backend.domain.product.entity.UserProduct;
-import com.capstone.backend.domain.product.repository.ProductFeatureRepository;
-import com.capstone.backend.domain.product.repository.ProductInsightRepository;
 import com.capstone.backend.domain.product.repository.ProductRepository;
 import com.capstone.backend.domain.product.repository.UserProductRepository;
 import com.capstone.backend.domain.wishlist.entity.Wishlist;
@@ -39,8 +35,6 @@ import java.util.stream.Collectors;
 public class ProductServiceImpl implements ProductService {
 
     private final ProductRepository productRepository;
-    private final ProductFeatureRepository productFeatureRepository;
-    private final ProductInsightRepository productInsightRepository;
     private final UserProductRepository userProductRepository;
     private final WishlistRepository wishlistRepository;
     private final ObjectMapper objectMapper;
@@ -118,23 +112,22 @@ public class ProductServiceImpl implements ProductService {
         Product product = productRepository.findById(productId)
                 .orElseThrow(() -> new BusinessException(ErrorCode.PRODUCT_NOT_FOUND));
 
-        ProductInsight insight = productInsightRepository.findByProduct_Id(productId).orElse(null);
-        ProductFeature feature = productFeatureRepository.findByProduct_Id(productId).orElse(null);
-
         Object featureJson = null;
-        if (feature != null && feature.getFeatureJson() != null) {
+        if (product.getFeatureJson() != null) {
             try {
-                featureJson = objectMapper.readValue(feature.getFeatureJson(), new TypeReference<Map<String, Object>>() {});
+                featureJson = objectMapper.readValue(product.getFeatureJson(),
+                        new TypeReference<Map<String, Object>>() {});
             } catch (Exception e) {
                 log.warn("feature_json 파싱 실패 productId={}: {}", productId, e.getMessage());
-                featureJson = feature.getFeatureJson();
+                featureJson = product.getFeatureJson();
             }
         }
 
         List<ProductDetailResponse.StoreInfo> stores = null;
-        if (insight != null && insight.getStores() != null) {
+        if (product.getStores() != null) {
             try {
-                stores = objectMapper.readValue(insight.getStores(), new TypeReference<List<ProductDetailResponse.StoreInfo>>() {});
+                stores = objectMapper.readValue(product.getStores(),
+                        new TypeReference<List<ProductDetailResponse.StoreInfo>>() {});
             } catch (Exception e) {
                 log.warn("stores 파싱 실패 productId={}: {}", productId, e.getMessage());
             }
@@ -148,12 +141,12 @@ public class ProductServiceImpl implements ProductService {
                 .brand(product.getBrand())
                 .category(product.getCategory())
                 .imageUrl(product.getImageUrl())
-                .originalPrice(insight != null ? insight.getOriginalPrice() : product.getOriginalPrice())
-                .lowestPrice(insight != null ? insight.getLowestPrice() : null)
+                .originalPrice(product.getOriginalPrice())
+                .lowestPrice(product.getLowestPrice())
                 .featureJson(featureJson)
-                .reviewSummary(insight != null ? insight.getReviewSummary() : null)
-                .averageScore(insight != null ? insight.getAverageScore() : null)
-                .reviewCount(insight != null ? insight.getReviewCount() : null)
+                .reviewSummary(product.getReviewSummary())
+                .averageScore(product.getAverageScore())
+                .reviewCount(product.getReviewCount())
                 .stores(stores)
                 .wishlisted(wishlist.isPresent())
                 .wishlistId(wishlist.map(Wishlist::getId).orElse(null))

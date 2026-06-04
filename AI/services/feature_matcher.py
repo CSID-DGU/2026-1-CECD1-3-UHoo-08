@@ -1,5 +1,5 @@
 """
-product_features 기반 상품 유사도 검색.
+products.feature_json 기반 상품 유사도 검색.
 
 1차: category로 필터
 2차: feature_json 필드별 유사도 점수화 → 내림차순 정렬
@@ -68,7 +68,7 @@ def search_by_features(
 
     products_res = (
         sb.table("products")
-        .select("product_id, name, brand, category, image_url, original_price")
+        .select("product_id, name, brand, category, image_url, original_price, feature_json")
         .eq("category", category)
         .execute()
     )
@@ -76,22 +76,10 @@ def search_by_features(
     if not products:
         return []
 
-    product_ids = [p["product_id"] for p in products]
-    features_res = (
-        sb.table("product_features")
-        .select("product_id, feature_json")
-        .in_("product_id", product_ids)
-        .execute()
-    )
-    features_map: Dict[str, Dict[str, Any]] = {
-        r["product_id"]: _parse_feature_json(r["feature_json"])
-        for r in (features_res.data or [])
-    }
-
     results = []
     for p in products:
         pid = p["product_id"]
-        feat = features_map.get(pid, {})
+        feat = _parse_feature_json(p.get("feature_json"))
         score = _score(query_features, feat) if query_features else 0.0
         results.append({
             "productId": pid,

@@ -8,11 +8,7 @@ import com.capstone.backend.domain.user.dto.response.OnboardingCompleteResponse;
 import com.capstone.backend.domain.user.dto.response.ProfileUpdateResponse;
 import com.capstone.backend.domain.user.dto.response.UserMeResponse;
 import com.capstone.backend.domain.user.entity.User;
-import com.capstone.backend.domain.user.entity.UserPreference;
-import com.capstone.backend.domain.user.entity.UserSkinProfile;
-import com.capstone.backend.domain.user.repository.UserPreferenceRepository;
 import com.capstone.backend.domain.user.repository.UserRepository;
-import com.capstone.backend.domain.user.repository.UserSkinProfileRepository;
 import com.capstone.backend.domain.wishlist.repository.WishlistRepository;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
@@ -32,8 +28,6 @@ import java.util.UUID;
 public class UserServiceImpl implements UserService {
 
     private final UserRepository userRepository;
-    private final UserSkinProfileRepository skinProfileRepository;
-    private final UserPreferenceRepository preferenceRepository;
     private final WishlistRepository wishlistRepository;
     private final PriceTrackingRepository priceTrackingRepository;
     private final RegisteredRepository registeredRepository;
@@ -54,14 +48,11 @@ public class UserServiceImpl implements UserService {
         User user = userRepository.findById(userId)
                 .orElseThrow(() -> new BusinessException(ErrorCode.NOT_FOUND));
 
-        UserSkinProfile skinProfile = skinProfileRepository.findByUserId(userId).orElse(null);
-        UserPreference preference = preferenceRepository.findByUserId(userId).orElse(null);
-
         long wishlistCount = wishlistRepository.countByUserId(userId);
         long trackingCount = priceTrackingRepository.countByUserId(userId);
         long registeredCount = registeredRepository.countByUserId(userId);
 
-        return UserMeResponse.of(user, skinProfile, preference, wishlistCount, trackingCount, registeredCount);
+        return UserMeResponse.of(user, wishlistCount, trackingCount, registeredCount);
     }
 
     @Override
@@ -74,7 +65,6 @@ public class UserServiceImpl implements UserService {
             throw new BusinessException(ErrorCode.FILE_TOO_LARGE);
         }
 
-        // 이미지 업로드는 트랜잭션 밖에서 먼저 처리
         String profileImageUrl = null;
         if (image != null && !image.isEmpty()) {
             profileImageUrl = uploadToSupabase(userId, image);

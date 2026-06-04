@@ -1,8 +1,6 @@
 package com.capstone.backend.domain.user.dto.response;
 
 import com.capstone.backend.domain.user.entity.User;
-import com.capstone.backend.domain.user.entity.UserPreference;
-import com.capstone.backend.domain.user.entity.UserSkinProfile;
 import lombok.Builder;
 import lombok.Getter;
 
@@ -51,27 +49,25 @@ public class UserMeResponse {
         private long registeredCount;
     }
 
-    public static UserMeResponse of(User user, UserSkinProfile skinProfile,
-                                    UserPreference preference,
-                                    long wishlistCount, long trackingCount, long registeredCount) {
+    public static UserMeResponse of(User user, long wishlistCount, long trackingCount, long registeredCount) {
         SkinProfileInfo skinInfo = null;
-        if (skinProfile != null) {
+        if (user.getSkinType() != null || user.getPersonalColor() != null) {
             skinInfo = SkinProfileInfo.builder()
-                    .personalColor(skinProfile.getPersonalColor())
-                    .skinType(skinProfile.getSkinType())
-                    .skinConcerns(skinProfile.getSkinConcerns() != null
-                            ? Arrays.asList(skinProfile.getSkinConcerns()) : List.of())
-                    .notes(skinProfile.getNotes() != null
-                            ? Arrays.asList(skinProfile.getNotes()) : null)
-                    .updatedAt(skinProfile.getUpdatedAt())
+                    .personalColor(user.getPersonalColor())
+                    .skinType(user.getSkinType())
+                    .skinConcerns(user.getSkinConcerns() != null
+                            ? Arrays.asList(user.getSkinConcerns()) : List.of())
+                    .notes(user.getNotes() != null
+                            ? Arrays.asList(user.getNotes()) : null)
+                    .updatedAt(user.getUpdatedAt())
                     .build();
         }
 
         PreferenceInfo prefInfo = null;
-        if (preference != null) {
+        if (user.getPriceTolerancePercent() != null || user.getSearchPurpose() != null) {
             prefInfo = PreferenceInfo.builder()
-                    .priceTolerancePercent(preference.getPriceTolerancePercent())
-                    .searchPurpose(preference.getSearchPurpose())
+                    .priceTolerancePercent(user.getPriceTolerancePercent())
+                    .searchPurpose(user.getSearchPurpose())
                     .build();
         }
 

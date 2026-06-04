@@ -7,61 +7,56 @@ _STALE_HOURS = 6
 
 
 def find_by_name_brand(name: str, brand: str) -> Optional[dict]:
-    """products + product_insights + product_features 조회 후 product_agent용 dict 반환."""
+    """products 단일 조회 후 product_agent용 dict 반환."""
     sb = get_supabase()
 
-    product_res = (
+    res = (
         sb.table("products")
-        .select("product_id, name, brand, category, original_price")
+        .select(
+            "product_id, name, brand, category, original_price, "
+            "lowest_price, savings, stores, review_summary, "
+            "average_score, review_count, skin_type_satisfaction, "
+            "feature_json, last_updated_at"
+        )
         .ilike("name", name)
         .ilike("brand", brand)
         .limit(1)
         .execute()
     )
-    if not product_res.data:
+    if not res.data:
         return None
 
-    row = product_res.data[0]
-    product_id = row["product_id"]
+    row = res.data[0]
+    feature_json = row.get("feature_json") or {}
+    if isinstance(feature_json, str):
+        import json
+        try:
+            feature_json = json.loads(feature_json)
+        except Exception:
+            feature_json = {}
 
-    insights_res = (
-        sb.table("product_insights")
-        .select("lowest_price, savings, stores, review_summary, average_score, review_count, skin_type_satisfaction, last_updated_at")
-        .eq("product_id", product_id)
-        .limit(1)
-        .execute()
-    )
-    insights = insights_res.data[0] if insights_res.data else {}
-
-    features_res = (
-        sb.table("product_features")
-        .select("feature_json")
-        .eq("product_id", product_id)
-        .limit(1)
-        .execute()
-    )
-    feature_json = (features_res.data[0].get("feature_json") or {}) if features_res.data else {}
-
-    # AI 아키텍처 명세 geminiPrice 구조로 조립
     price_data = {
-        "lowestPrice": insights.get("lowest_price"),
-        "savings": insights.get("savings"),
-        "stores": insights.get("stores") or [],
-        "cachedAt": str(insights.get("last_updated_at") or ""),
+        "lowestPrice": row.get("lowest_price"),
+        "savings": row.get("savings"),
+        "stores": row.get("stores") or [],
+        "cachedAt": str(row.get("last_updated_at") or ""),
     }
 
-    # AI 아키텍처 명세 reviewSummary 구조로 조립
     review_summary = {
-        "aiSummary": insights.get("review_summary") or "",
-        "averageScore": insights.get("average_score"),
-        "totalCount": insights.get("review_count"),
-        "skinTypeSatisfaction": insights.get("skin_type_satisfaction"),
+        "aiSummary": row.get("review_summary") or "",
+        "averageScore": row.get("average_score"),
+        "totalCount": row.get("review_count"),
+        "skinTypeSatisfaction": row.get("skin_type_satisfaction"),
     }
 
     ingredients = feature_json.get("key_ingredient") or []
 
     return {
-        **row,
+        "product_id": row["product_id"],
+        "name": row["name"],
+        "brand": row["brand"],
+        "category": row["category"],
+        "original_price": row.get("original_price"),
         "price_data": price_data,
         "review_summary": review_summary,
         "ingredients": ingredients,
@@ -69,10 +64,10 @@ def find_by_name_brand(name: str, brand: str) -> Optional[dict]:
 
 
 def is_stale(product_id: str) -> bool:
-    """product_insights.last_updated_at 기준 6시간 초과면 True."""
+    """products.last_updated_at 기준 6시간 초과면 True."""
     sb = get_supabase()
     res = (
-        sb.table("product_insights")
+        sb.table("products")
         .select("last_updated_at")
         .eq("product_id", product_id)
         .limit(1)
@@ -106,7 +101,8 @@ def save_new_product(product: dict) -> str:
 
 
 def save_enriched(product_id: str, enriched: dict) -> None:
-    """Gemini 보강 결과를 product_insights 테이블에 upsert."""
+    """Gemini 보강 결과를 products 테이블에 upsert."""
+    import json as _json
     sb = get_supabase()
 
     price_data = enriched.get("price_data") or {}
@@ -128,8 +124,9 @@ def save_enriched(product_id: str, enriched: dict) -> None:
     ]
 
     review_data = enriched.get("review_data") or {}
+    feature_json = enriched.get("product_features") or {}
 
-    payload = {
+    payload: dict = {
         "product_id": product_id,
         "lowest_price": lowest_price,
         "savings": savings,
@@ -138,22 +135,16 @@ def save_enriched(product_id: str, enriched: dict) -> None:
         "average_score": review_data.get("average_score"),
         "review_count": review_data.get("review_count"),
         "skin_type_satisfaction": review_data.get("skin_type_satisfaction"),
-        "original_price": original_price or None,
         "last_updated_at": datetime.now(timezone.utc).isoformat(),
     }
-
-    sb.table("product_insights").upsert(payload, on_conflict="product_id").execute()
-
-    # product_features 저장
-    feature_json = enriched.get("product_features") or {}
+    if original_price:
+        payload["original_price"] = original_price
     if feature_json:
-        sb.table("product_features").upsert(
-            {"product_id": product_id, "feature_json": feature_json},
-            on_conflict="product_id",
-        ).execute()
+        payload["feature_json"] = _json.dumps(feature_json, ensure_ascii=False)
+
+    sb.table("products").upsert(payload, on_conflict="product_id").execute()
 
     # review_embeddings 저장 (백그라운드 처리, 실패해도 무시)
-    review_data = enriched.get("review_data") or {}
     if review_data:
         _save_review_embeddings(product_id, review_data)
 
@@ -165,8 +156,6 @@ def _save_review_embeddings(product_id: str, review_data: dict) -> None:
         from services.embedding_service import EmbeddingService
 
         sb = get_supabase()
-
-        # 재보강 시 기존 임베딩 교체
         sb.table("review_embeddings").delete().eq("product_id", product_id).execute()
 
         texts: list = []

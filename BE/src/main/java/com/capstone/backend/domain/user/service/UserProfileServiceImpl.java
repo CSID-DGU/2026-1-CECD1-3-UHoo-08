@@ -8,15 +8,12 @@ import com.capstone.backend.domain.user.dto.request.SkinProfileRequest;
 import com.capstone.backend.domain.user.dto.request.SkinProfileUpdateRequest;
 import com.capstone.backend.domain.user.dto.response.PreferenceResponse;
 import com.capstone.backend.domain.user.dto.response.SkinProfileResponse;
-import com.capstone.backend.domain.user.entity.UserPreference;
-import com.capstone.backend.domain.user.entity.UserSkinProfile;
-import com.capstone.backend.domain.user.repository.UserPreferenceRepository;
-import com.capstone.backend.domain.user.repository.UserSkinProfileRepository;
+import com.capstone.backend.domain.user.entity.User;
+import com.capstone.backend.domain.user.repository.UserRepository;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
-import java.time.LocalDateTime;
 import java.util.List;
 import java.util.UUID;
 
@@ -24,8 +21,7 @@ import java.util.UUID;
 @RequiredArgsConstructor
 public class UserProfileServiceImpl implements UserProfileService {
 
-    private final UserSkinProfileRepository skinProfileRepository;
-    private final UserPreferenceRepository preferenceRepository;
+    private final UserRepository userRepository;
 
     @Override
     @Transactional
@@ -33,27 +29,13 @@ public class UserProfileServiceImpl implements UserProfileService {
         if (!request.isValid()) {
             throw new BusinessException(ErrorCode.VALIDATION_ERROR);
         }
-
-        UserSkinProfile profile = skinProfileRepository.findByUserId(userId).orElse(null);
+        User user = userRepository.findById(userId)
+                .orElseThrow(() -> new BusinessException(ErrorCode.NOT_FOUND));
         String[] concerns = toArray(request.getSkinConcerns());
         String[] notes = toArray(request.getNotes());
-
-        if (profile == null) {
-            LocalDateTime now = LocalDateTime.now();
-            profile = UserSkinProfile.builder()
-                    .userId(userId)
-                    .personalColor(request.getPersonalColor())
-                    .skinType(request.getSkinType())
-                    .skinConcerns(concerns != null ? concerns : new String[0])
-                    .notes(notes)
-                    .createdAt(now)
-                    .updatedAt(now)
-                    .build();
-        } else {
-            profile.update(request.getPersonalColor(), request.getSkinType(), concerns, notes);
-        }
-
-        return SkinProfileResponse.from(skinProfileRepository.save(profile));
+        user.updateSkinProfile(request.getPersonalColor(), request.getSkinType(),
+                concerns != null ? concerns : new String[0], notes);
+        return SkinProfileResponse.from(userRepository.save(user));
     }
 
     @Override
@@ -62,14 +44,11 @@ public class UserProfileServiceImpl implements UserProfileService {
         if (!request.isValid()) {
             throw new BusinessException(ErrorCode.VALIDATION_ERROR);
         }
-
-        UserSkinProfile profile = skinProfileRepository.findByUserId(userId)
+        User user = userRepository.findById(userId)
                 .orElseThrow(() -> new BusinessException(ErrorCode.NOT_FOUND));
-
-        profile.update(request.getPersonalColor(), request.getSkinType(),
+        user.updateSkinProfile(request.getPersonalColor(), request.getSkinType(),
                 toArray(request.getSkinConcerns()), toArray(request.getNotes()));
-
-        return SkinProfileResponse.from(skinProfileRepository.save(profile));
+        return SkinProfileResponse.from(userRepository.save(user));
     }
 
     @Override
@@ -78,22 +57,10 @@ public class UserProfileServiceImpl implements UserProfileService {
         if (!request.isValid()) {
             throw new BusinessException(ErrorCode.VALIDATION_ERROR);
         }
-
-        UserPreference pref = preferenceRepository.findByUserId(userId).orElse(null);
-
-        if (pref == null) {
-            LocalDateTime now = LocalDateTime.now();
-            pref = UserPreference.builder()
-                    .userId(userId)
-                    .priceTolerancePercent(request.getPriceTolerancePercent())
-                    .createdAt(now)
-                    .updatedAt(now)
-                    .build();
-        } else {
-            pref.update(null, request.getPriceTolerancePercent());
-        }
-
-        return PreferenceResponse.from(preferenceRepository.save(pref));
+        User user = userRepository.findById(userId)
+                .orElseThrow(() -> new BusinessException(ErrorCode.NOT_FOUND));
+        user.updatePreferences(null, request.getPriceTolerancePercent());
+        return PreferenceResponse.from(userRepository.save(user));
     }
 
     @Override
@@ -102,12 +69,10 @@ public class UserProfileServiceImpl implements UserProfileService {
         if (!request.isValid()) {
             throw new BusinessException(ErrorCode.VALIDATION_ERROR);
         }
-
-        UserPreference pref = preferenceRepository.findByUserId(userId)
+        User user = userRepository.findById(userId)
                 .orElseThrow(() -> new BusinessException(ErrorCode.NOT_FOUND));
-
-        pref.update(request.getSearchPurpose(), request.getPriceTolerancePercent());
-        return PreferenceResponse.from(preferenceRepository.save(pref));
+        user.updatePreferences(request.getSearchPurpose(), request.getPriceTolerancePercent());
+        return PreferenceResponse.from(userRepository.save(user));
     }
 
     private String[] toArray(List<String> list) {

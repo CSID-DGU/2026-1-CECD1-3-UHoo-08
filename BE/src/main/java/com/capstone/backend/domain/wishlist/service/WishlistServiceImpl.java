@@ -3,8 +3,6 @@ package com.capstone.backend.domain.wishlist.service;
 import com.capstone.backend.common.exception.BusinessException;
 import com.capstone.backend.common.exception.ErrorCode;
 import com.capstone.backend.domain.product.entity.Product;
-import com.capstone.backend.domain.product.entity.ProductInsight;
-import com.capstone.backend.domain.product.repository.ProductInsightRepository;
 import com.capstone.backend.domain.product.repository.ProductRepository;
 import com.capstone.backend.domain.user.entity.User;
 import com.capstone.backend.domain.user.repository.UserRepository;
@@ -31,7 +29,6 @@ public class WishlistServiceImpl implements WishlistService {
 
     private final WishlistRepository wishlistRepository;
     private final ProductRepository productRepository;
-    private final ProductInsightRepository productInsightRepository;
     private final UserRepository userRepository;
 
     @Override
@@ -63,11 +60,7 @@ public class WishlistServiceImpl implements WishlistService {
                 .findByUser_IdOrderByCreatedAtDesc(userId, PageRequest.of(page - 1, size));
 
         List<WishlistItemResponse> items = pageResult.getContent().stream()
-                .map(w -> {
-                    ProductInsight insight = productInsightRepository
-                            .findByProduct_Id(w.getProduct().getId()).orElse(null);
-                    return WishlistItemResponse.of(w, insight);
-                })
+                .map(WishlistItemResponse::of)
                 .collect(Collectors.toList());
 
         return new WishlistListResponse(items, pageResult.getTotalElements());
