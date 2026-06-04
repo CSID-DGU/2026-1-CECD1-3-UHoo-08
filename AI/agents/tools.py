@@ -101,8 +101,7 @@ async def run_discovery_agent(
             from services import job_updater
             await job_updater.update(job_id, step="후보 탐색", progress=25, status="IN_PROGRESS")
 
-        candidate_ids = [c["product_id"] for c in result["candidates"] if "product_id" in c]
-        exclude = json.dumps([base_product_id] + candidate_ids)
+        exclude = json.dumps([base_product_id])
         return json.dumps({
             "candidates": result["candidates"],
             "base_product_id": base_product_id,
