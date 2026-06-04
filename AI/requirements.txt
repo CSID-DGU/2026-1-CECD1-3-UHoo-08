@@ -41,6 +41,3 @@ beautifulsoup4
 
 # Openai
 openai>=1.30.0
-
-# Observability
-langfuse>=2.0.0

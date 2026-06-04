@@ -33,16 +33,6 @@ class Settings(BaseSettings):
     LANGSMITH_API_KEY: str = ""
     LANGSMITH_PROJECT: str = "capstone-ai"
 
-    # Monitoring - LangFuse
-    LANGFUSE_SECRET_KEY: str = ""
-    LANGFUSE_PUBLIC_KEY: str = ""
-    LANGFUSE_HOST: str = ""
-    LANGFUSE_BASE_URL: str = "https://cloud.langfuse.com"
-
-    @property
-    def langfuse_host(self) -> str:
-        return self.LANGFUSE_HOST or self.LANGFUSE_BASE_URL
-
     class Config:
         env_file = ".env"
         extra = "ignore"
