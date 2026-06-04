@@ -7,7 +7,7 @@ import {
 } from "../../api/productApi";
 import { getUnreadCount } from "../../api/notificationApi";
 import { getTrackings } from "../../api/priceTrackingApi";
-import { TrendingUp, Users } from "lucide-react";
+import { Bell, TrendingUp, Users } from "lucide-react";
 import { BottomNav } from "../../components/common/BottomNav";
 import { SearchField } from "../../components/common/SearchField";
 import { WishlistButton } from "../../components/common/WishlistButton";
@@ -75,33 +75,23 @@ export function HomePage() {
                 }}
               >
                 <div className="flex items-center justify-between">
-                  <h2
-                    className="text-h3"
-                    style={{ color: "white", fontWeight: 700 }}
-                  >
-                    화담
-                  </h2>
+                  <h2 className="text-h2 text-black">화담</h2>
                   <div className="flex items-center gap-2">
                     <WishlistButton
                       style={{
-                        background: "rgba(255,255,255,0.25)",
-                        backdropFilter: "blur(8px)",
+                        background: "#DBE6F8",
                       }}
                     />
                     <button
-                      className="relative h-11 w-11 rounded-full"
-                      style={{
-                        background: "rgba(255,255,255,0.25)",
-                        backdropFilter: "blur(8px)",
-                      }}
+                      className="relative flex h-10 w-10 items-center justify-center rounded-full bg-primary-100"
                       onClick={() => navigate("/notifications")}
                       type="button"
                       aria-label="알림"
                     >
+                      <Bell className="h-5 w-5 text-white" strokeWidth={1.8} />
                       {hasUnread && (
                         <span className="absolute right-0.5 top-0.5 h-2.5 w-2.5 rounded-full bg-primary-500" />
                       )}
-                      <span className="absolute left-1/2 top-1/2 h-3 w-3 -translate-x-1/2 -translate-y-1/2 rounded-sm bg-white/50" />
                     </button>
                   </div>
                 </div>
@@ -180,8 +170,7 @@ export function HomePage() {
                     {lastSearch.products.map((product) => (
                       <button
                         className="min-w-[154px] rounded-2xl border border-gray-100 bg-white p-3 text-left"
-                        style={{
-                        }}
+                        style={{}}
                         key={product.productId}
                         onClick={() =>
                           navigate(`/product/${product.productId}`)
@@ -260,8 +249,7 @@ export function HomePage() {
                     {similarUserProducts.map((product) => (
                       <button
                         className="min-w-[154px] rounded-2xl border border-gray-100 bg-white p-3 text-left"
-                        style={{
-                        }}
+                        style={{}}
                         key={product.id}
                         onClick={() => navigate(`/product/${product.id}`)}
                         type="button"
