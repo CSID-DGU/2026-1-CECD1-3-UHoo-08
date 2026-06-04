@@ -142,7 +142,7 @@ def save_enriched(product_id: str, enriched: dict) -> None:
     if feature_json:
         payload["feature_json"] = _json.dumps(feature_json, ensure_ascii=False)
 
-    sb.table("products").upsert(payload, on_conflict="product_id").execute()
+    sb.table("products").update(payload).eq("product_id", product_id).execute()
 
     # review_embeddings 저장 (백그라운드 처리, 실패해도 무시)
     if review_data:
