@@ -92,7 +92,7 @@ def run(product: ExtractedProduct) -> ProductResponse:
             "positive":  review_data.get("positive", []),
             "negative":  review_data.get("negative", []),
         }
-        ingredients = enriched.get("ingredients") or []
+        ingredients = (enriched.get("ingredient_data") or {}).get("key_ingredients") or []
     else:
         gemini_price = review_summary = {}
         ingredients = []
