@@ -34,6 +34,37 @@ except ImportError:
     _COLLABORATIVE = False
 
 
+def _parse_profile(user_profile) -> dict:
+    """user_profile을 dict로 변환. Qwen이 다양한 형태로 넘기므로 방어적 처리."""
+    if isinstance(user_profile, dict):
+        return user_profile
+    if not isinstance(user_profile, str) or not user_profile.strip():
+        return {}
+    try:
+        return json.loads(user_profile)
+    except (json.JSONDecodeError, ValueError):
+        return {}
+
+
+def _parse_json_list(value, key: str = "") -> list:
+    """JSON 문자열 또는 dict/list를 list로 변환."""
+    if isinstance(value, list):
+        return value
+    if isinstance(value, dict):
+        return value.get(key, []) if key else []
+    if not isinstance(value, str) or not value.strip():
+        return []
+    try:
+        parsed = json.loads(value)
+        if isinstance(parsed, list):
+            return parsed
+        if isinstance(parsed, dict) and key:
+            return parsed.get(key, [])
+    except (json.JSONDecodeError, ValueError):
+        pass
+    return []
+
+
 @tool
 async def run_discovery_agent(
     user_id: str,
@@ -53,10 +84,7 @@ async def run_discovery_agent(
     if not base_product_id:
         return json.dumps({"candidates": [], "error": "base_product_id 필요"})
 
-    if isinstance(user_profile, str):
-        profile_dict = json.loads(user_profile) if user_profile.strip() else {}
-    else:
-        profile_dict = user_profile or {}
+    profile_dict = _parse_profile(user_profile)
     profile = UserProfile(
         user_id=user_id,
         skin_type=profile_dict.get("skinType"),
@@ -98,19 +126,12 @@ async def run_score_agent(
     # intent_vector를 사이드채널에서 읽고 삭제 (메모리 누수 방지)
     resolved_intent_vector = (_intent_store.pop(job_id, None) if job_id else None) or []
 
-    # candidates JSON → candidate_ids 추출
-    parsed = json.loads(candidates) if isinstance(candidates, str) else candidates
-    if isinstance(parsed, dict) and "candidates" in parsed:
-        candidate_list = parsed["candidates"]
-    else:
-        candidate_list = parsed if isinstance(parsed, list) else []
+    # candidates → candidate_ids 추출
+    candidate_list = _parse_json_list(candidates, key="candidates")
     candidate_ids = [c["product_id"] for c in candidate_list if "product_id" in c]
 
-    # user_profile camelCase → snake_case (personalization_scorer 요구사항)
-    if isinstance(user_profile, str):
-        profile_dict = json.loads(user_profile) if user_profile.strip() else {}
-    else:
-        profile_dict = user_profile or {}
+    # user_profile camelCase → snake_case
+    profile_dict = _parse_profile(user_profile)
     profile_snake = {
         "skin_type": profile_dict.get("skinType"),
         "personal_color": profile_dict.get("personalColor"),
@@ -149,10 +170,11 @@ async def run_alternative_agent(
     if not _ALTERNATIVE:
         return json.dumps([])
 
+    exclude_ids = _parse_json_list(exclude_product_ids)
     result = await run_alternative(
         base_product_id=base_product_id,
         top_k=top_k,
-        exclude_ids=json.loads(exclude_product_ids),
+        exclude_ids=exclude_ids,
     )
 
     serialized = [r.model_dump(by_alias=True) for r in result]
@@ -178,11 +200,12 @@ async def run_collaborative_agent(
     if not _COLLABORATIVE:
         return json.dumps([])
 
+    exclude_ids = _parse_json_list(exclude_product_ids)
     result = await run_collaborative(
         user_id=user_id,
         skin_type=skin_type or None,
         personal_color=personal_color or None,
-        exclude_ids=json.loads(exclude_product_ids),
+        exclude_ids=exclude_ids,
         top_k=top_k,
     )
     serialized = [r.model_dump(by_alias=True) for r in result]
