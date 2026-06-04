@@ -13,9 +13,9 @@ if settings.LANGSMITH_API_KEY:
     os.environ.setdefault("LANGCHAIN_PROJECT", settings.LANGSMITH_PROJECT)
 
 _llm = ChatOpenAI(
-    model=settings.QWEN_TEXT_MODEL,
-    api_key=settings.DASHSCOPE_API_KEY,
-    base_url=settings.QWEN_TEXT_BASE_URL,
+    model=settings.EXAONE_MODEL,
+    api_key=settings.EXAONE_API_KEY,
+    base_url=settings.EXAONE_BASE_URL,
     temperature=0,
 )
 

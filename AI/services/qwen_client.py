@@ -31,10 +31,10 @@ class QwenLLMClient:
 
     def __init__(self) -> None:
         self._client = OpenAI(
-            api_key=settings.DASHSCOPE_API_KEY,
-            base_url=settings.QWEN_TEXT_BASE_URL,
+            api_key=settings.EXAONE_API_KEY,
+            base_url=settings.EXAONE_BASE_URL,
         )
-        self._model = settings.QWEN_TEXT_MODEL
+        self._model = settings.EXAONE_MODEL
 
     async def chat(
         self,

@@ -10,6 +10,24 @@ from langchain_core.messages import HumanMessage
 
 from graph.action_model import agent_graph
 from services import job_updater
+from config import settings
+
+try:
+    from langfuse.callback import CallbackHandler as LangfuseCallbackHandler
+    _LANGFUSE = True
+except ImportError:
+    _LANGFUSE = False
+
+
+def _langfuse_handler(job_id: str):
+    if not _LANGFUSE or not settings.LANGFUSE_SECRET_KEY:
+        return None
+    return LangfuseCallbackHandler(
+        secret_key=settings.LANGFUSE_SECRET_KEY,
+        public_key=settings.LANGFUSE_PUBLIC_KEY,
+        host=settings.langfuse_host,
+        session_id=job_id,
+    )
 
 router = APIRouter()
 
@@ -127,7 +145,11 @@ async def _run_agent(req: AgentRunRequest) -> None:
             "final_result": None,
         }
 
-        final_state = await agent_graph.ainvoke(initial_state)
+        callbacks = [h for h in [_langfuse_handler(req.jobId)] if h]
+        final_state = await agent_graph.ainvoke(
+            initial_state,
+            config={"callbacks": callbacks} if callbacks else {},
+        )
 
         last_content = final_state["messages"][-1].content.strip()
         if last_content.startswith("```"):
