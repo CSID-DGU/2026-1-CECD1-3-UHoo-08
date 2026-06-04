@@ -101,9 +101,15 @@ async def run_discovery_agent(
             from services import job_updater
             await job_updater.update(job_id, step="후보 탐색", progress=25, status="IN_PROGRESS")
 
-        return json.dumps({"candidates": result["candidates"]})
+        candidate_ids = [c["product_id"] for c in result["candidates"] if "product_id" in c]
+        exclude = json.dumps([base_product_id] + candidate_ids)
+        return json.dumps({
+            "candidates": result["candidates"],
+            "base_product_id": base_product_id,
+            "exclude_product_ids": exclude,
+        })
     except Exception as e:
-        return json.dumps({"candidates": [], "error": str(e)})
+        return json.dumps({"candidates": [], "base_product_id": base_product_id, "exclude_product_ids": "[]", "error": str(e)})
 
 
 @tool
@@ -172,21 +178,24 @@ async def run_alternative_agent(
     exclude_product_ids 는 JSON 배열 문자열.
     반환: 유사도 기준 대체 상품 목록 JSON 문자열
     """
-    if not _ALTERNATIVE:
+    try:
+        if not _ALTERNATIVE:
+            return json.dumps([])
+
+        exclude_ids = _parse_json_list(exclude_product_ids)
+        result = await run_alternative(
+            base_product_id=base_product_id,
+            top_k=top_k,
+            exclude_ids=exclude_ids,
+        )
+
+        serialized = [r.model_dump(by_alias=True) for r in result]
+        if job_id:
+            _alternative_store[job_id] = serialized
+
+        return json.dumps(serialized)
+    except Exception as e:
         return json.dumps([])
-
-    exclude_ids = _parse_json_list(exclude_product_ids)
-    result = await run_alternative(
-        base_product_id=base_product_id,
-        top_k=top_k,
-        exclude_ids=exclude_ids,
-    )
-
-    serialized = [r.model_dump(by_alias=True) for r in result]
-    if job_id:
-        _alternative_store[job_id] = serialized
-
-    return json.dumps(serialized)
 
 
 @tool
@@ -202,21 +211,24 @@ async def run_collaborative_agent(
     유사 피부 조건의 사용자들이 높게 평가한 상품을 협업 필터링으로 추천합니다.
     반환: weighted_score 기준 상품 목록 JSON 문자열
     """
-    if not _COLLABORATIVE:
-        return json.dumps([])
+    try:
+        if not _COLLABORATIVE:
+            return json.dumps([])
 
-    exclude_ids = _parse_json_list(exclude_product_ids)
-    result = await run_collaborative(
-        user_id=user_id,
-        skin_type=skin_type or None,
-        personal_color=personal_color or None,
-        exclude_ids=exclude_ids,
-        top_k=top_k,
-    )
-    serialized = [r.model_dump(by_alias=True) for r in result]
-    if job_id:
-        _collaborative_store[job_id] = serialized
-    return json.dumps(serialized)
+        exclude_ids = _parse_json_list(exclude_product_ids)
+        result = await run_collaborative(
+            user_id=user_id,
+            skin_type=skin_type or None,
+            personal_color=personal_color or None,
+            exclude_ids=exclude_ids,
+            top_k=top_k,
+        )
+        serialized = [r.model_dump(by_alias=True) for r in result]
+        if job_id:
+            _collaborative_store[job_id] = serialized
+        return json.dumps(serialized)
+    except Exception as e:
+        return json.dumps([])
 
 
 ALL_TOOLS = [
