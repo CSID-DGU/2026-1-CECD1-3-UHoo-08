@@ -27,14 +27,14 @@ PROMPT = """너는 화장품 상품 정보 추출 전문가이다.
 }
 
 [규칙]
-1. brand: 텍스트 첫 단어가 브랜드다. 한글→영문 공식 브랜드명으로 변환.
-   웨이크메이크=WAKEMAKE, 롬앤=ROMAND, 클리오=CLIO, 달바=DALBA, 헤라=HERA,
-   미샤=MISSHA, 토니모리=TONYMOLY, 이니스프리=INNISFREE, 에뛰드=ETUDE,
-   라운드랩=ROUNDLAB, 어퓨=APIEU, 조선미녀=BEAUTY OF JOSEON
+1. brand: 텍스트 첫 단어가 브랜드다. 한글이면 영문으로, 영문이면 대문자로 표기.
 2. product_name: 브랜드명 제외한 나머지
-3. category.main: base(쿠션·파운데이션·프라이머·컨실러) / sun(선크림·선스틱·선쿠션·선스프레이) / lip(틴트·립스틱·립글로스·립밤·밤스틱) / skincare(토너·에센스·세럼·크림·오일·로션)
-4. category.sub: main에 해당하는 세부 유형 한국어 (예: 립밤, 틴트, 쿠션, 선크림, 세럼)
-5. volume: 숫자만 (15g→15), unit: g 또는 ml
+3. category.main / category.sub 매핑:
+   - main=base  → sub: 쿠션, 파운데이션, 프라이머, 컨실러 중 하나
+   - main=sun   → sub: 선크림, 선스틱, 선쿠션, 선스프레이 중 하나
+   - main=lip   → sub: 틴트, 립스틱, 립글로스, 립밤 중 하나 (밤스틱→립밤)
+   - main=skincare → sub: 토너, 에센스, 세럼, 크림, 오일, 로션 중 하나
+4. volume: 숫자만 (15g→15), unit: g 또는 ml
 
 [예시]
 입력: 웨이크메이크 소프트 블러링 밤 스틱
