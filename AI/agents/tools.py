@@ -68,8 +68,8 @@ def _parse_json_list(value, key: str = "") -> list:
 @tool
 async def run_discovery_agent(
     user_id: str,
-    user_profile: str,
-    base_product_id: str,
+    user_profile=None,
+    base_product_id: str = "",
     search_purpose: str = "",
     price_tolerance_percent: int = 10,
     job_id: str = "",
@@ -108,10 +108,10 @@ async def run_discovery_agent(
 
 @tool
 async def run_score_agent(
-    candidates: str,
-    user_profile: str,
-    price_tolerance_percent: int,
-    base_product_price: float,
+    candidates=None,
+    user_profile=None,
+    price_tolerance_percent: int = 10,
+    base_product_price: float = 0,
     search_purpose: str = "",
     job_id: str = "",
 ) -> str:
