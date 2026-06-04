@@ -15,6 +15,11 @@ TEST_JOB_ID     = "00000000-0000-0000-0000-000000000099"
 
 def setup_job():
     sb = get_supabase()
+    sb.table("users").upsert({
+        "id": TEST_USER_ID,
+        "name": "테스트유저",
+        "provider": "EMAIL",
+    }).execute()
     sb.table("recommendation_jobs").upsert({
         "id": TEST_JOB_ID,
         "user_id": TEST_USER_ID,
@@ -25,7 +30,9 @@ def setup_job():
 
 
 def cleanup_job():
-    get_supabase().table("recommendation_jobs").delete().eq("id", TEST_JOB_ID).execute()
+    sb = get_supabase()
+    sb.table("recommendation_jobs").delete().eq("id", TEST_JOB_ID).execute()
+    sb.table("users").delete().eq("id", TEST_USER_ID).execute()
 
 
 initial_state = {
