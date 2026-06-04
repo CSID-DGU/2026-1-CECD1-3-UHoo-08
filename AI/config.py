@@ -2,11 +2,13 @@ from pydantic_settings import BaseSettings
 
 
 class Settings(BaseSettings):
-    DASHSCOPE_API_KEY: str
+    DASHSCOPE_API_KEY: str = ""
     QWEN_VL_BASE_URL: str = "https://dashscope-intl.aliyuncs.com/compatible-mode/v1"
     QWEN_VL_MODEL: str = "qwen3-vl-flash"
-    QWEN_TEXT_BASE_URL: str = "https://dashscope-intl.aliyuncs.com/compatible-mode/v1"
-    QWEN_TEXT_MODEL: str = "qwen-plus"
+    # LLM agent (Ollama self-hosted)
+    EXAONE_BASE_URL: str = "http://localhost:11434/v1"
+    EXAONE_MODEL: str = "qwen2.5:7b"
+    EXAONE_API_KEY: str = "ollama"
 
     GEMINI_API_KEY: str
     GEMINI_MODEL: str = "gemini-2.5-flash"
@@ -27,9 +29,19 @@ class Settings(BaseSettings):
     # Vector search
     VECTOR_SEARCH_EF_SEARCH: int = 40
 
-    # Monitoring
+    # Monitoring - LangSmith
     LANGSMITH_API_KEY: str = ""
     LANGSMITH_PROJECT: str = "capstone-ai"
+
+    # Monitoring - LangFuse
+    LANGFUSE_SECRET_KEY: str = ""
+    LANGFUSE_PUBLIC_KEY: str = ""
+    LANGFUSE_HOST: str = ""
+    LANGFUSE_BASE_URL: str = "https://cloud.langfuse.com"
+
+    @property
+    def langfuse_host(self) -> str:
+        return self.LANGFUSE_HOST or self.LANGFUSE_BASE_URL
 
     class Config:
         env_file = ".env"
