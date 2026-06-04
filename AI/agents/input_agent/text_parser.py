@@ -27,25 +27,26 @@ PROMPT = """너는 화장품 상품 정보 추출 전문가이다.
     "type": null,
     "volume": null,
     "unit": null
-  },
-  "package_claims": [],
-  "detected_objects": []
+  }
 }
 
 [카테고리 분류 기준]
-- base: 쿠션, 파운데이션, 프라이머, 컨실러
-- sun: 선크림, 선스틱, 선쿠션, 선스프레이
-- lip: 틴트, 립스틱, 립글로스, 립밤
-- skincare: 토너, 에센스, 세럼, 크림, 오일, 로션, 핸드크림 등 기타 스킨케어
-category.sub에는 위 세부 제품 유형을 그대로 입력하라.
+category.main은 아래 4개 코드 중 하나로만 입력하라.
+category.sub는 해당 main에 속하는 세부 제품 유형(한국어)을 입력하라.
+
+- main=base → sub: 쿠션, 파운데이션, 프라이머, 컨실러 중 하나
+- main=sun  → sub: 선크림, 선스틱, 선쿠션, 선스프레이 중 하나
+- main=lip  → sub: 틴트, 립스틱, 립글로스, 립밤 중 하나
+- main=skincare → sub: 토너, 에센스, 세럼, 크림, 오일, 로션 중 하나
 
 [규칙]
-- detected_objects: 텍스트에서 언급된 상품명, 성분, 특징 등 주요 키워드를 넣어라.
-- package_claims: 텍스트에서 언급된 효능/특징 문구만 넣어라.
-- brand: 영문 대문자로 표기 (예: HERA, LANEIGE, PRETTYSKIN)
+- brand: 텍스트 맨 앞 단어는 화장품 브랜드일 가능성이 매우 높다. 반드시 추출하라.
+  한글 브랜드는 영문으로 변환하라 (예: 달바→DALBA, 라운드랩→ROUNDLAB, 롬앤→ROMAND, 클리오→CLIO, 헤라→HERA, 미샤→MISSHA, 토니모리→TONYMOLY, 이니스프리→INNISFREE, 에뛰드→ETUDE).
+  영문 브랜드는 대문자로 표기 (예: HERA, LANEIGE, PRETTYSKIN).
+  product_name에서 브랜드명은 제외하라.
 - volume: 숫자만 추출 (예: "15g" → 15, "100mL" → 100)
 - unit: g 또는 ml 중 하나만
-- 모르는 값은 null. 배열 정보가 없으면 빈 배열 []."""
+- 모르는 값은 null."""
 
 _client = ChatOpenAI(
     model=settings.QWEN_LLM_MODEL,
