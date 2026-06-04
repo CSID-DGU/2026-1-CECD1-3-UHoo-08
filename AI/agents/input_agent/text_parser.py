@@ -48,9 +48,9 @@ category.sub에는 위 세부 제품 유형을 그대로 입력하라.
 - 모르는 값은 null. 배열 정보가 없으면 빈 배열 []."""
 
 _client = ChatOpenAI(
-    model=settings.EXAONE_MODEL,
-    api_key=settings.EXAONE_API_KEY,
-    base_url=settings.EXAONE_BASE_URL,
+    model=settings.QWEN_LLM_MODEL,
+    api_key=settings.QWEN_LLM_API_KEY,
+    base_url=settings.QWEN_LLM_BASE_URL,
     temperature=0,
     max_tokens=1024,
 )

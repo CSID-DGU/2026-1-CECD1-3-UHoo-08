@@ -6,9 +6,9 @@ class Settings(BaseSettings):
     QWEN_VL_BASE_URL: str = "https://dashscope-intl.aliyuncs.com/compatible-mode/v1"
     QWEN_VL_MODEL: str = "qwen3-vl-flash"
     # LLM agent (Ollama self-hosted)
-    EXAONE_BASE_URL: str = "http://localhost:11434/v1"
-    EXAONE_MODEL: str = "qwen2.5:7b"
-    EXAONE_API_KEY: str = "ollama"
+    QWEN_LLM_BASE_URL: str = "http://localhost:11434/v1"
+    QWEN_LLM_MODEL: str = "qwen2.5:7b"
+    QWEN_LLM_API_KEY: str = "ollama"
 
     GEMINI_API_KEY: str
     GEMINI_MODEL: str = "gemini-2.5-flash"
