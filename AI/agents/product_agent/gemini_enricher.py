@@ -1,11 +1,16 @@
 import json
+import logging
 import re
+import time
+
 from langchain_google_genai import ChatGoogleGenerativeAI
 from langchain_core.messages import HumanMessage
 
 from config import settings
 from models.extracted_product import ExtractedProduct
 from prompts.gemini_extraction import build_prompt
+
+logger = logging.getLogger(__name__)
 
 _client = ChatGoogleGenerativeAI(
     model=settings.GEMINI_MODEL,
@@ -34,7 +39,10 @@ def enrich_product(product: ExtractedProduct) -> dict:
         unit=attrs.get("unit") or "",
     )
 
+    logger.info("[gemini_enricher] Gemini API 호출 | model=%s | name=%s | brand=%s", settings.GEMINI_MODEL, product.product_name, product.brand)
+    t0 = time.perf_counter()
     response = _client.invoke([HumanMessage(content=prompt)])
+    logger.info("[gemini_enricher] Gemini API 응답 | %.2fs | 응답길이=%d자", time.perf_counter() - t0, len(response.content or ""))
 
     raw = response.content or ""
     match = re.search(r"```json\s*([\s\S]+?)\s*```", raw)
@@ -43,4 +51,13 @@ def enrich_product(product: ExtractedProduct) -> dict:
     elif raw.strip().startswith("{"):
         raw = raw.strip()
 
-    return json.loads(raw)
+    try:
+        result = json.loads(raw)
+        logger.info(
+            "[gemini_enricher] JSON 파싱 성공 | keys=%s",
+            list(result.keys()),
+        )
+        return result
+    except json.JSONDecodeError as e:
+        logger.error("[gemini_enricher] JSON 파싱 실패 | error=%s | raw_preview=%s", e, raw[:200])
+        raise

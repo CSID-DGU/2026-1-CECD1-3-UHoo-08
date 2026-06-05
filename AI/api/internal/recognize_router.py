@@ -1,6 +1,8 @@
 from __future__ import annotations
 
 import base64
+import logging
+import time
 
 from fastapi import APIRouter, HTTPException
 from pydantic import BaseModel
@@ -10,6 +12,7 @@ import agents.product_agent as product_agent
 from db.supabase_client import get_supabase
 from models.product_response import ProductResponse
 
+logger = logging.getLogger(__name__)
 router = APIRouter()
 
 _BUCKET = "product_image"
@@ -34,13 +37,38 @@ def _save_image(product_id: str, image_bytes: bytes) -> None:
 
 @router.post("/recognize", response_model=ProductResponse)
 def recognize(req: RecognizeRequest) -> ProductResponse:
+    total_start = time.perf_counter()
+    data_preview = req.data[:40] + "..." if len(req.data) > 40 else req.data
+    logger.info("[recognize] 요청 수신 | type=%s | userId=%s | data=%s", req.type, req.userId, data_preview)
+
+    # ── 1. 입력 파싱 ──────────────────────────────────────────────────
+    t0 = time.perf_counter()
     try:
         extracted = input_agent.run(req.type, req.data)
     except ValueError as e:
+        logger.warning("[recognize] 입력 파싱 실패 | type=%s | error=%s", req.type, e)
         raise HTTPException(status_code=400, detail=str(e))
 
-    response = product_agent.run(extracted)
+    logger.info(
+        "[recognize] 입력 파싱 완료 | %.2fs | 상품명=%s | 브랜드=%s | 카테고리=%s",
+        time.perf_counter() - t0,
+        extracted.product_name,
+        extracted.brand,
+        extracted.category,
+    )
 
+    # ── 2. 상품 보강 ──────────────────────────────────────────────────
+    t0 = time.perf_counter()
+    response = product_agent.run(extracted)
+    logger.info(
+        "[recognize] 상품 보강 완료 | %.2fs | productId=%s | name=%s | brand=%s",
+        time.perf_counter() - t0,
+        response.productId,
+        response.name,
+        response.brand,
+    )
+
+    # ── 3. 이미지 저장 ────────────────────────────────────────────────
     if response.productId:
         try:
             if req.type == "IMAGE":
@@ -52,9 +80,12 @@ def recognize(req: RecognizeRequest) -> ProductResponse:
                 image_bytes = None
 
             if image_bytes:
+                t0 = time.perf_counter()
                 _save_image(response.productId, image_bytes)
+                logger.info("[recognize] 이미지 저장 완료 | %.2fs | productId=%s", time.perf_counter() - t0, response.productId)
         except Exception as e:
             import traceback
-            print(f"[recognize] 이미지 저장 실패: {traceback.format_exc()}")
+            logger.error("[recognize] 이미지 저장 실패 | productId=%s | %s", response.productId, traceback.format_exc())
 
+    logger.info("[recognize] 전체 완료 | 총 %.2fs", time.perf_counter() - total_start)
     return response

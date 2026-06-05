@@ -1,6 +1,11 @@
+import logging
+import time
+
 from models.extracted_product import ExtractedProduct
 from models.product_response import ProductResponse
 from agents.product_agent.gemini_enricher import enrich_product
+
+logger = logging.getLogger(__name__)
 
 
 def _embed_and_save(product_id: str, category: str, feature_json: dict) -> None:
@@ -20,8 +25,10 @@ def _embed_and_save(product_id: str, category: str, feature_json: dict) -> None:
             "feature_vec": vec,
             "model_version": emb.model_version,
         }).execute()
-    except Exception:
-        pass
+        logger.info("[product_agent] 임베딩 저장 완료 | productId=%s", product_id)
+    except Exception as e:
+        logger.warning("[product_agent] 임베딩 저장 실패 (무시) | %s", e)
+
 
 try:
     from agents.product_agent.product_repository import (
@@ -44,28 +51,66 @@ def run(product: ExtractedProduct) -> ProductResponse:
     db_product = None
     needs_enrich = True
 
+    # ── DB 조회 ──────────────────────────────────────────────────────
     if _REPO_AVAILABLE:
+        t0 = time.perf_counter()
         db_product = find_by_name_brand(
             name=product.product_name or "",
             brand=product.brand or "",
         )
         if db_product:
-            needs_enrich = is_stale(db_product["product_id"])
+            stale = is_stale(db_product["product_id"])
+            needs_enrich = stale
+            logger.info(
+                "[product_agent] DB 조회 히트 | %.2fs | productId=%s | stale=%s",
+                time.perf_counter() - t0,
+                db_product["product_id"],
+                stale,
+            )
+        else:
+            logger.info(
+                "[product_agent] DB 조회 미스 (신규 상품) | %.2fs | name=%s | brand=%s",
+                time.perf_counter() - t0,
+                product.product_name,
+                product.brand,
+            )
 
+    # ── Gemini 보강 ───────────────────────────────────────────────────
     enriched = None
     if needs_enrich:
+        logger.info("[product_agent] Gemini 보강 시작 | name=%s | brand=%s", product.product_name, product.brand)
+        t0 = time.perf_counter()
         enriched = enrich_product(product)
+        elapsed = time.perf_counter() - t0
+
+        price_data = enriched.get("price_data") or {}
+        review_data = enriched.get("review_data") or {}
+        logger.info(
+            "[product_agent] Gemini 보강 완료 | %.2fs | original_price=%s | lowest_price=%s | avg_score=%s | review_count=%s",
+            elapsed,
+            price_data.get("original_price"),
+            (price_data.get("best_option") or {}).get("final_price"),
+            review_data.get("average_score"),
+            review_data.get("review_count"),
+        )
+
+        # ── DB 저장 ──────────────────────────────────────────────────
         if _REPO_AVAILABLE:
+            category_val = (product.category or {}).get("main") if isinstance(product.category, dict) else product.category
+
             if db_product:
+                t0 = time.perf_counter()
                 save_enriched(db_product["product_id"], enriched)
-                category_val = (product.category or {}).get("main") if isinstance(product.category, dict) else product.category
+                logger.info("[product_agent] 기존 상품 보강 저장 | %.2fs | productId=%s", time.perf_counter() - t0, db_product["product_id"])
+
                 feature_json = enriched.get("product_features")
                 if feature_json and category_val:
                     _embed_and_save(db_product["product_id"], category_val, feature_json)
             else:
-                category_val = (product.category or {}).get("main") if isinstance(product.category, dict) else product.category
                 original_price = (enriched.get("price_data") or {}).get("original_price")
                 image_url = enriched.get("image_url") or None
+
+                t0 = time.perf_counter()
                 new_id = save_new_product({
                     "name": product.product_name,
                     "brand": product.brand,
@@ -73,13 +118,19 @@ def run(product: ExtractedProduct) -> ProductResponse:
                     "original_price": original_price,
                     "image_url": image_url,
                 })
+                logger.info("[product_agent] 신규 상품 INSERT | %.2fs | productId=%s", time.perf_counter() - t0, new_id)
+
                 db_product = {"product_id": new_id}
+
+                t0 = time.perf_counter()
                 save_enriched(new_id, enriched)
+                logger.info("[product_agent] 신규 상품 보강 저장 | %.2fs | productId=%s", time.perf_counter() - t0, new_id)
+
                 feature_json = enriched.get("product_features")
                 if feature_json and category_val:
                     _embed_and_save(new_id, category_val, feature_json)
 
-    # 가격·리뷰·성분 결정: DB 캐시 우선, 없으면 Gemini 결과
+    # ── 응답 조립 ─────────────────────────────────────────────────────
     if db_product and not needs_enrich:
         gemini_price   = db_product.get("price_data") or {}
         review_summary = db_product.get("review_summary") or {}

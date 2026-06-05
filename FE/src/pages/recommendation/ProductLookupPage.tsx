@@ -1,6 +1,6 @@
-import { useRef, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { useNavigate } from "react-router-dom";
-import { Camera, ImageIcon, Wifi } from "lucide-react";
+import { Camera, ImageIcon, Wifi, X } from "lucide-react";
 import { type ProductSearchItem, aiRecognizeProduct, searchProducts } from "../../api/productApi";
 import { CameraMark } from "../../components/common/CameraMark";
 import { PageHeader } from "../../components/common/PageHeader";
@@ -18,8 +18,57 @@ export function ProductLookupPage() {
   const [searching, setSearching] = useState(false);
   const [searchResults, setSearchResults] = useState<ProductSearchItem[]>([]);
   const [processing, setProcessing] = useState(false);
-  const cameraRef = useRef<HTMLInputElement>(null);
+  const [showCamera, setShowCamera] = useState(false);
   const albumRef = useRef<HTMLInputElement>(null);
+  const videoRef = useRef<HTMLVideoElement>(null);
+  const streamRef = useRef<MediaStream | null>(null);
+
+  const stopStream = useCallback(() => {
+    streamRef.current?.getTracks().forEach((t) => t.stop());
+    streamRef.current = null;
+  }, []);
+
+  async function openCamera() {
+    setShowCamera(true);
+    try {
+      const stream = await navigator.mediaDevices.getUserMedia({ video: { facingMode: "environment" } });
+      streamRef.current = stream;
+      if (videoRef.current) {
+        videoRef.current.srcObject = stream;
+      }
+    } catch {
+      setShowCamera(false);
+      alert("카메라에 접근할 수 없어요. 브라우저 권한을 확인해주세요.");
+    }
+  }
+
+  function closeCamera() {
+    stopStream();
+    setShowCamera(false);
+  }
+
+  async function capturePhoto() {
+    const video = videoRef.current;
+    if (!video) return;
+    const canvas = document.createElement("canvas");
+    canvas.width = video.videoWidth;
+    canvas.height = video.videoHeight;
+    canvas.getContext("2d")?.drawImage(video, 0, 0);
+    canvas.toBlob(async (blob) => {
+      if (!blob) return;
+      closeCamera();
+      const file = new File([blob], "capture.jpg", { type: "image/jpeg" });
+      await handleImageFile(file);
+    }, "image/jpeg", 0.9);
+  }
+
+  useEffect(() => {
+    if (showCamera && videoRef.current && streamRef.current) {
+      videoRef.current.srcObject = streamRef.current;
+    }
+  }, [showCamera]);
+
+  useEffect(() => () => stopStream(), [stopStream]);
 
   async function handleImageFile(file: File) {
     setProcessing(true);
@@ -68,6 +117,55 @@ export function ProductLookupPage() {
 
   return (
     <AppLayout>
+      {/* 카메라 오버레이 */}
+      {showCamera && (
+        <div className="fixed inset-0 z-50 flex flex-col items-center justify-center bg-black">
+          <video
+            ref={videoRef}
+            autoPlay
+            playsInline
+            muted
+            className="h-full w-full object-cover"
+          />
+          {/* 가이드 프레임 */}
+          <div
+            className="pointer-events-none absolute inset-0 flex items-center justify-center"
+          >
+            <div
+              className="h-64 w-64 rounded-2xl"
+              style={{
+                border: "2px solid rgba(255,255,255,0.8)",
+                boxShadow: "0 0 0 9999px rgba(0,0,0,0.45)",
+              }}
+            />
+          </div>
+          <p className="absolute top-24 text-caption text-white/80">
+            제품 라벨을 프레임 안에 맞춰주세요
+          </p>
+          {/* 컨트롤 */}
+          <div className="absolute bottom-12 flex w-full items-center justify-around px-12">
+            <button
+              className="flex h-12 w-12 items-center justify-center rounded-full bg-white/20"
+              onClick={closeCamera}
+              type="button"
+              aria-label="닫기"
+            >
+              <X className="h-6 w-6 text-white" />
+            </button>
+            <button
+              className="flex h-20 w-20 items-center justify-center rounded-full border-4 border-white bg-white/30"
+              onClick={capturePhoto}
+              disabled={processing}
+              type="button"
+              aria-label="촬영"
+            >
+              <span className="h-14 w-14 rounded-full bg-white" />
+            </button>
+            <div className="h-12 w-12" />
+          </div>
+        </div>
+      )}
+
       <div className="flex h-screen flex-col overflow-hidden">
         <div className="flex-1 overflow-y-auto scrollbar-none">
           <section className="flex flex-col px-6 pb-6 pt-10">
@@ -82,19 +180,7 @@ export function ProductLookupPage() {
               <p className="mt-2 text-body2 text-gray-300">제품을 찾아 내 피부와 비교해드려요</p>
             </div>
 
-            {/* 숨겨진 파일 인풋 */}
-            <input
-              ref={cameraRef}
-              accept="image/*"
-              capture="environment"
-              className="hidden"
-              type="file"
-              onChange={(e) => {
-                const f = e.target.files?.[0];
-                if (f) handleImageFile(f);
-                e.target.value = "";
-              }}
-            />
+            {/* 앨범 전용 숨겨진 인풋 */}
             <input
               ref={albumRef}
               accept="image/*"
@@ -107,11 +193,11 @@ export function ProductLookupPage() {
               }}
             />
 
-            {/* 촬영하기 */}
+            {/* 사진 스캔 영역 */}
             <button
               className="mt-5 flex min-h-[200px] flex-col items-center justify-center rounded-2xl border border-dashed border-primary-100 bg-primary-50 px-8 text-center"
               disabled={processing}
-              onClick={() => cameraRef.current?.click()}
+              onClick={openCamera}
               type="button"
             >
               {processing ? (
@@ -120,7 +206,7 @@ export function ProductLookupPage() {
                 <>
                   <CameraMark className="mb-4 h-[64px] w-[72px]" />
                   <p className="text-body2 text-primary-500">사진으로 스캔</p>
-                  <p className="mt-1 text-caption text-primary-500">이미지 업로드 · AI 자동 인식</p>
+                  <p className="mt-1 text-caption text-primary-500">카메라 · AI 자동 인식</p>
                 </>
               )}
             </button>
@@ -130,7 +216,7 @@ export function ProductLookupPage() {
               <button
                 className="flex h-12 items-center justify-center gap-2 rounded-xl text-body2 text-white"
                 style={{ background: "linear-gradient(135deg, #5B8FD9, #3565B5)" }}
-                onClick={() => cameraRef.current?.click()}
+                onClick={openCamera}
                 disabled={processing}
                 type="button"
               >
@@ -155,7 +241,7 @@ export function ProductLookupPage() {
             {/* NFC */}
             <button
               className="mt-4 flex h-[56px] items-center gap-3 rounded-xl border border-gray-200 bg-white px-5 text-body2 text-gray-500"
-              onClick={() => navigate("/recommendation/nfc-scan")}
+              onClick={() => navigate("/recommendation/nfc-scan/demo")}
               type="button"
             >
               <span className="grid h-9 w-9 place-items-center rounded-lg" style={iconBox}>

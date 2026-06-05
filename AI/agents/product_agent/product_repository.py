@@ -101,7 +101,7 @@ def save_new_product(product: dict) -> str:
 
 
 def save_enriched(product_id: str, enriched: dict) -> None:
-    """Gemini 보강 결과를 products 테이블에 upsert."""
+    """Gemini 보강 결과를 products 테이블에 업데이트 (product는 이미 존재 보장)."""
     import json as _json
     sb = get_supabase()
 
@@ -126,8 +126,8 @@ def save_enriched(product_id: str, enriched: dict) -> None:
     review_data = enriched.get("review_data") or {}
     feature_json = enriched.get("product_features") or {}
 
+    # product_id는 WHERE 조건으로 사용하므로 payload에서 제외
     payload: dict = {
-        "product_id": product_id,
         "lowest_price": lowest_price,
         "savings": savings,
         "stores": stores,
@@ -142,7 +142,7 @@ def save_enriched(product_id: str, enriched: dict) -> None:
     if feature_json:
         payload["feature_json"] = _json.dumps(feature_json, ensure_ascii=False)
 
-    sb.table("products").upsert(payload, on_conflict="product_id").execute()
+    sb.table("products").update(payload).eq("product_id", product_id).execute()
 
     # review_embeddings 저장 (백그라운드 처리, 실패해도 무시)
     if review_data:

@@ -1,9 +1,16 @@
+import logging
 import os
 
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
 from config import settings
+
+logging.basicConfig(
+    level=logging.INFO,
+    format="%(asctime)s [%(levelname)s] %(name)s - %(message)s",
+    datefmt="%Y-%m-%d %H:%M:%S",
+)
 from api.internal.recognize_router import router as recognize_router
 from api.internal.agent_router import router as agent_router
 from api.search_router import router as search_router

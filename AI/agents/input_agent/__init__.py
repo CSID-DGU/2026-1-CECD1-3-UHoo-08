@@ -1,6 +1,8 @@
 import json
 import hashlib
 import base64
+import logging
+import time
 import redis
 
 from config import settings
@@ -8,6 +10,8 @@ from models.extracted_product import ExtractedProduct
 from agents.input_agent.image_parser import parse_image
 from agents.input_agent.nfc_parser import parse_nfc_url
 from agents.input_agent.text_parser import parse_text
+
+logger = logging.getLogger(__name__)
 
 _TTL = 6 * 60 * 60  # 6시간
 _redis_client = None
@@ -42,13 +46,8 @@ def run(input_type: str, data: str) -> ExtractedProduct:
     input_type: IMAGE | NFC | TEXT
     data: base64 이미지 / 올리브영 URL / 평문 텍스트
     """
-    # r = _get_redis()
-
-    # # L1: 동일 raw 입력 → 파서 호출 생략
-    # l1_key = _raw_key(input_type, data)
-    # cached = r.get(l1_key)
-    # if cached:
-    #     return ExtractedProduct(**json.loads(cached))
+    logger.info("[input_agent] 파싱 시작 | type=%s", input_type)
+    t0 = time.perf_counter()
 
     if input_type == "IMAGE":
         result = parse_image(base64.b64decode(data))
@@ -59,14 +58,12 @@ def run(input_type: str, data: str) -> ExtractedProduct:
     else:
         raise ValueError(f"알 수 없는 input_type: {input_type}")
 
-    # # L2: 같은 상품이 이미 캐싱돼 있으면 기존 정규화 결과 반환
-    # l2_key = _product_key(result)
-    # cached_l2 = r.get(l2_key)
-    # if cached_l2:
-    #     r.setex(l1_key, _TTL, cached_l2)
-    #     return ExtractedProduct(**json.loads(cached_l2))
-
-    # result_json = result.model_dump_json()
-    # r.setex(l1_key, _TTL, result_json)
-    # r.setex(l2_key, _TTL, result_json)
+    logger.info(
+        "[input_agent] 파싱 완료 | %.2fs | name=%s | brand=%s | category=%s | attributes=%s",
+        time.perf_counter() - t0,
+        result.product_name,
+        result.brand,
+        result.category,
+        result.attributes,
+    )
     return result
