@@ -4,6 +4,7 @@ from langchain_core.tools import tool
 
 # job_id별 사이드채널 저장소 (LLM 컨텍스트 오염 방지)
 _intent_store: dict[str, list] = {}
+_intent_backup_store: dict[str, list] = {}  # baseProduct 채점용 백업
 _collaborative_store: dict[str, list] = {}
 _alternative_store: dict[str, list] = {}
 _score_store: dict[str, list] = {}
@@ -98,6 +99,7 @@ async def run_discovery_agent(
 
         if job_id:
             _intent_store[job_id] = result["intent_vector"]
+            _intent_backup_store[job_id] = result["intent_vector"]
             from services import job_updater
             await job_updater.update(job_id, step="후보 탐색", progress=25, status="IN_PROGRESS")
 

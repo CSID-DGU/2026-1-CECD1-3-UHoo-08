@@ -105,17 +105,52 @@ async def _save_user_context(req: AgentRunRequest) -> None:
         print(f"[user_context_rags] 저장 실패: {e}")
 
 
-async def _generate_ai_reason(req: AgentRunRequest, category: str, match_score: int) -> str:
-    """Qwen에 짧은 프롬프트로 aiReason만 생성 요청."""
+async def _generate_ai_reason(
+    req: AgentRunRequest,
+    base_product_name: str,
+    category: str,
+    match_score: int,
+    breakdown: dict,
+) -> str:
+    """baseProduct 채점 결과 기반으로 aiReason 생성."""
     profile = req.userProfile
     concerns = ", ".join(profile.skinConcerns) if profile.skinConcerns else "없음"
+    purpose_map = {"DAILY": "데일리", "OFFICE": "직장", "DATE": "데이트"}
+    purpose = purpose_map.get(req.searchPurpose or "", req.searchPurpose or "데일리")
+
+    score_context = ""
+    if breakdown:
+        parts = []
+        if breakdown.get("personalization", 0) >= 70:
+            parts.append("피부 조건 적합도 높음")
+        elif breakdown.get("personalization", 0) < 40:
+            parts.append("피부 조건 적합도 낮음")
+        if breakdown.get("reviewScore", 0) >= 70:
+            parts.append("사용 목적에 맞는 리뷰 다수")
+        if breakdown.get("budgetFit", 0) >= 70:
+            parts.append("예산 범위 적합")
+        if parts:
+            score_context = f"점수 근거: {', '.join(parts)}\n"
+
+    category_guide = {
+        "sun": "자외선차단·수분·피부자극 최소화",
+        "base": "커버력·지속력·피부톤",
+        "skincare": "성분·피부고민 해결",
+        "lip": "발색·제형·퍼스널컬러",
+    }.get(category, "성분·피부 조건")
+
     prompt = (
+        f"[상품 정보]\n"
+        f"상품명: {base_product_name}, 카테고리: {category}, 적합도: {match_score}/100\n"
+        f"{score_context}"
+        f"\n[사용자 정보]\n"
         f"피부타입: {profile.skinType}, 퍼스널컬러: {profile.personalColor}, 피부고민: {concerns}\n"
-        f"상품 카테고리: {category}, 적합도 점수: {match_score}/100\n\n"
-        f"위 사용자에게 {category} 상품을 추천하는 이유를 1~2문장 한국어로 작성하세요. "
-        f"상품 ID나 UUID는 절대 포함하지 마세요. "
-        f"카테고리에 맞는 조건(sun이면 자외선차단·수분·피부자극, base면 커버력·지속력, "
-        f"skincare면 성분·피부고민, lip이면 발색·제형·퍼스널컬러)을 근거로 작성하세요."
+        f"사용 목적: {purpose}\n"
+        f"\n[작성 규칙]\n"
+        f"- 이 상품이 위 사용자에게 {match_score}점인 이유를 1~2문장 한국어로 작성하세요.\n"
+        f"- 브랜드명·상품명·ID는 절대 언급하지 마세요.\n"
+        f"- {category} 카테고리 기준: {category_guide}을 근거로 작성하세요.\n"
+        f"- 점수 수치는 언급하지 마세요."
     )
     try:
         async with httpx.AsyncClient(timeout=15.0) as client:
@@ -128,6 +163,58 @@ async def _generate_ai_reason(req: AgentRunRequest, category: str, match_score: 
     except Exception as e:
         print(f"[agent_router] aiReason 생성 실패: {e}")
         return ""
+
+
+async def _score_base_product(req: AgentRunRequest, intent_vector: list) -> tuple[int, dict]:
+    """baseProduct를 score_agent로 채점 → (matchScore, breakdown)."""
+    if not req.baseProductId or not intent_vector:
+        return 0, {}
+    try:
+        from agents.score_agent import run_score
+        results = await run_score(
+            intent_vector=intent_vector,
+            candidate_ids=[req.baseProductId],
+            user_profile={
+                "skin_type": req.userProfile.skinType,
+                "personal_color": req.userProfile.personalColor,
+                "skin_concerns": req.userProfile.skinConcerns,
+            },
+            search_purpose=req.searchPurpose,
+            price_tolerance_percent=req.priceTolerancePercent,
+        )
+        if results:
+            return min(100, int(results[0]["totalScore"])), dict(results[0].get("breakdown", {}))
+    except Exception as e:
+        print(f"[agent_router] baseProduct 채점 실패: {e}")
+    return 0, {}
+
+
+async def _build_main_recommendations(scores: list) -> list:
+    """score_agent candidates 결과 + 상품 메타 조인 → mainRecommendations."""
+    if not scores:
+        return []
+    try:
+        from db.product_reader import get_products_meta
+        product_ids = [s["productId"] for s in scores]
+        metas = await asyncio.to_thread(get_products_meta, product_ids)
+        result = []
+        for s in scores:
+            meta = metas.get(s["productId"])
+            if not meta:
+                continue
+            result.append({
+                "id": meta["id"],
+                "name": meta["name"],
+                "brand": meta["brand"],
+                "imageUrl": meta["image_url"],
+                "price": meta["price"],
+                "totalScore": s["totalScore"],
+                "breakdown": s.get("breakdown", {}),
+            })
+        return result
+    except Exception as e:
+        print(f"[agent_router] mainRecommendations 조립 실패: {e}")
+        return []
 
 
 async def _run_agent(req: AgentRunRequest) -> None:
@@ -156,50 +243,50 @@ async def _run_agent(req: AgentRunRequest) -> None:
 
         final_state = await agent_graph.ainvoke(initial_state)
 
-        from agents.tools import _collaborative_store, _alternative_store, _score_store
+        from agents.tools import (
+            _collaborative_store, _alternative_store,
+            _score_store, _intent_backup_store,
+        )
         job_id = req.jobId
 
         # store에서 실제 tool 결과 수집
         collaborative = _collaborative_store.pop(job_id, [])
         alternative = _alternative_store.pop(job_id, [])
-        scores = _score_store.pop(job_id, [])
-        match_score = 0
-        if scores:
-            top = max(scores, key=lambda x: x.get("totalScore", 0))
-            match_score = min(100, int(top.get("totalScore", 0)))
+        candidate_scores = _score_store.pop(job_id, [])
+        intent_vector = _intent_backup_store.pop(job_id, [])
 
-        # Qwen 최종 응답 파싱 시도 — 실패하면 store 데이터로 직접 구성
-        last_content = final_state["messages"][-1].content.strip()
-        if last_content.startswith("```"):
-            last_content = last_content.strip("`").removeprefix("json").strip()
+        # baseProduct 자체 채점 → matchScore
+        match_score, breakdown = await _score_base_product(req, intent_vector)
 
-        try:
-            result = json.loads(last_content)
-        except (json.JSONDecodeError, ValueError):
-            print(f"[agent_router] Qwen 최종 응답 파싱 실패, store로 결과 구성. raw='{last_content[:200]}'")
-            from db.product_reader import get_product_meta
-            meta = await asyncio.to_thread(get_product_meta, req.baseProductId or "")
-            category = meta["category"] if meta else "skincare"
-            ai_reason = await _generate_ai_reason(req, category, match_score)
-            if not ai_reason:
-                ai_reason = "사용자 피부 타입과 퍼스널컬러를 기반으로 선별된 추천 상품입니다."
-            result = {
-                "matchScore": match_score,
-                "matchLabel": (
-                    "인생템 확률 매칭" if match_score >= 90
-                    else "높은 적합도" if match_score >= 70
-                    else "괜찮은 선택" if match_score >= 50
-                    else "추천 상품"
-                ),
-                "aiReason": ai_reason,
-                "similarUserProducts": collaborative,
-                "alternativeProducts": alternative,
-            }
+        # mainRecommendations 조립 (candidates 채점 결과)
+        main_recommendations = await _build_main_recommendations(candidate_scores)
 
-        result["similarUserProducts"] = collaborative or result.get("similarUserProducts", [])
-        result["alternativeProducts"] = alternative or result.get("alternativeProducts", [])
-        if match_score:
-            result["matchScore"] = match_score
+        # base product 메타 조회
+        from db.product_reader import get_product_meta
+        base_meta = await asyncio.to_thread(get_product_meta, req.baseProductId or "")
+        base_name = base_meta["name"] if base_meta else ""
+        category = base_meta["category"] if base_meta else "skincare"
+
+        # aiReason 생성
+        ai_reason = await _generate_ai_reason(req, base_name, category, match_score, breakdown)
+        if not ai_reason:
+            ai_reason = "사용자 피부 타입과 퍼스널컬러를 기반으로 선별된 추천 상품입니다."
+
+        match_label = (
+            "인생템 확률 매칭" if match_score >= 90
+            else "높은 적합도" if match_score >= 70
+            else "괜찮은 선택" if match_score >= 50
+            else "추천 상품"
+        )
+
+        result = {
+            "matchScore": match_score,
+            "matchLabel": match_label,
+            "aiReason": ai_reason,
+            "mainRecommendations": main_recommendations,
+            "similarUserProducts": collaborative,
+            "alternativeProducts": alternative,
+        }
 
         # Qwen이 호출 안 한 에이전트는 직접 실행
         if not result["alternativeProducts"] and req.baseProductId:
