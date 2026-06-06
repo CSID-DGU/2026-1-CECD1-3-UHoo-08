@@ -129,23 +129,44 @@ async def _run_agent(req: AgentRunRequest) -> None:
 
         final_state = await agent_graph.ainvoke(initial_state)
 
+        from agents.tools import _collaborative_store, _alternative_store, _score_store
+        job_id = req.jobId
+
+        # store에서 실제 tool 결과 수집
+        collaborative = _collaborative_store.pop(job_id, [])
+        alternative = _alternative_store.pop(job_id, [])
+        scores = _score_store.pop(job_id, [])
+        match_score = 0
+        if scores:
+            top = max(scores, key=lambda x: x.get("totalScore", 0))
+            match_score = min(100, int(top.get("totalScore", 0)))
+
+        # Qwen 최종 응답 파싱 시도 — 실패하면 store 데이터로 직접 구성
         last_content = final_state["messages"][-1].content.strip()
         if last_content.startswith("```"):
             last_content = last_content.strip("`").removeprefix("json").strip()
-        result = json.loads(last_content)
 
-        # LLM이 product 배열을 임의로 수정할 수 있으므로 tool 실제 결과로 덮어씀
-        from agents.tools import _collaborative_store, _alternative_store, _score_store
-        job_id = req.jobId
-        if job_id in _collaborative_store:
-            result["similarUserProducts"] = _collaborative_store.pop(job_id)
-        if job_id in _alternative_store:
-            result["alternativeProducts"] = _alternative_store.pop(job_id)
-        if job_id in _score_store:
-            scores = _score_store.pop(job_id)
-            if scores:
-                top = max(scores, key=lambda x: x.get("totalScore", 0))
-                result["matchScore"] = min(100, int(top.get("totalScore", 0)))
+        try:
+            result = json.loads(last_content)
+        except (json.JSONDecodeError, ValueError):
+            print(f"[agent_router] Qwen 최종 응답 파싱 실패, store로 결과 구성. raw='{last_content[:200]}'")
+            result = {
+                "matchScore": match_score,
+                "matchLabel": (
+                    "인생템 확률 매칭" if match_score >= 90
+                    else "높은 적합도" if match_score >= 70
+                    else "괜찮은 선택" if match_score >= 50
+                    else "추천 상품"
+                ),
+                "aiReason": "사용자 피부 타입과 퍼스널컬러를 기반으로 선별된 추천 상품입니다.",
+                "similarUserProducts": collaborative,
+                "alternativeProducts": alternative,
+            }
+
+        result["similarUserProducts"] = collaborative or result.get("similarUserProducts", [])
+        result["alternativeProducts"] = alternative or result.get("alternativeProducts", [])
+        if match_score:
+            result["matchScore"] = match_score
 
         await asyncio.to_thread(_write_result, req.jobId, result)
         await _save_user_context(req)
