@@ -4,10 +4,12 @@ import asyncio
 import json
 from datetime import datetime, timezone
 
+import httpx
 from fastapi import APIRouter, BackgroundTasks
 from pydantic import BaseModel
 from langchain_core.messages import HumanMessage
 
+from config import settings
 from graph.action_model import agent_graph
 from services import job_updater
 
@@ -103,6 +105,31 @@ async def _save_user_context(req: AgentRunRequest) -> None:
         print(f"[user_context_rags] 저장 실패: {e}")
 
 
+async def _generate_ai_reason(req: AgentRunRequest, category: str, match_score: int) -> str:
+    """Qwen에 짧은 프롬프트로 aiReason만 생성 요청."""
+    profile = req.userProfile
+    concerns = ", ".join(profile.skinConcerns) if profile.skinConcerns else "없음"
+    prompt = (
+        f"피부타입: {profile.skinType}, 퍼스널컬러: {profile.personalColor}, 피부고민: {concerns}\n"
+        f"상품 카테고리: {category}, 적합도 점수: {match_score}/100\n\n"
+        f"위 사용자에게 {category} 상품을 추천하는 이유를 1~2문장 한국어로 작성하세요. "
+        f"상품 ID나 UUID는 절대 포함하지 마세요. "
+        f"카테고리에 맞는 조건(sun이면 자외선차단·수분·피부자극, base면 커버력·지속력, "
+        f"skincare면 성분·피부고민, lip이면 발색·제형·퍼스널컬러)을 근거로 작성하세요."
+    )
+    try:
+        async with httpx.AsyncClient(timeout=15.0) as client:
+            resp = await client.post(
+                f"{settings.QWEN_LLM_BASE_URL.rstrip('/v1')}/api/chat",
+                json={"model": settings.QWEN_LLM_MODEL, "messages": [{"role": "user", "content": prompt}], "stream": False},
+            )
+            data = resp.json()
+            return data.get("message", {}).get("content", "").strip()
+    except Exception as e:
+        print(f"[agent_router] aiReason 생성 실패: {e}")
+        return ""
+
+
 async def _run_agent(req: AgentRunRequest) -> None:
     try:
         await job_updater.update(req.jobId, status="IN_PROGRESS", progress=0)
@@ -150,6 +177,12 @@ async def _run_agent(req: AgentRunRequest) -> None:
             result = json.loads(last_content)
         except (json.JSONDecodeError, ValueError):
             print(f"[agent_router] Qwen 최종 응답 파싱 실패, store로 결과 구성. raw='{last_content[:200]}'")
+            from db.product_reader import get_product_meta
+            meta = await asyncio.to_thread(get_product_meta, req.baseProductId or "")
+            category = meta["category"] if meta else "skincare"
+            ai_reason = await _generate_ai_reason(req, category, match_score)
+            if not ai_reason:
+                ai_reason = "사용자 피부 타입과 퍼스널컬러를 기반으로 선별된 추천 상품입니다."
             result = {
                 "matchScore": match_score,
                 "matchLabel": (
@@ -158,7 +191,7 @@ async def _run_agent(req: AgentRunRequest) -> None:
                     else "괜찮은 선택" if match_score >= 50
                     else "추천 상품"
                 ),
-                "aiReason": "사용자 피부 타입과 퍼스널컬러를 기반으로 선별된 추천 상품입니다.",
+                "aiReason": ai_reason,
                 "similarUserProducts": collaborative,
                 "alternativeProducts": alternative,
             }
