@@ -203,7 +203,7 @@ async def _build_main_recommendations(scores: list) -> list:
             if not meta:
                 continue
             result.append({
-                "id": meta["id"],
+                "productId": meta["id"],
                 "name": meta["name"],
                 "brand": meta["brand"],
                 "imageUrl": meta["image_url"],

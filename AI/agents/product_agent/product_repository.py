@@ -49,7 +49,8 @@ def find_by_name_brand(name: str, brand: str) -> Optional[dict]:
         "skinTypeSatisfaction": row.get("skin_type_satisfaction"),
     }
 
-    ingredients = feature_json.get("key_ingredient") or []
+    ingredient_data = feature_json.get("ingredient_data") or {}
+    ingredients = ingredient_data.get("key_ingredients") or []
 
     return {
         "product_id": row["product_id"],
@@ -125,6 +126,9 @@ def save_enriched(product_id: str, enriched: dict) -> None:
 
     review_data = enriched.get("review_data") or {}
     feature_json = enriched.get("product_features") or {}
+    ingredient_data = enriched.get("ingredient_data") or {}
+    if ingredient_data:
+        feature_json["ingredient_data"] = ingredient_data
 
     payload: dict = {
         "product_id": product_id,
