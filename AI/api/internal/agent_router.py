@@ -168,6 +168,35 @@ async def _run_agent(req: AgentRunRequest) -> None:
         if match_score:
             result["matchScore"] = match_score
 
+        # Qwen이 호출 안 한 에이전트는 직접 실행
+        if not result["alternativeProducts"] and req.baseProductId:
+            try:
+                from agents.alternative_agent import run_alternative
+                alt_results = await run_alternative(
+                    base_product_id=req.baseProductId,
+                    exclude_ids=[req.baseProductId],
+                    top_k=5,
+                )
+                result["alternativeProducts"] = [r.model_dump(by_alias=True) for r in alt_results]
+                print(f"[agent_router] alternative fallback: {len(result['alternativeProducts'])}개")
+            except Exception as e:
+                print(f"[agent_router] alternative fallback 실패: {e}")
+
+        if not result["similarUserProducts"]:
+            try:
+                from agents.collaborative_agent import run_collaborative
+                collab_results = await run_collaborative(
+                    user_id=req.userId,
+                    skin_type=req.userProfile.skinType,
+                    personal_color=req.userProfile.personalColor,
+                    exclude_ids=[req.baseProductId] if req.baseProductId else [],
+                    top_k=5,
+                )
+                result["similarUserProducts"] = [r.model_dump(by_alias=True) for r in collab_results]
+                print(f"[agent_router] collaborative fallback: {len(result['similarUserProducts'])}개")
+            except Exception as e:
+                print(f"[agent_router] collaborative fallback 실패: {e}")
+
         await asyncio.to_thread(_write_result, req.jobId, result)
         await _save_user_context(req)
 
