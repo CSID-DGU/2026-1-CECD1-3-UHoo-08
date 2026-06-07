@@ -66,7 +66,6 @@ export function WishlistCategoryPage() {
                 <article
                   key={item.wishlistId}
                   className="flex items-center gap-3 rounded-xl border border-gray-100 bg-white p-4"
-                  style={{ boxShadow: "0 2px 8px rgba(91,143,217,0.06)" }}
                 >
                   {/* 이미지 */}
                   <button

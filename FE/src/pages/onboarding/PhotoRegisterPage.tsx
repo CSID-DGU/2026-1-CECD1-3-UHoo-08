@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from "react";
+﻿import { useEffect, useRef, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { recognizeProduct } from "../../api/productApi";
 import AppLayout from "../../layouts/AppLayout";

@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+﻿import { useEffect, useState } from "react";
 import { useLocation, useNavigate } from "react-router-dom";
 import { type AiSearchProduct, aiSearch, recordProductView } from "../../api/productApi";
 import { BottomNav } from "../../components/common/BottomNav";
@@ -90,7 +90,7 @@ export function SearchResultPage() {
             <div className="mt-3 grid grid-cols-2 gap-3">
               {products.map((product) => (
                 <button
-                  className="flex flex-col rounded-2xl border border-gray-100 bg-white text-left shadow-sm overflow-hidden"
+                  className="flex flex-col rounded-2xl border border-gray-100 bg-white text-left overflow-hidden"
                   key={product.productId}
                   onClick={() => {
                     recordProductView(product.productId).catch(() => {});

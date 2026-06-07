@@ -1,4 +1,4 @@
-import { useRef, useState } from "react";
+﻿import { useRef, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { updateProfile } from "../../api/userApi";
 import AppLayout from "../../layouts/AppLayout";
@@ -62,7 +62,7 @@ export function ProfileSetupPage() {
             설정해주세요
           </h1>
           <p className="mt-3 text-body2 text-gray-300">
-            BeautyMatch에서 사용할 정보를 입력해주세요
+            화담에서 사용할 정보를 입력해주세요
           </p>
 
           {/* 프로필 사진 */}

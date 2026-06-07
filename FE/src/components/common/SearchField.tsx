@@ -1,4 +1,4 @@
-import { useState } from "react";
+﻿import { useState } from "react";
 
 type SearchFieldProps = {
   value?: string;
@@ -24,7 +24,7 @@ export function SearchField({
   const colorClass =
     variant === "outlined"
       ? "border border-primary-500 bg-primary-50"
-      : "bg-white border border-gray-100 shadow-sm";
+      : "bg-white border border-gray-100";
 
   const SearchIcon = (
     <span className="h-5 w-5 shrink-0 rounded bg-primary-100" />

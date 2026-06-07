@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from "react";
+﻿import { useEffect, useRef, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { Droplets } from "lucide-react";
 import {
@@ -18,7 +18,6 @@ const glass = {
   backdropFilter: "blur(14px)",
   WebkitBackdropFilter: "blur(14px)",
   border: "1px solid rgba(255,255,255,0.9)",
-  boxShadow: "0 4px 24px rgba(91,143,217,0.09)",
 };
 
 function SectionCard({ title, children }: { title: string; children: React.ReactNode }) {
@@ -111,7 +110,6 @@ export function SkinInfoEditPage() {
               backdropFilter: "blur(16px)",
               WebkitBackdropFilter: "blur(16px)",
               border: "1px solid rgba(255,255,255,0.85)",
-              boxShadow: "0 6px 28px rgba(91,143,217,0.12), 0 1px 0 rgba(255,255,255,0.9) inset",
             }}
           >
             <div
@@ -138,7 +136,6 @@ export function SkinInfoEditPage() {
                       ? {
                           background: "linear-gradient(135deg, #5B8FD9, #3565B5)",
                           color: "white",
-                          boxShadow: "0 3px 12px rgba(91,143,217,0.35)",
                         }
                       : { background: "rgba(255,255,255,0.7)", color: "#7b818c", border: "1px solid rgba(203,208,214,0.5)" }
                   }
@@ -165,7 +162,6 @@ export function SkinInfoEditPage() {
                       ? {
                           background: "linear-gradient(135deg, #3a3a3a, #18191d)",
                           color: "white",
-                          boxShadow: "0 3px 12px rgba(0,0,0,0.2)",
                         }
                       : { background: "rgba(255,255,255,0.7)", color: "#7b818c", border: "1px solid rgba(203,208,214,0.5)" }
                   }
@@ -190,7 +186,6 @@ export function SkinInfoEditPage() {
                       ? {
                           background: "linear-gradient(135deg, #7AAEE4, #4778C8)",
                           color: "white",
-                          boxShadow: "0 2px 10px rgba(91,143,217,0.3)",
                         }
                       : { background: "rgba(255,255,255,0.7)", color: "#7b818c", border: "1px solid rgba(203,208,214,0.5)" }
                   }

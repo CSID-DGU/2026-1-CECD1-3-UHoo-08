@@ -1,4 +1,4 @@
-.counter {
+﻿.counter {
   font-size: 16px;
   padding: 5px 10px;
   border-radius: 5px;
@@ -125,10 +125,10 @@
     align-items: center;
     gap: 8px;
     text-decoration: none;
-    transition: box-shadow 0.3s;
+    
 
     &:hover {
-      box-shadow: var(--shadow);
+      box-shadow: none;
     }
     .button-icon {
       height: 18px;

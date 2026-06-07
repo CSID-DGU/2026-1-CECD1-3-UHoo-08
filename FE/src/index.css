@@ -1,4 +1,4 @@
-@import "tailwindcss";
+﻿@import "tailwindcss";
 
 @theme {
   /* Primary Color — Soft Blue */
@@ -98,7 +98,7 @@ button:active {
     rgba(240, 245, 253, 0.12) 58%,
     rgba(240, 245, 253, 0) 76%
   );
-  filter: blur(2px) drop-shadow(0 24px 34px rgba(91, 143, 217, 0.1));
+  filter: blur(2px);
   z-index: 0;
   animation: loader-glow 2.8s ease-in-out infinite;
 }
@@ -129,10 +129,7 @@ button:active {
   border-radius: 24px;
   border: 1px solid rgba(255, 255, 255, 0.78);
   background: linear-gradient(145deg, #ffffff 0%, #F0F5FD 46%, #DBE6F8 100%);
-  box-shadow:
-    0 26px 44px rgba(91, 143, 217, 0.2),
-    inset -10px -12px 24px rgba(91, 143, 217, 0.08),
-    inset 8px 8px 18px rgba(255, 255, 255, 0.7);
+  box-shadow: none;
   backface-visibility: hidden;
 }
 
@@ -190,16 +187,14 @@ button:active {
   height: 50px;
   transform: translateX(-50%);
   background: #5B8FD9;
-  box-shadow:
-    inset 0 0 0 14px #9DBFEE,
-    0 12px 22px rgba(91, 143, 217, 0.2);
+  box-shadow: none;
 }
 
 .pop-bubble {
   position: absolute;
   border-radius: 9999px;
   background: #9DBFEE;
-  box-shadow: 0 10px 22px rgba(91, 143, 217, 0.12);
+  box-shadow: none;
   z-index: 5;
   animation: bubble-burst 2.1s ease-in-out infinite;
 }
@@ -253,7 +248,7 @@ button:active {
   height: 10px;
   border-radius: 9999px;
   background: #5B8FD9;
-  box-shadow: 0 0 0 0 rgba(91, 143, 217, 0.3);
+  box-shadow: none;
   animation: thinking-pulse 1.2s ease-in-out infinite;
 }
 
@@ -407,11 +402,11 @@ button:active {
   0%,
   100% {
     transform: scale(0.8);
-    box-shadow: 0 0 0 0 rgba(91, 143, 217, 0.3);
+    box-shadow: none;
   }
   50% {
     transform: scale(1);
-    box-shadow: 0 0 0 9px rgba(91, 143, 217, 0);
+    box-shadow: none;
   }
 }
 
@@ -430,7 +425,7 @@ button:active {
     border-color: #9DBFEE;
     background: #F0F5FD;
     transform: translateX(4px);
-    box-shadow: 0 10px 24px rgba(91, 143, 217, 0.1);
+    box-shadow: none;
   }
   60%,
   100% {

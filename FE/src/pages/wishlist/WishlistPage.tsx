@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+﻿import { useEffect, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { Smile, Layers, Sun, Droplets, Folder, Plus, X, LayoutGrid } from "lucide-react";
 import { type WishlistItem, getWishlists } from "../../api/wishlistApi";
@@ -142,7 +142,7 @@ export function WishlistPage() {
       )}
 
       <div
-        className="fixed inset-x-0 bottom-0 z-50 mx-auto max-w-[430px] rounded-t-2xl bg-white p-6 shadow-xl transition-transform duration-300"
+        className="fixed inset-x-0 bottom-0 z-50 mx-auto max-w-[430px] rounded-t-2xl bg-white p-6 transition-transform duration-300"
         style={{ transform: showAddSheet ? "translateY(0)" : "translateY(100%)" }}
       >
         <div className="mx-auto mb-5 h-1 w-10 rounded-full bg-gray-200" />

@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+﻿import { useEffect, useState } from "react";
 import { useLocation, useNavigate } from "react-router-dom";
 import { AlertTriangle } from "lucide-react";
 import { recognizeProduct } from "../../api/productApi";
@@ -96,7 +96,6 @@ export function NfcScanPage() {
                       className="flex h-28 w-28 items-center justify-center rounded-full"
                       style={{
                         background: "linear-gradient(135deg, #DBE6F8, #9DBFEE)",
-                        boxShadow: "0 8px 32px rgba(91,143,217,0.2)",
                       }}
                     >
                       <svg className="h-12 w-12 text-primary-600" fill="none" viewBox="0 0 24 24">
