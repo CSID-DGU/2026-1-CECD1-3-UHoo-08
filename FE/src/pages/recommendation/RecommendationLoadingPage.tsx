@@ -2,7 +2,6 @@
 import { useLocation, useNavigate } from "react-router-dom";
 import { getRecommendationStatus } from "../../api/recommendationApi";
 import AppLayout from "../../layouts/AppLayout";
-import { agentTools } from "../../mocks/recommendations";
 
 export function RecommendationLoadingPage() {
   const navigate = useNavigate();
@@ -52,7 +51,7 @@ export function RecommendationLoadingPage() {
           <p className="mt-2 text-body2 text-gray-300">잠깐이면 충분해요</p>
         </div>
 
-        <AgentToolFlow />
+        <WaitNotice />
 
         <div className="mt-4 rounded-xl bg-primary-50 p-4">
           <p className="text-body2 text-primary-500">✦ 잠깐, 피부 팁!</p>
@@ -71,32 +70,13 @@ export function RecommendationLoadingPage() {
   );
 }
 
-function AgentToolFlow() {
+function WaitNotice() {
   return (
-    <section className="mt-6 rounded-2xl border border-gray-200 bg-white p-4">
-      <div className="mb-3 flex items-center justify-between">
-        <div>
-          <p className="text-caption text-primary-500">Action Model</p>
-          <h2 className="text-body2 text-gray-500">도구를 선택해 추천을 수행 중</h2>
-        </div>
-        <span className="agent-thinking-dot" />
-      </div>
-      <ol className="grid gap-2">
-        {agentTools.map((tool, index) => (
-          <li className="agent-tool-step" key={tool.name} style={{ animationDelay: `${index * 1.15}s` }}>
-            <div className="agent-tool-icon">{index + 1}</div>
-            <div className="min-w-0 flex-1">
-              <div className="flex items-center gap-2">
-                <strong className="text-caption text-gray-500">{tool.name}</strong>
-                <span className="truncate text-[11px] text-primary-500">{tool.call}</span>
-              </div>
-              <p className="mt-0.5 text-caption text-gray-500">{tool.action}</p>
-              <p className="truncate text-[11px] text-gray-300">{tool.detail}</p>
-            </div>
-            <span className="agent-tool-status">대기</span>
-          </li>
-        ))}
-      </ol>
+    <section className="mt-6 rounded-2xl border border-primary-100 bg-primary-50 px-5 py-6 text-center">
+      <h2 className="text-body1 text-gray-500">잠시만 기다려주세요</h2>
+      <p className="mt-2 text-caption leading-5 text-gray-400">
+        피부 정보와 제품 데이터를 바탕으로 맞춤 추천을 준비하고 있어요
+      </p>
     </section>
   );
 }
