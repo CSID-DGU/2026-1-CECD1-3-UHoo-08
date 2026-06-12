@@ -13,6 +13,9 @@ import { BottomNav } from "../../components/common/BottomNav";
 import { PageHeader } from "../../components/common/PageHeader";
 import { Toggle } from "../../components/common/Toggle";
 import AppLayout from "../../layouts/AppLayout";
+import { MOCK_TRACKING_LIST } from "../../mocks/priceTracking";
+
+const USE_MOCK = import.meta.env.VITE_USE_MOCK === "true";
 
 export function FavoriteTrackingPage() {
   const navigate = useNavigate();
@@ -26,6 +29,15 @@ export function FavoriteTrackingPage() {
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
+    if (USE_MOCK) {
+      const d = MOCK_TRACKING_LIST;
+      setAchieved(d.achieved);
+      setTracking(d.tracking);
+      setSummary(d.summary);
+      setAlertSettings(d.alertSettings);
+      setLoading(false);
+      return;
+    }
     getTrackings()
       .then((res) => {
         const d = res.data;

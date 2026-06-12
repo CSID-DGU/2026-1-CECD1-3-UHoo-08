@@ -1,11 +1,14 @@
 import { useEffect, useState } from "react";
 import { useLocation, useNavigate } from "react-router-dom";
-import { type AiSearchProduct, aiSearch, recordProductView } from "../../api/productApi";
+import { type AiSearchProduct, aiSearch, recordProductView, searchProducts } from "../../api/productApi";
 import { BottomNav } from "../../components/common/BottomNav";
 import { PageHeader } from "../../components/common/PageHeader";
 import { SearchField } from "../../components/common/SearchField";
 import { saveLastSearch } from "../../lib/localHistory";
 import AppLayout from "../../layouts/AppLayout";
+import { getMockSearchResult } from "../../mocks/searchMock";
+
+const USE_MOCK = import.meta.env.VITE_USE_MOCK === "true";
 
 const CATEGORY_LABEL: Record<string, string> = {
   base: "베이스 메이크업",
@@ -34,15 +37,51 @@ export function SearchResultPage() {
     if (!q.trim()) return;
     setLoading(true);
     setError("");
+
+    if (USE_MOCK) {
+      const mock = getMockSearchResult(q);
+      if (mock) {
+        await new Promise((r) => setTimeout(r, 800));
+        setProducts(mock.products);
+        setCategory(mock.category);
+        saveLastSearch({ query: q, category: mock.category, products: mock.products });
+        setLoading(false);
+        return;
+      }
+    }
+
     try {
       const res = await aiSearch(q);
-      setProducts(res.products);
-      setCategory(res.category);
-      saveLastSearch({ query: q, category: res.category, products: res.products });
+      if (res.products.length > 0) {
+        setProducts(res.products);
+        setCategory(res.category);
+        saveLastSearch({ query: q, category: res.category, products: res.products });
+      } else {
+        await runFallbackSearch(q);
+      }
     } catch {
-      setError("검색 중 오류가 발생했어요. 다시 시도해주세요.");
+      await runFallbackSearch(q);
     } finally {
       setLoading(false);
+    }
+  }
+
+  async function runFallbackSearch(q: string) {
+    try {
+      const res = await searchProducts(q);
+      const mapped: AiSearchProduct[] = res.data.products.slice(0, 6).map((p) => ({
+        productId: p.id,
+        name: p.name,
+        brand: p.brand,
+        category: p.category,
+        imageUrl: p.imageUrl ?? null,
+        originalPrice: p.originalPrice ?? null,
+        matchScore: 0,
+      }));
+      setProducts(mapped);
+      setCategory("");
+    } catch {
+      setError("검색 중 오류가 발생했어요. 다시 시도해주세요.");
     }
   }
 

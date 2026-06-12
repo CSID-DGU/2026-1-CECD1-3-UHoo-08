@@ -8,6 +8,9 @@ import {
 import { PageHeader } from "../../components/common/PageHeader";
 import { Toggle } from "../../components/common/Toggle";
 import AppLayout from "../../layouts/AppLayout";
+import { MOCK_TRACKING_DETAIL_DEFAULT, MOCK_TRACKING_DETAILS } from "../../mocks/priceTracking";
+
+const USE_MOCK = import.meta.env.VITE_USE_MOCK === "true";
 
 const TABS = [
   { label: "1주", period: "DAILY" },
@@ -34,6 +37,11 @@ export function PriceHistoryPage() {
   useEffect(() => {
     if (!trackingId) return;
     setLoading(true);
+    if (USE_MOCK) {
+      setData(MOCK_TRACKING_DETAILS[trackingId] ?? MOCK_TRACKING_DETAIL_DEFAULT);
+      setLoading(false);
+      return;
+    }
     getPriceTrackingDetail(trackingId, TABS[activeTab].period)
       .then((res) => setData(res.data))
       .catch(() => {})

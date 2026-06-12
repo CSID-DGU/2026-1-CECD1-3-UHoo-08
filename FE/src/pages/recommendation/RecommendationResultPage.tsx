@@ -26,12 +26,20 @@ function ProductImage({ url, alt }: { url: string | null; alt: string }) {
 
 export function RecommendationResultPage() {
   const navigate = useNavigate();
-  const { state } = useLocation() as { state: { jobId?: string } | null };
+  const { state } = useLocation() as {
+    state: { jobId?: string; mockData?: RecommendationResultResponse } | null;
+  };
   const jobId = state?.jobId;
+  const mockData = state?.mockData ?? null;
   const [result, setResult] = useState<RecommendationResultResponse | null>(null);
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
+    if (mockData) {
+      setResult(mockData);
+      setLoading(false);
+      return;
+    }
     if (!jobId) {
       setLoading(false);
       return;
@@ -40,7 +48,7 @@ export function RecommendationResultPage() {
       .then((res) => setResult(res.data))
       .catch(() => {})
       .finally(() => setLoading(false));
-  }, [jobId]);
+  }, [jobId, mockData]);
 
   if (loading) {
     return (

@@ -1,16 +1,27 @@
 import { useEffect, useRef } from "react";
 import { useLocation, useNavigate } from "react-router-dom";
-import { getRecommendationStatus } from "../../api/recommendationApi";
+import { type RecommendationResultResponse, getRecommendationStatus } from "../../api/recommendationApi";
 import AppLayout from "../../layouts/AppLayout";
 import { agentTools } from "../../mocks/recommendations";
 
 export function RecommendationLoadingPage() {
   const navigate = useNavigate();
-  const { state } = useLocation() as { state: { jobId?: string } | null };
+  const { state } = useLocation() as {
+    state: { jobId?: string; mock?: boolean; mockData?: RecommendationResultResponse } | null;
+  };
   const jobId = state?.jobId;
+  const isMock = state?.mock ?? false;
+  const mockData = state?.mockData;
   const timerRef = useRef<ReturnType<typeof setInterval> | null>(null);
 
   useEffect(() => {
+    if (isMock) {
+      const timer = setTimeout(() => {
+        navigate("/recommendation/result", { state: { mockData }, replace: true });
+      }, 3000);
+      return () => clearTimeout(timer);
+    }
+
     if (!jobId) return;
 
     timerRef.current = setInterval(async () => {
@@ -33,7 +44,7 @@ export function RecommendationLoadingPage() {
     return () => {
       if (timerRef.current) clearInterval(timerRef.current);
     };
-  }, [jobId, navigate]);
+  }, [isMock, jobId, mockData, navigate]);
 
   return (
     <AppLayout>

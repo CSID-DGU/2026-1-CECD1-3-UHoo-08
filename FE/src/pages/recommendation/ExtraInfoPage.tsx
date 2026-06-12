@@ -1,9 +1,47 @@
 import { useState } from "react";
 import { useLocation, useNavigate } from "react-router-dom";
-import { requestRecommendation } from "../../api/recommendationApi";
+import { type RecommendationResultResponse, requestRecommendation } from "../../api/recommendationApi";
 import { PageHeader } from "../../components/common/PageHeader";
 import AppLayout from "../../layouts/AppLayout";
-import { recommendationPriceRanges, recommendationReasons } from "../../mocks/recommendations";
+import { recommendationPriceRanges } from "../../mocks/recommendations";
+
+const USE_MOCK = import.meta.env.VITE_USE_MOCK === "true";
+
+const MOCK_RECOMMENDATION_DATA: RecommendationResultResponse = {
+  jobId: "mock-job-001",
+  baseProduct: {
+    id: "mock-base-001",
+    name: "아쿠아 스쿠알란 수분크림",
+    brand: "에스네이처",
+    imageUrl: null,
+  },
+  matchScore: 94,
+  matchLabel: "인생템 확률",
+  aiReason:
+    "수분 부족형 피부에 최적화된 스쿠알란 성분이 피부 장벽을 강화하고, 가벼운 텍스처로 데일리 사용에 이상적입니다. 유사 피부 타입 사용자 만족도 94% 달성.",
+  mainRecommendations: [
+    {
+      id: "mock-main-001",
+      name: "아쿠아 스쿠알란 수분크림",
+      brand: "에스네이처",
+      imageUrl: null,
+      price: 18000,
+      totalScore: 94,
+      breakdown: { budgetFit: 95, priceValue: 92, reviewScore: 91, personalization: 96 },
+    },
+  ],
+  similarUserProducts: [
+    { id: "mock-sim-001", name: "시카페어 크림", brand: "닥터자르트", imageUrl: null, price: 35000, satisfactionPercent: 91 },
+    { id: "mock-sim-002", name: "어성초 진정 크림", brand: "이니스프리", imageUrl: null, price: 14000, satisfactionPercent: 88 },
+    { id: "mock-sim-003", name: "워터뱅크 수분크림", brand: "라네즈", imageUrl: null, price: 29000, satisfactionPercent: 89 },
+  ],
+  alternativeProducts: [
+    { id: "mock-alt-001", name: "히알루론산 수분크림", brand: "더마토리", imageUrl: null, price: 22000, ingredientSimilarity: 89 },
+    { id: "mock-alt-002", name: "세라마이드 모이스처라이징 크림", brand: "CeraVe", imageUrl: null, price: 19900, ingredientSimilarity: 85 },
+    { id: "mock-alt-003", name: "마데카소사이드 크림", brand: "에이프릴스킨", imageUrl: null, price: 16000, ingredientSimilarity: 82 },
+  ],
+  createdAt: new Date().toISOString(),
+};
 
 interface ExtraInfoState {
   productId?: string;
@@ -28,6 +66,12 @@ export function ExtraInfoPage() {
     if (!productId) return;
     setLoading(true);
     try {
+      if (USE_MOCK) {
+        navigate("/recommendation/loading", {
+          state: { mock: true, mockData: MOCK_RECOMMENDATION_DATA },
+        });
+        return;
+      }
       const res = await requestRecommendation(productId, reason, priceRange);
       navigate("/recommendation/loading", {
         state: { jobId: res.data.jobId },
@@ -92,30 +136,6 @@ export function ExtraInfoPage() {
             정보를 입력해주세요
           </h1>
           <p className="mt-2 text-body2 text-gray-300">모두 선택사항이에요</p>
-        </div>
-
-        <label className="mt-7 block">
-          <span className="text-body2 text-gray-500">왜 찾으세요?</span>
-          <input
-            className="mt-2 h-[54px] w-full rounded-xl border border-gray-200 px-4 text-body2 outline-none placeholder:text-gray-300 focus:border-primary-500"
-            placeholder="예: 데일리 루틴, 선물, 여행용..."
-            type="text"
-          />
-        </label>
-
-        <div className="mt-3 flex gap-2">
-          {recommendationReasons.map((item) => (
-            <button
-              className={`h-9 rounded-full px-4 text-caption ${
-                reason === item ? "bg-primary-500 text-white" : "bg-gray-100 text-gray-500"
-              }`}
-              key={item}
-              onClick={() => setReason(item)}
-              type="button"
-            >
-              {item}
-            </button>
-          ))}
         </div>
 
         <div className="my-6 h-px bg-gray-100" />
