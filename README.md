@@ -1,10 +1,6 @@
 <h2>🎥 Demo Video</h2>
-
-<video src="https://github.com/CSID-DGU/2026-1-CECD1-3-UHoo-08/issues/1"
-       controls
-       width="100%">
-</video>
-
+영상 길이로 인해 링크 클릭해서 접속하시면 됩니다. 
+https://github.com/CSID-DGU/2026-1-CECD1-3-UHoo-08/issues/1
 
 
 # Cosmetics Recommender AI
