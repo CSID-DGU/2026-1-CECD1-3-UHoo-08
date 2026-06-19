@@ -1,3 +1,6 @@
+https://github.com/CSID-DGU/2026-1-CECD1-3-UHoo-08/issues/1
+
+
 # Cosmetics Recommender AI
 
 > AI 기반 화장품 추천 시스템 — 사용자의 피부 타입, 퍼스널 컬러, 단기 취향을 결합해 화장품을 추천합니다.
