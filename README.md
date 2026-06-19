@@ -1,12 +1,8 @@
 <h2>🎥 Demo Video</h2>
 
-<video src="https://github.com/CSID-DGU/2026-1-CECD1-3-UHoo-08/issues/1
-"
-
+<video src="https://github.com/CSID-DGU/2026-1-CECD1-3-UHoo-08/issues/1"
        controls
-
        width="100%">
-
 </video>
 
 
