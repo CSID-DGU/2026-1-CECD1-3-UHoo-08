@@ -4,14 +4,18 @@
 
 ### "나와 닮은 사람들이 선택한 화장품" — AI 멀티 에이전트 기반 코스메틱 추천 서비스
 
-<img width="313" height="705" alt="스크린샷 2026-07-02 오후 12 14 55" src="https://github.com/user-attachments/assets/0ac511b3-5b1f-4d0d-8d1e-1473fb56815f" />
-<img width="307" height="711" alt="스크린샷 2026-07-02 오후 12 14 46" src="https://github.com/user-attachments/assets/6eeab828-4c1f-4f36-ad9a-a6cd4c2ff68c" />
-<img width="309" height="711" alt="스크린샷 2026-07-02 오후 12 14 33" src="https://github.com/user-attachments/assets/ee0c4165-cb9b-4e81-b8e1-a7154148d685" />
-<img width="311" height="707" alt="스크린샷 2026-07-02 오후 12 14 22" src="https://github.com/user-attachments/assets/c3022a3f-0d74-4b95-aed3-b64928c33891" />
-<img width="314" height="707" alt="스크린샷 2026-07-02 오후 12 14 11" src="https://github.com/user-attachments/assets/94f363c4-88aa-4e65-8de7-3609dad768ec" />
-<img width="310" height="709" alt="스크린샷 2026-07-02 오후 12 13 58" src="https://github.com/user-attachments/assets/ceaca27a-03b5-4047-9331-bcc63c148be0" />
-<img width="316" height="706" alt="스크린샷 2026-07-02 오후 12 13 43" src="https://github.com/user-attachments/assets/82cef7fd-0159-4e54-8278-28c1a9b0328d" />
+<p align="center">
+  <img src="https://github.com/user-attachments/assets/0ac511b3-5b1f-4d0d-8d1e-1473fb56815f" width="24%">
+  <img src="https://github.com/user-attachments/assets/6eeab828-4c1f-4f36-ad9a-a6cd4c2ff68c" width="24%">
+  <img src="https://github.com/user-attachments/assets/ee0c4165-cb9b-4e81-b8e1-a7154148d685" width="24%">
+  <img src="https://github.com/user-attachments/assets/c3022a3f-0d74-4b95-aed3-b64928c33891" width="24%">
+</p>
 
+<p align="center">
+  <img src="https://github.com/user-attachments/assets/94f363c4-88aa-4e65-8de7-3609dad768ec" width="24%">
+  <img src="https://github.com/user-attachments/assets/ceaca27a-03b5-4047-9331-bcc63c148be0" width="24%">
+  <img src="https://github.com/user-attachments/assets/82cef7fd-0159-4e54-8278-28c1a9b0328d" width="24%">
+</p>
 
 
 <sub>2026 동국대학교 종합설계 (Capstone Design) · Team UHoo</sub>
