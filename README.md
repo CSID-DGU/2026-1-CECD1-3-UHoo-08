@@ -1,411 +1,128 @@
-<h2>🎥 Demo Video</h2>
-영상 길이로 인해 링크 클릭해서 접속하시면 됩니다. 
-https://github.com/CSID-DGU/2026-1-CECD1-3-UHoo-08/issues/1
+<div align="center">
+
+# 💄 화담 (BeautyMatch)
+
+### "나와 닮은 사람들이 선택한 화장품" — AI 멀티 에이전트 기반 코스메틱 추천 서비스
+
+<img width="313" height="705" alt="스크린샷 2026-07-02 오후 12 14 55" src="https://github.com/user-attachments/assets/0ac511b3-5b1f-4d0d-8d1e-1473fb56815f" />
+<img width="307" height="711" alt="스크린샷 2026-07-02 오후 12 14 46" src="https://github.com/user-attachments/assets/6eeab828-4c1f-4f36-ad9a-a6cd4c2ff68c" />
+<img width="309" height="711" alt="스크린샷 2026-07-02 오후 12 14 33" src="https://github.com/user-attachments/assets/ee0c4165-cb9b-4e81-b8e1-a7154148d685" />
+<img width="311" height="707" alt="스크린샷 2026-07-02 오후 12 14 22" src="https://github.com/user-attachments/assets/c3022a3f-0d74-4b95-aed3-b64928c33891" />
+<img width="314" height="707" alt="스크린샷 2026-07-02 오후 12 14 11" src="https://github.com/user-attachments/assets/94f363c4-88aa-4e65-8de7-3609dad768ec" />
+<img width="310" height="709" alt="스크린샷 2026-07-02 오후 12 13 58" src="https://github.com/user-attachments/assets/ceaca27a-03b5-4047-9331-bcc63c148be0" />
+<img width="316" height="706" alt="스크린샷 2026-07-02 오후 12 13 43" src="https://github.com/user-attachments/assets/82cef7fd-0159-4e54-8278-28c1a9b0328d" />
 
 
-# Cosmetics Recommender AI
 
-> AI 기반 화장품 추천 시스템 — 사용자의 피부 타입, 퍼스널 컬러, 단기 취향을 결합해 화장품을 추천합니다.
+<sub>2026 동국대학교 종합설계 (Capstone Design) · Team UHoo</sub>
 
-본 프로젝트는 사용자가 상품 이미지를 촬영하거나 URL을 입력하면, **VLM이 상품 정보를 추출**하고, **LLM이 가격·리뷰·성분을 분석**한 뒤, **벡터 DB 기반 협업 필터링과 콘텐츠 기반 추천**을 통해 개인화된 결과를 제공하는 시스템입니다.
-
-장기 취향(피부 타입, 퍼스널 컬러)과 단기 취향(트렌드, 계절감)을 함께 반영하며, RAG를 활용해 추천 근거를 자연어로 설명합니다.
-
----
-
-## 팀 구성
-
-| 이름 | 역할 |
-|------|------|
-|      |      |
-|      |      |
-|      |      |
-|      |      |
+</div>
 
 ---
 
-## 기술 스택
+## 📌 프로젝트 소개
 
-| 분야 | 사용 기술 |
-|------|----------|
-| AI Server | Python 3.11+, FastAPI |
-| Database | Supabase Cloud (PostgreSQL 16 + pgvector) |
-| LLM | Ollama, EXAONE 3.5, Qwen 2.5, Llama 3.1 |
-| VLM | Qwen2-VL, Llama 3.2 Vision |
-| Embedding | bge-m3, Ko-SRoBERTa |
-| Backend | _TBD_ |
-| Frontend | _TBD_ |
-| Infra | Docker, Docker Compose |
+화장품을 고를 때 우리는 늘 같은 고민을 합니다.
 
----
+> "이 제품, 내 피부에 맞을까?" · "나랑 비슷한 피부인 사람들은 뭘 써봤을까?" · "이 가격이 진짜 저렴한 걸까?"
 
-## 레포지토리 구조
+**화담(BeautyMatch)**은 이 세 가지 질문에 동시에 답하는 AI 코스메틱 추천 서비스입니다. NFC 태그, 사진, 텍스트로 상품을 조회하면 멀티 에이전트 AI가 사용자의 피부 프로필과 비슷한 사람들의 선택을 분석해 **적합도 점수, 대체 상품, 유사 사용자 추천**을 한 번에 제공하고, 올리브영·쿠팡·네이버쇼핑의 실시간 최저가까지 함께 비교해줍니다.
 
-```
-DGU-Capston1/
-├── AI/                                  # Python FastAPI 단일 프로젝트
-│   ├── main.py                          # FastAPI 앱 진입점
-│   ├── config.py                        # 환경변수 (API 키, Supabase URL 등)
-│   ├── api/
-│   │   └── internal/                    # Spring 전용 내부 라우터
-│   │       ├── recognize_router.py      # POST /internal/recognize
-│   │       └── agent_router.py          # POST /internal/agent/run
-│   ├── graph/                           # LangGraph 오케스트레이션
-│   │   ├── action_model.py              # create_react_agent + @tool 등록 진입점
-│   │   └── state.py                     # AgentState TypedDict
-│   ├── agents/                          # 에이전트 모듈 (각 @tool)
-│   │   ├── input_agent/                 # IMAGE/NFC/TEXT → ExtractedProduct
-│   │   │   ├── image_parser.py
-│   │   │   ├── nfc_parser.py
-│   │   │   └── text_parser.py
-│   │   ├── product_agent/               # DB 조회 + stale 시 Gemini 보강
-│   │   │   ├── product_repository.py
-│   │   │   └── gemini_enricher.py
-│   │   ├── discovery_agent.py           # 자연어 → intent_vector → 후보 탐색
-│   │   ├── score_agent/                 # 4요소 점수 → 0~100점
-│   │   │   ├── budget_scorer.py
-│   │   │   ├── price_scorer.py
-│   │   │   ├── review_scorer.py
-│   │   │   └── personalization_scorer.py
-│   │   ├── alternative_agent.py         # pgvector 유사도 → 대체 상품
-│   │   └── collaborative_agent/         # 협업 필터링 + 콜드스타트 폴백
-│   │       └── fallback.py
-│   ├── services/                        # 공통 서비스
-│   │   ├── embedding_service.py         # bge-m3 임베딩
-│   │   ├── unified_text_builder.py      # query + profile + RAG → 통합 자연어
-│   │   ├── job_updater.py               # recommendation_jobs step/progress 업데이트
-│   │   └── weight_validator.py
-│   ├── db/                              # Supabase + pgvector
-│   │   ├── supabase_client.py
-│   │   ├── vector_search.py             # RPC 래퍼 (match_products 등)
-│   │   └── migrations/                  # 마이그레이션 SQL
-│   ├── models/                          # Pydantic 모델
-│   │   ├── extracted_product.py
-│   │   ├── product_response.py
-│   │   ├── agent_context.py
-│   │   └── recommendation_result.py
-│   ├── prompts/                         # LLM 시스템 프롬프트
-│   │   ├── gemini_extraction.py
-│   │   ├── weight_adjustment.py
-│   │   └── collaborative_strategy.py
-│   ├── tests/
-│   ├── Dockerfile
-│   ├── requirements.txt
-│   └── .env.example
-├── BE/                                  # Spring Boot 백엔드
-│   ├── src/main/java/com/beautymatch/
-│   │   ├── BeautyMatchApplication.java
-│   │   ├── common/
-│   │   │   ├── config/
-│   │   │   │   ├── SecurityConfig.java          # JWT 필터체인, CORS 설정
-│   │   │   │   ├── WebClientConfig.java         # FastAPI 호출용 WebClient 빈
-│   │   │   │   └── JpaConfig.java               # AuditingEntityListener
-│   │   │   ├── exception/
-│   │   │   │   ├── GlobalExceptionHandler.java  # @RestControllerAdvice
-│   │   │   │   ├── ErrorCode.java               # Enum (PRODUCT_NOT_FOUND 등)
-│   │   │   │   └── BusinessException.java
-│   │   │   ├── response/
-│   │   │   │   └── ApiResponse.java             # { success, data, meta }
-│   │   │   └── util/
-│   │   │       └── JwtUtil.java
-│   │   ├── domain/
-│   │   │   ├── auth/                        # 인증 (로그인·회원가입·토큰)
-│   │   │   │   ├── controller/
-│   │   │   │   │   └── AuthController.java          # POST /auth/login, /signup, /social, /token/refresh
-│   │   │   │   ├── service/
-│   │   │   │   │   ├── AuthService.java
-│   │   │   │   │   └── OAuthService.java            # Kakao / Google / Apple 토큰 교환
-│   │   │   │   ├── dto/
-│   │   │   │   │   ├── LoginRequest.java
-│   │   │   │   │   ├── SignupRequest.java
-│   │   │   │   │   ├── SocialLoginRequest.java      # { provider, accessToken, fcmToken }
-│   │   │   │   │   └── TokenResponse.java
-│   │   │   │   └── repository/
-│   │   │   │       └── UserRepository.java
-│   │   │   ├── user/                        # 사용자 정보·피부·통계
-│   │   │   │   ├── controller/
-│   │   │   │   │   └── UserController.java          # GET /users/me, PATCH /users/me, /skin-profile
-│   │   │   │   ├── service/
-│   │   │   │   │   ├── UserService.java
-│   │   │   │   │   └── UserProfileService.java
-│   │   │   │   ├── entity/
-│   │   │   │   │   ├── User.java
-│   │   │   │   │   ├── UserProfile.java
-│   │   │   │   │   └── UserBrandPreference.java
-│   │   │   │   ├── dto/
-│   │   │   │   │   ├── UserResponse.java
-│   │   │   │   │   ├── SkinProfileRequest.java
-│   │   │   │   │   └── PreferencesRequest.java
-│   │   │   │   └── repository/
-│   │   │   │       ├── UserProfileRepository.java
-│   │   │   │       └── UserBrandPreferenceRepository.java
-│   │   │   ├── product/                     # 상품 조회 (읽기 전용. FastAPI가 write)
-│   │   │   │   ├── controller/
-│   │   │   │   │   ├── ProductController.java       # GET /products, /products/{id}
-│   │   │   │   │   └── ProductRecognizeController.java # POST /products/recognize → FastAPI 위임
-│   │   │   │   ├── service/
-│   │   │   │   │   ├── ProductQueryService.java     # DB 조회 + 응답 조합
-│   │   │   │   │   └── ProductRecognizeService.java # FastAPI 동기 호출
-│   │   │   │   ├── entity/
-│   │   │   │   │   └── Product.java
-│   │   │   │   ├── dto/
-│   │   │   │   │   ├── ProductResponse.java         # 상품 상세 응답 (geminiPrice, matchScore 포함)
-│   │   │   │   │   ├── ProductListResponse.java
-│   │   │   │   │   └── RecognizeResponse.java
-│   │   │   │   └── repository/
-│   │   │   │       └── ProductRepository.java
-│   │   │   ├── wishlist/                    # 찜 목록
-│   │   │   │   ├── controller/
-│   │   │   │   │   └── WishlistController.java      # GET / POST / DELETE /users/me/wishlists
-│   │   │   │   ├── service/
-│   │   │   │   │   └── WishlistService.java
-│   │   │   │   ├── entity/
-│   │   │   │   │   └── Wishlist.java
-│   │   │   │   ├── dto/
-│   │   │   │   │   └── WishlistResponse.java
-│   │   │   │   └── repository/
-│   │   │   │       └── WishlistRepository.java
-│   │   │   ├── registered/                  # 등록 제품 (온보딩용)
-│   │   │   │   ├── controller/
-│   │   │   │   │   └── RegisteredProductController.java
-│   │   │   │   ├── service/
-│   │   │   │   │   └── RegisteredProductService.java
-│   │   │   │   ├── entity/
-│   │   │   │   │   └── RegisteredProduct.java
-│   │   │   │   └── repository/
-│   │   │   │       └── RegisteredProductRepository.java
-│   │   │   ├── recommendation/              # 에이전트 요청·상태 관리
-│   │   │   │   ├── controller/
-│   │   │   │   │   └── RecommendationController.java  # POST /recommendations, GET /recommendations/{jobId}, /status
-│   │   │   │   ├── service/
-│   │   │   │   │   ├── RecommendationService.java   # job INSERT + FastAPI 비동기 위임
-│   │   │   │   │   └── AgentClient.java             # WebClient 래퍼: POST /internal/agent/run
-│   │   │   │   ├── entity/
-│   │   │   │   │   └── RecommendationJob.java
-│   │   │   │   ├── dto/
-│   │   │   │   │   ├── RecommendationRequest.java
-│   │   │   │   │   ├── RecommendationStatusResponse.java
-│   │   │   │   │   └── RecommendationResultResponse.java
-│   │   │   │   └── repository/
-│   │   │   │       └── RecommendationJobRepository.java
-│   │   │   ├── pricetracking/               # 가격 추적
-│   │   │   │   ├── controller/
-│   │   │   │   │   └── PriceTrackingController.java # GET/POST/PATCH/DELETE /users/me/price-trackings, /history, /alert-settings
-│   │   │   │   ├── service/
-│   │   │   │   │   ├── PriceTrackingService.java
-│   │   │   │   │   └── PriceAlertService.java       # FCM 푸시 알림 속도 로직
-│   │   │   │   ├── entity/
-│   │   │   │   │   ├── PriceTracking.java
-│   │   │   │   │   └── PriceTrackingAlertSettings.java
-│   │   │   │   ├── dto/
-│   │   │   │   │   ├── PriceTrackingResponse.java
-│   │   │   │   │   ├── PriceHistoryResponse.java
-│   │   │   │   │   └── AlertSettingsRequest.java
-│   │   │   │   └── repository/
-│   │   │   │       ├── PriceTrackingRepository.java
-│   │   │   │       └── PriceTrackingAlertSettingsRepository.java
-│   │   │   └── notification/                # 알림
-│   │   │       ├── controller/
-│   │   │       │   └── NotificationController.java  # GET /users/me/notifications, PATCH 읽음
-│   │   │       ├── service/
-│   │   │       │   ├── NotificationService.java
-│   │   │       │   └── FcmService.java              # Firebase Admin SDK 래퍼
-│   │   │       ├── entity/
-│   │   │       │   └── Notification.java
-│   │   │       ├── dto/
-│   │   │       │   └── NotificationResponse.java
-│   │   │       └── repository/
-│   │   │           └── NotificationRepository.java
-│   └── src/main/resources/
-│       ├── application.yml
-│       ├── application-local.yml
-│       └── application-prod.yml
-├── FE/                                  # 모바일 앱 프론트엔드
-├── .gitignore
-├── LICENSE
-└── README.md
-```
+### 🎯 핵심 차별점 
+
+기존 뷰티 추천 서비스는 아래 세 가지 중 한두 개만 다룹니다. 화담은 **세 가지를 동시에** 만족시키는 것을 목표로 합니다.
+
+| | 피부타입 궁합 | 유사 사용자 소셜 프루프 | 실시간 최저가 비교 |
+|---|:---:|:---:|:---:|
+| 기존 뷰티 앱 | ✅ | ▲ | ❌ |
+| 가격비교 서비스 | ❌ | ❌ | ✅ |
+| 리뷰 커뮤니티 | ▲ | ✅ | ❌ |
+| **화담** | ✅ | ✅ | ✅ |
 
 ---
 
-## AI
+## ✨ 핵심 기능
 
-## 시작하기
+### 🔍 멀티모달 상품 조회
+매장에서든, 온라인에서든, 궁금한 상품을 바로 조회할 수 있습니다.
+- **NFC 태그** — 매장 진열대의 NFC를 태그하면 상품 URL이 그대로 인식되어 즉시 조회
+- **사진 촬영** — 인스타그램·유튜브 등에서 본 제품 사진을 업로드하면 VLM이 상품명·브랜드를 자동 인식
+- **텍스트 검색** — "땀에 잘 안 지워지고 백탁 없는 선크림, 3만원 이하"처럼 자연어로 원하는 조건을 그대로 입력 가능
+- 세 가지 입력 모두 내부적으로 동일한 표준 포맷(상품명·브랜드·용량)으로 정규화되어 이후 파이프라인에 일관되게 전달됩니다
 
-### 사전 요구사항
+### 🧠 AI 에이전트 기반 동적 추천
+정해진 순서대로 무조건 실행되는 기존 추천 시스템과 달리, 화담은 **Action Model(Qwen-Plus)이 사용자 상황을 판단해 필요한 분석을 스스로 조합**합니다.
+- 예산이 입력되면 예산 적합도 가중치를 자동으로 높이고, 예산이 없으면 리뷰 기반 유사도 비중을 높이는 식으로 상황별 전략을 실시간 조정
+- 신규 가입자처럼 데이터가 부족한 콜드스타트 상황에서는 협업 필터링 대신 피부타입 기반 인기 상품 폴백으로 자연스럽게 전환
 
-- Git, Docker, Docker Compose
-- Python 3.11+ (AI 모듈 로컬 작업 시)
+### 📊 적합도 점수 (0~100점)
+지금 보고 있는 이 상품이 "나에게" 얼마나 맞는지 하나의 점수로 확인할 수 있습니다.
+- **예산 적합도** — 입력한 예산 대비 가격이 얼마나 부합하는지
+- **가격 대비 가치** — 동일 카테고리 유사 상품들과 비교했을 때 가격이 합리적인지 (평균가 대비 상대적 위치 산출)
+- **리뷰 기반 의도 유사도** — 조회 사유(query) + 피부 프로필 + 최근 이용 이력을 하나의 문장으로 합친 뒤, 실제 리뷰들과의 코사인 유사도를 계산해 "내가 원하는 효과"와 "실제 후기"가 얼마나 맞아떨어지는지 정량화
+- 각 요소의 가중치는 고정값이 아니라 LLM이 사용자 상황(예산 입력 여부, 피부 고민 명확성 등)에 맞춰 매번 보정합니다
 
-### 설치 및 실행
+### 🔄 대체 상품 추천 (콘텐츠 기반)
+"이 제품 말고 비슷한데 더 저렴한 거 없을까?" 라는 질문에 답합니다.
+- 상품의 커버력·마무리감·성분 등 feature를 자연어로 변환해 임베딩하고, 동일 카테고리 내 다른 상품들과 코사인 유사도로 비교
+- 가격 필터(±30% 등)를 함께 적용해 기능은 비슷하되 예산에 맞는 대안을 우선 노출
 
-```bash
-# 1. 레포 클론
-git clone https://github.com/kelly0819/DGU-Capston1.git
-cd DGU-Capston1
+### 👥 유사 사용자 기반 추천 (협업 필터링)
+"나랑 피부 비슷한 사람들은 뭘 써?" 라는, 화담의 가장 핵심적인 차별점입니다.
+- 퍼스널컬러·피부타입·피부고민을 기준으로 유사 사용자를 산출하고, 카테고리에 따라 각 요소의 중요도를 다르게 반영 (예: 스킨케어는 퍼스널컬러보다 피부타입·고민이 훨씬 중요)
+- 유사 사용자들이 실제로 4점 이상 평가했거나 현재 사용 중인 상품을 가중 점수(유사도 × 평점)로 집계해 추천
+- 유사 사용자 데이터가 부족한 콜드스타트 상황에서는 동일 피부타입·퍼스널컬러 그룹의 인기 상품으로 자동 폴백되어 신규 사용자도 첫 조회부터 추천을 받을 수 있음
 
-# 2. 환경 변수 설정
-cp .env.example .env
-# .env 파일을 본인 환경에 맞게 수정
-
-# 3. AI 모듈 실행
-cd AI
-docker compose up -d
-```
-
-> ⚠️ `.env` 와 `venv/` 는 절대 커밋하지 마세요.
-
----
-## Backend 
-
-## 시작하기
-
-### 사전 요구사항
-
-- Git, Docker, Docker Compose
-
-### 설치 및 실행
-
-```bash                                                                                           
-  # 1. 레포 클론 (이미 클론했다면 생략)                                                               
-  git clone https://github.com/kelly0819/DGU-Capston1.git   
-  cd DGU-Capston1/BE
-  # 2. BE/docker-compose.yml 파일 생성
-  내용은 노션에 있습니다.                                                                                 
-                    
-  # 3. 빌드 및 실행 (최초 실행 또는 코드 변경 후)                                                     
-  docker compose up --build -d                              
-                                                                                                      
-  # 이후 재실행 시 (코드 변경 없을 때)                      
-  docker compose up -d                                                                                
-                                                                                                      
-  ▎ 최초 빌드는 내부에서 Gradle 빌드가 함께 진행되므로 5~10분 소요됩니다.                           
-                                                                                       
- ---
-  Swagger 접속
-
-  서버 실행 후 아래 주소로 접속합니다.
-
-  http://localhost:8080/swagger-ui.html
-
-  ---
-  로그 확인 / 종료
-
-  # 로그 확인
-  docker compose logs -f
-
-  # 서버 종료
-  docker compose down
+### 💰 실시간 최저가 비교
+- 올리브영 · 쿠팡 · 네이버쇼핑의 가격을 동시에 조회해 정가·할인가를 함께 제시
+- 상품 정보가 오래된 경우(예: 6시간 초과) 자동으로 최신 가격·리뷰를 재수집해 최신성을 유지
 
 ---
 
-## 개발 컨벤션
+## 🏗️ 시스템 아키텍처
 
-### 1. 브랜치 전략
+<img width="1037" height="690" alt="스크린샷 2026-07-02 오후 12 11 47" src="https://github.com/user-attachments/assets/e35f5924-10fe-44bd-9681-9ad0de47e486" />
 
-```
-main (시연·발표 가능한 안정 버전)
- ↑   ← develop → main PR (마일스톤 시점)
- │
-develop (모든 개발 작업의 통합 브랜치)
- ↑   ← 작업 브랜치 → develop PR
- │
- ├── feature/vectordb-product-upsert
- ├── fix/login-crash
- └── docs/readme-update
-```
 
-#### 브랜치 역할
+### AI 추천 파이프라인
 
-| 브랜치 | 역할 |
-|--------|------|
-| `main` | 시연·발표 가능한 안정 상태. 마일스톤 시점에만 머지됨 |
-| `develop` | 모든 개발 작업의 통합 지점. 항상 CI 통과 상태 유지 |
-| `feature/*`, `fix/*` 등 | 개인 작업 브랜치. `develop`에서 분기 |
-| `hotfix/*` | `main` 긴급 수정용. `main`에서 분기 후 `main`과 `develop` 양쪽에 반영 |
+<img width="1068" height="527" alt="스크린샷 2026-07-02 오후 12 11 57" src="https://github.com/user-attachments/assets/658c2b61-2383-4c2e-856c-9d8b230f8efc" />
 
-#### 브랜치 명명 규칙
+Action Model(Qwen-Plus)이 사용자 상황을 판단해 4개의 `@tool`을 실행 순서를 결정하며 호출합니다.
 
-```
-<type>/<짧은-설명>
-```
+1. **Discovery** — NFC/이미지/텍스트 입력을 정규화된 상품 정보로 구조화
+2. **Score** — 예산 적합도 · 가격 대비 가치 · 리뷰 기반 의도 유사도를 가중합해 0~100점 산출
+3. **Alternative** — 상품 feature 임베딩 유사도 기반으로 기능적 대체재 추천
+4. **Collaborative** — 피부타입·퍼스널컬러·피부고민이 유사한 사용자들의 협업 필터링 기반 추천 (콜드스타트 시 인기 상품 폴백)
 
-| Type | 용도 | 베이스 |
-|------|------|--------|
-| `feature` | 새 기능 개발 | `develop` |
-| `fix` | 버그 수정 | `develop` |
-| `refactor` | 기능 변화 없는 리팩토링 | `develop` |
-| `docs` | 문서 작업 | `develop` |
-| `chore` | 빌드, 설정, 의존성 | `develop` |
-| `test` | 테스트 추가/수정 | `develop` |
-| `hotfix` | 긴급 버그 수정 | `main` |
-
-#### 작업 흐름
-
-```bash
-# develop에서 분기
-git checkout develop
-git pull origin develop
-git checkout -b feature/my-task
-
-# 작업, 커밋, 푸시
-git add .
-git commit -m "feat: 기능 추가"
-git push -u origin feature/my-task
-
-# GitHub에서 develop 대상으로 PR 생성
-```
-
-#### 브랜치 규칙
-
-- `main`과 `develop`으로의 **직접 푸시 금지** (PR 필수)
-- 머지 후 작업 브랜치 **즉시 삭제**
-- 작업 브랜치는 **3~5일 이내로 짧게** 유지
-- 작업 도중 `develop`이 갱신되면 자주 동기화:
-
-```bash
-git fetch origin
-git rebase origin/develop
-```
+> 💡 사용자 의도 벡터(`intent_vector`)는 LLM 컨텍스트가 아닌 별도 사이드 채널(`_intent_store`)에 저장해 토큰 낭비와 데이터 오염을 방지합니다.
 
 ---
 
-### 2. 커밋 메시지 규칙
+## 🛠️ 기술 스택
 
-[Conventional Commits](https://www.conventionalcommits.org/ko/) 형식을 따릅니다.
-
-#### 형식
-
-```
-<type>: <subject>
-```
-
-#### Type
-
-| Type | 설명 |
-|------|------|
-| `feat` | 새 기능 추가 |
-| `fix` | 버그 수정 |
-| `docs` | 문서 변경 |
-| `style` | 코드 의미에 영향 없는 변경 (포매팅, 세미콜론 등) |
-| `refactor` | 기능 변화 없는 코드 리팩토링 |
-| `perf` | 성능 개선 |
-| `test` | 테스트 코드 추가/수정 |
-| `chore` | 빌드, 패키지, 설정 등 |
+| 영역 | 기술 |
+|---|---|
+| **API Gateway** | Spring Boot (Java, Gradle Groovy) |
+| **AI 에이전트 서버** | Python, FastAPI, LangGraph (`create_react_agent`) |
+| **Action Model** | Qwen-Plus (DashScope) |
+| **보조 LLM** | Gemini (상품 정보 추출 / NFC URL 처리) |
+| **데이터베이스** | Supabase (PostgreSQL + pgvector, Seoul 리전) |
+| **인증** | OAuth 2.0 (Kakao, Google) |
+| **배포** | Railway |
+| **외부 연동** | 올리브영 · 쿠팡 · 네이버쇼핑 (실시간 가격 비교) |
 
 ---
 
-### 3. Pull Request
+## 🗂️ 데이터베이스 설계 하이라이트
 
-코드 리뷰의 대부분은 **`develop` 대상 PR**에서 이루어집니다. `main` 대상 PR은 마일스톤 시점의 통합 점검 성격입니다.
+- 상품 · 리뷰 임베딩 테이블을 통합해 **12개 → 9개 테이블**로 스키마 단순화
+- `product` 테이블은 `feature_json` (JSONB)으로 카테고리별(베이스/선케어/립/스킨케어) 특징을 유연하게 저장
+- `skinType`, `skinConcern`은 별도 컬럼으로 분리해 SQL 조회 성능 확보
+- 상품 feature 스키마와 리뷰 임베딩 스키마를 동일하게 맞춰 벡터 비교 정합성 보장
 
-| PR 방향 | 시점 | 리뷰 | 머지 전략 |
-|---------|------|------|----------|
-| 작업 브랜치 → `develop` | 상시 | **1명 승인** (코드 리뷰) | **Squash and merge** |
-| `develop` → `main` | 마일스톤 (MVP/중간/최종 발표 등) | **전원 승인** (릴리스 점검) | **Merge commit** |
+---
 
-#### 공통 규칙
-
-- CI 통과 후 머지 가능
-- 머지 후 작업 브랜치 자동 삭제
-- `main`, `develop` 으로의 직접 푸시 금지 (PR 필수)
+<div align="center">
+<sub>© 2026 Team UHoo. 화담(BeautyMatch) — Dongguk University Capstone Design Project.</sub>
+</div>
