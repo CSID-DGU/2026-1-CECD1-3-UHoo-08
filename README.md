@@ -4,21 +4,16 @@
 
 ### "나와 닮은 사람들이 선택한 화장품" — AI 멀티 에이전트 기반 코스메틱 추천 서비스
 
-<p align="center">
-  <img src="https://github.com/user-attachments/assets/6eeab828-4c1f-4f36-ad9a-a6cd4c2ff68c" width="18%">
-  <img src="https://github.com/user-attachments/assets/0ac511b3-5b1f-4d0d-8d1e-1473fb56815f" width="18%">
-  <img src="https://github.com/user-attachments/assets/c3022a3f-0d74-4b95-aed3-b64928c33891" width="18%">
-  <img src="https://github.com/user-attachments/assets/ee0c4165-cb9b-4e81-b8e1-a7154148d685" width="18%">
-  
+
+  <p align="center">
+  <img src="https://github.com/user-attachments/assets/fb4508ab-13f9-4803-ac35-c71b115e36f3" width="18%">
+  <img src="https://github.com/user-attachments/assets/16c7511e-8deb-4c88-85ef-5224de9158d6" width="18%">
+  <img src="https://github.com/user-attachments/assets/223986cf-9106-4ca8-a0b9-718d8d6d2645" width="18%">
+  <img src="https://github.com/user-attachments/assets/de63e4c5-8814-49d4-b3c4-07feac461449" width="18%">
+  <img src="https://github.com/user-attachments/assets/1e743519-1db9-4edb-8160-766eb38dcc46" width="18%">
+  <img src="https://github.com/user-attachments/assets/65595f8d-7e3a-45b0-b353-9f9408c350cb" width="18%">
+  <img src="https://github.com/user-attachments/assets/6191e024-bbe5-42b3-97aa-46617ef94b0f" width="18%">
 </p>
-
-<p align="center">
-  <img src="https://github.com/user-attachments/assets/94f363c4-88aa-4e65-8de7-3609dad768ec" width="18%">
-  <img src="https://github.com/user-attachments/assets/ceaca27a-03b5-4047-9331-bcc63c148be0" width="18%">
-  <img src="https://github.com/user-attachments/assets/82cef7fd-0159-4e54-8278-28c1a9b0328d" width="18%">
-</p>
-
-
 </div>
 
 ---
