@@ -40,6 +40,25 @@
 
 ---
 
+## 🏗️ 시스템 아키텍처
+
+<img width="1037" height="690" alt="스크린샷 2026-07-02 오후 12 11 47" src="https://github.com/user-attachments/assets/e35f5924-10fe-44bd-9681-9ad0de47e486" />
+
+### AI 추천 파이프라인
+
+<img width="1068" height="527" alt="스크린샷 2026-07-02 오후 12 11 57" src="https://github.com/user-attachments/assets/658c2b61-2383-4c2e-856c-9d8b230f8efc" />
+
+Action Model(Qwen-Plus)이 사용자 상황을 판단해 4개의 `@tool`을 실행 순서를 결정하며 호출합니다.
+
+1. **Discovery** — NFC/이미지/텍스트 입력을 정규화된 상품 정보로 구조화
+2. **Score** — 예산 적합도 · 가격 대비 가치 · 리뷰 기반 의도 유사도를 가중합해 0~100점 산출
+3. **Alternative** — 상품 feature 임베딩 유사도 기반으로 기능적 대체재 추천
+4. **Collaborative** — 피부타입·퍼스널컬러·피부고민이 유사한 사용자들의 협업 필터링 기반 추천 (콜드스타트 시 인기 상품 폴백)
+
+> 💡 사용자 의도 벡터(`intent_vector`)는 LLM 컨텍스트가 아닌 별도 사이드 채널(`_intent_store`)에 저장해 토큰 낭비와 데이터 오염을 방지합니다.
+
+---
+
 ## ✨ 핵심 기능
 
 ### 🔍 멀티모달 상품 조회
@@ -78,25 +97,6 @@
 
 ---
 
-## 🏗️ 시스템 아키텍처
-
-<img width="1037" height="690" alt="스크린샷 2026-07-02 오후 12 11 47" src="https://github.com/user-attachments/assets/e35f5924-10fe-44bd-9681-9ad0de47e486" />
-
-
-### AI 추천 파이프라인
-
-<img width="1068" height="527" alt="스크린샷 2026-07-02 오후 12 11 57" src="https://github.com/user-attachments/assets/658c2b61-2383-4c2e-856c-9d8b230f8efc" />
-
-Action Model(Qwen-Plus)이 사용자 상황을 판단해 4개의 `@tool`을 실행 순서를 결정하며 호출합니다.
-
-1. **Discovery** — NFC/이미지/텍스트 입력을 정규화된 상품 정보로 구조화
-2. **Score** — 예산 적합도 · 가격 대비 가치 · 리뷰 기반 의도 유사도를 가중합해 0~100점 산출
-3. **Alternative** — 상품 feature 임베딩 유사도 기반으로 기능적 대체재 추천
-4. **Collaborative** — 피부타입·퍼스널컬러·피부고민이 유사한 사용자들의 협업 필터링 기반 추천 (콜드스타트 시 인기 상품 폴백)
-
-> 💡 사용자 의도 벡터(`intent_vector`)는 LLM 컨텍스트가 아닌 별도 사이드 채널(`_intent_store`)에 저장해 토큰 낭비와 데이터 오염을 방지합니다.
-
----
 
 ## 🛠️ 기술 스택
 
