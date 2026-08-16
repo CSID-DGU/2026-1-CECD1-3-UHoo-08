@@ -21,7 +21,7 @@ from fastapi import APIRouter, Header, HTTPException
 from pydantic import BaseModel, Field, field_validator
 
 from config import settings
-from db.iot_writer import get_latest_reading, get_node, insert_readings
+from AI.db.iot.writer import get_latest_reading, get_node, insert_readings
 
 router = APIRouter(prefix="/api/iot", tags=["iot"])
 
