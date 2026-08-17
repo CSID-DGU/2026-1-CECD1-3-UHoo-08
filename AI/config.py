@@ -35,5 +35,9 @@ class Settings(BaseSettings):
         env_file = ".env"
         extra = "ignore"
 
+    # IoT
+    IOT_API_KEY: str = ""          # 비어 있으면 인증 생략 (개발용)
+    IOT_MAX_BATCH: int = 288       # 10분 주기 × 2일치
+
 
 settings = Settings()
