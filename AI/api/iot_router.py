@@ -12,6 +12,8 @@ ESP32 노드가 Spring을 거치지 않고 직접 호출한다.
     GET  /api/iot/ping             펌웨어 브링업용 연결 확인
     POST /api/iot/readings         측정값 적재 (단건·버퍼 일괄 공용)
 """
+import hmac
+
 from __future__ import annotations
 
 from datetime import datetime, timezone
@@ -68,7 +70,7 @@ class PingResponse(BaseModel):
 def _verify_key(node_key: Optional[str]) -> None:
     if not settings.IOT_API_KEY:
         return
-    if node_key != settings.IOT_API_KEY:
+    if not node_key or not hmac.compare_digest(node_key, settings.IOT_API_KEY):
         raise HTTPException(status_code=401, detail="유효하지 않은 노드 키")
 
 
