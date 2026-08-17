@@ -42,7 +42,7 @@ CREATE TABLE IF NOT EXISTS storage_baseline (
 
 -- 4. 제품 열 민감도 + 광학 적합성  ★ uuid
 CREATE TABLE IF NOT EXISTS product_thermal_profile (
-  product_id    UUID PRIMARY KEY REFERENCES products(product_id),
+  product_id    UUID PRIMARY KEY REFERENCES products(product_id) ON DELETE CASCADE,
   sensitivity_k REAL NOT NULL DEFAULT 1.0,
   pao_months    INT,
   optical_grade TEXT
