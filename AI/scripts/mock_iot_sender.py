@@ -20,6 +20,7 @@ import argparse
 import math
 import random
 from datetime import datetime, timedelta, timezone
+from config import settings
 
 import httpx
 
@@ -64,6 +65,10 @@ def main() -> None:
     p.add_argument("--days", type=float, default=0, help="과거 N일치 생성. 0이면 현재 1건")
     p.add_argument("--url", default=DEFAULT_URL)
     p.add_argument("--key", default="", help="X-Node-Key 값")
+    p.add_argument(
+        "--max-batch", type=int, default=settings.IOT_MAX_BATCH,
+        help="1회 전송 최대 건수 (기본값: 서버 IOT_MAX_BATCH)",
+    )
     args = p.parse_args()
 
     node_type = args.type or args.node.split("-")[0]
@@ -81,26 +86,31 @@ def main() -> None:
 
     headers = {"X-Node-Key": args.key} if args.key else {}
 
-    # 서버 배치 상한(IOT_MAX_BATCH=288)에 맞춰 나눠 보낸다.
+    # 서버 배치 상한(IOT_MAX_BATCH)에 맞춰 나눠 보낸다.
     total_recv = total_ins = 0
-    for i in range(0, len(readings), 288):
-        chunk = readings[i : i + 288]
-        res = httpx.post(
-            args.url,
-            json={"node_id": args.node, "readings": chunk},
-            headers=headers,
-            timeout=30,
-        )
-        if res.status_code != 200:
-            print(f"[{res.status_code}] {res.text}")
-            return
-        data = res.json()
-        total_recv += data["received"]
-        total_ins += data["inserted"]
-        print(f"  batch {i // 288 + 1}: received={data['received']} inserted={data['inserted']}")
+    with httpx.Client(timeout=30) as client:
+        for i in range(0, len(readings), args.max_batch):
+            chunk = readings[i : i + args.max_batch]
+            res = client.post(
+                args.url,
+                json={"node_id": args.node, "readings": chunk},
+                headers=headers,
+            )
+            if res.status_code != 200:
+                print(f"[{res.status_code}] {res.text}")
+                return
+            data = res.json()
+            total_recv += data["received"]
+            total_ins += data["inserted"]
+            print(
+                f"  batch {i // args.max_batch + 1}: "
+                f"received={data['received']} inserted={data['inserted']}"
+            )
 
-    print(f"\n{args.node} ({node_type})  received={total_recv}  inserted={total_ins}  duplicates={total_recv - total_ins}")
-
+    print(
+        f"\n{args.node} ({node_type})  received={total_recv}  "
+        f"inserted={total_ins}  duplicates={total_recv - total_ins}"
+    )
 
 if __name__ == "__main__":
     main()
