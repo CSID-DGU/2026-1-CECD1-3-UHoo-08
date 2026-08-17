@@ -12,9 +12,10 @@ ESP32 노드가 Spring을 거치지 않고 직접 호출한다.
     GET  /api/iot/ping             펌웨어 브링업용 연결 확인
     POST /api/iot/readings         측정값 적재 (단건·버퍼 일괄 공용)
 """
-import hmac
-
 from __future__ import annotations
+
+import hmac
+import logging
 
 from datetime import datetime, timezone
 from typing import List, Optional
@@ -24,6 +25,8 @@ from pydantic import BaseModel, Field, field_validator
 
 from config import settings
 from db.iot_writer import get_latest_reading, get_node, insert_readings
+
+logger = logging.getLogger(__name__)
 
 router = APIRouter(prefix="/api/iot", tags=["iot"])
 
@@ -158,7 +161,11 @@ def post_readings(
     summary="노드 최신 측정값",
     description="수집이 살아 있는지 확인하는 용도. 대시보드 연동 전 임시 조회.",
 )
-def get_latest(node_id: str) -> LatestReading:
+def get_latest(
+    node_id: str,
+    x_node_key: Optional[str] = Header(None, alias="X-Node-Key"),
+) -> LatestReading:
+    _verify_key(x_node_key)
     if get_node(node_id) is None:
         raise HTTPException(status_code=404, detail=f"미등록 노드입니다: {node_id}")
     latest = get_latest_reading(node_id)
