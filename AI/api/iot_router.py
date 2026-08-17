@@ -126,7 +126,10 @@ def post_readings(
     try:
         inserted = insert_readings(rows)
     except Exception as e:
-        raise HTTPException(status_code=500, detail=f"적재 실패: {e}")
+        logger.exception(
+            "sensor_readings 적재 실패 node_id=%s count=%d", body.node_id, len(rows)
+        )
+        raise HTTPException(status_code=500, detail="적재 실패")
 
     received = len(rows)
     return ReadingsResponse(
