@@ -67,6 +67,15 @@ class PingResponse(BaseModel):
     server_time: datetime
 
 
+class LatestReading(BaseModel):
+    node_id: str
+    ts: datetime
+    temperature: Optional[float] = None
+    humidity: Optional[float] = None
+    pm25: Optional[float] = None
+    gas_resistance: Optional[float] = None
+
+
 def _verify_key(node_key: Optional[str]) -> None:
     if not settings.IOT_API_KEY:
         return
@@ -145,10 +154,11 @@ def post_readings(
 
 @router.get(
     "/nodes/{node_id}/latest",
+    response_model=LatestReading,
     summary="노드 최신 측정값",
     description="수집이 살아 있는지 확인하는 용도. 대시보드 연동 전 임시 조회.",
 )
-def get_latest(node_id: str):
+def get_latest(node_id: str) -> LatestReading:
     if get_node(node_id) is None:
         raise HTTPException(status_code=404, detail=f"미등록 노드입니다: {node_id}")
     latest = get_latest_reading(node_id)
