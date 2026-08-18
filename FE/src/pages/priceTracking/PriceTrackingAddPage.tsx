@@ -74,10 +74,10 @@ export function PriceTrackingAddPage() {
 
   function handleSelectWishlist(item: WishlistItem) {
     setSelected({
-      productId: item.productId,
-      name: item.name,
-      brand: item.brand,
-      price: item.price ?? 0,
+      productId: item.product.id,
+      name: item.product.name,
+      brand: item.product.brand,
+      price: item.product.currentPrice ?? 0,
       lowestPrice: null,
     });
   }
@@ -161,7 +161,7 @@ export function PriceTrackingAddPage() {
                 <button
                   key={item.wishlistId}
                   className={`min-w-[90px] rounded-xl border p-3 text-center ${
-                    selected?.productId === item.productId
+                    selected?.productId === item.product.id
                       ? "border-primary-500 bg-primary-50"
                       : "border-gray-200 bg-white"
                   }`}
@@ -169,10 +169,10 @@ export function PriceTrackingAddPage() {
                   type="button"
                 >
                   <div className="mx-auto h-11 w-11 rounded-xl bg-primary-50" />
-                  <p className="mt-2 truncate text-caption text-primary-500">{item.name}</p>
-                  <p className="truncate text-[10px] text-gray-300">{item.brand}</p>
-                  {item.price != null && (
-                    <p className="text-caption text-primary-500">{item.price.toLocaleString()}원</p>
+                  <p className="mt-2 truncate text-caption text-primary-500">{item.product.name}</p>
+                  <p className="truncate text-[10px] text-gray-300">{item.product.brand}</p>
+                  {item.product.currentPrice != null && (
+                    <p className="text-caption text-primary-500">{item.product.currentPrice.toLocaleString()}원</p>
                   )}
                 </button>
               ))}

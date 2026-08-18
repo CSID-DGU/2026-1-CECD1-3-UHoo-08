@@ -1,7 +1,6 @@
 ﻿import { useEffect, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import {
-  type ProductSearchItem,
   type SimilarUserProduct,
   getSimilarUserProducts,
 } from "../../api/productApi";
