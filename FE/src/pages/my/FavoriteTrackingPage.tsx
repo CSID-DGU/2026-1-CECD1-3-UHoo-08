@@ -7,7 +7,6 @@ import {
   deleteTracking,
   getTrackings,
   updateAlertSettings,
-  updateTracking,
 } from "../../api/priceTrackingApi";
 import { BottomNav } from "../../components/common/BottomNav";
 import { PageHeader } from "../../components/common/PageHeader";
@@ -48,15 +47,6 @@ export function FavoriteTrackingPage() {
     await deleteTracking(trackingId).catch(() => {});
     setTracking((prev) => prev.filter((t) => t.trackingId !== trackingId));
     setSummary((s) => ({ ...s, totalTracking: Math.max(0, s.totalTracking - 1) }));
-  }
-
-  async function handleToggleAlert(trackingId: string, current: boolean) {
-    await updateTracking(trackingId, { alertEnabled: !current }).catch(() => {});
-    setTracking((prev) =>
-      prev.map((t) =>
-        t.trackingId === trackingId ? { ...t, _alertEnabled: !current } : t,
-      ),
-    );
   }
 
   async function handleTargetPriceAlert() {

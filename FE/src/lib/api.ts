@@ -1,10 +1,20 @@
 import { getAccessToken } from "./auth";
 
+const API_BASE_URL = (import.meta.env.VITE_API_BASE_URL as string | undefined)?.replace(/\/$/, "") ?? "";
+const AI_API_BASE_URL = (import.meta.env.VITE_AI_API_BASE_URL as string | undefined)?.replace(/\/$/, "") ?? "";
+
+function getApiUrl(path: string): string {
+  if (/^https?:\/\//i.test(path)) return path;
+  if (AI_API_BASE_URL && path.startsWith("/ai/")) return `${AI_API_BASE_URL}${path.replace(/^\/ai/, "")}`;
+  if (!API_BASE_URL) return path;
+  return `${API_BASE_URL}${path.startsWith("/") ? path : `/${path}`}`;
+}
+
 async function request<T>(path: string, options: RequestInit = {}): Promise<T> {
   const token = getAccessToken();
   const isFormData = options.body instanceof FormData;
 
-  const res = await fetch(path, {
+  const res = await fetch(getApiUrl(path), {
     ...options,
     headers: {
       // FormData는 Content-Type 자동 설정 (boundary 포함)
