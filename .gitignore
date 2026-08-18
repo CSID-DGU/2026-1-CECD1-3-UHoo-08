@@ -3,3 +3,8 @@
 .DS_Store
 .vercel
 .env*
+
+# Arduino 스케치북 — 서드파티 라이브러리와 노드 자격증명
+firmware/libraries/
+firmware/hardware/
+firmware/**/build/
