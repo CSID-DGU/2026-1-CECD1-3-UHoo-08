@@ -172,7 +172,9 @@ export function PriceTrackingAddPage() {
                   <p className="mt-2 truncate text-caption text-primary-500">{item.product.name}</p>
                   <p className="truncate text-[10px] text-gray-300">{item.product.brand}</p>
                   {item.product.currentPrice != null && (
-                    <p className="text-caption text-primary-500">{item.product.currentPrice.toLocaleString()}원</p>
+                    <p className="text-caption text-primary-500">
+                      {item.product.currentPrice.toLocaleString()}원
+                    </p>
                   )}
                 </button>
               ))}

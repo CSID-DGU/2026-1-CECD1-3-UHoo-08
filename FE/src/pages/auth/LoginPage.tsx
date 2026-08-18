@@ -4,10 +4,15 @@ import googleIcon from "../../assets/Google.png";
 import kakaoIcon from "../../assets/Kakao.png";
 import HwadamLogo from "../../assets/Hwadam.svg";
 
+// 배포 도메인마다 콜백 주소가 달라지므로 현재 origin에서 유도한다.
+// 고정이 필요하면 VITE_KAKAO_REDIRECT_URI로 덮어쓸 수 있다.
+const KAKAO_REDIRECT_URI =
+  import.meta.env.VITE_KAKAO_REDIRECT_URI || `${window.location.origin}/auth/social`;
+
 const KAKAO_AUTH_URL =
   `https://kauth.kakao.com/oauth/authorize` +
   `?client_id=${import.meta.env.VITE_KAKAO_CLIENT_ID}` +
-  `&redirect_uri=${encodeURIComponent(import.meta.env.VITE_KAKAO_REDIRECT_URI)}` +
+  `&redirect_uri=${encodeURIComponent(KAKAO_REDIRECT_URI)}` +
   `&response_type=code`;
 
 const COPY = {
