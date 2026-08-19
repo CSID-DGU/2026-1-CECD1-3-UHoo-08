@@ -97,7 +97,7 @@ jobs:
             fi
           done
 
-      - name: EC2 pull & 재기동
+    - name: EC2 pull & 재기동
         uses: appleboy/ssh-action@v1.2.0
         with:
           host: ${{ secrets.EC2_HOST }}
