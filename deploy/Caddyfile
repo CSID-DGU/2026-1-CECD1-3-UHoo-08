@@ -1,0 +1,16 @@
+uhoo08-api.duckdns.org {
+	encode gzip
+
+	handle /iot/* {
+		reverse_proxy ai:8000
+	}
+
+	handle {
+		request_body {
+			max_size 20MB
+		}
+		reverse_proxy backend:8080 {
+			header_up X-Real-IP {remote_host}
+		}
+	}
+}
