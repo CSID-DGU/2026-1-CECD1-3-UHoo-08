@@ -24,9 +24,9 @@ public interface PriceTrackingRepository extends JpaRepository<PriceTracking, UU
     Optional<PriceTracking> findByIdAndUserId(@Param("id") UUID id, @Param("userId") UUID userId);
 
     @Query(value = """
-            SELECT COALESCE(SUM(pi.lowest_price - pt.target_price), 0)
+            SELECT COALESCE(SUM(p.lowest_price - pt.target_price), 0)
             FROM price_trackings pt
-            JOIN product_insights pi ON pi.product_id = pt.product_id
+            JOIN products p ON p.product_id = pt.product_id
             WHERE pt.user_id = :userId
               AND pt.is_achieved = true
               AND pt.achieved_at >= :monthStart
