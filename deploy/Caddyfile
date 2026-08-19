@@ -1,7 +1,7 @@
 uhoo08-api.duckdns.org {
 	encode gzip
 
-	handle /iot/* {
+	handle /api/iot/* {
 		reverse_proxy ai:8000
 	}
 
