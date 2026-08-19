@@ -32,7 +32,7 @@ jobs:
               - 'AI/**'
 
   build:
-    needs: changes
+    needs: changes     # AI 이미지 조건부 빌드 판단에만 사용
     runs-on: ubuntu-latest
     permissions:
       contents: read
@@ -49,7 +49,6 @@ jobs:
           password: ${{ secrets.GITHUB_TOKEN }}
 
       - name: BE 이미지 빌드 & push
-        if: needs.changes.outputs.be == 'true'
         uses: docker/build-push-action@v6
         with:
           context: ./BE
@@ -84,6 +83,19 @@ jobs:
           key: ${{ secrets.EC2_SSH_KEY }}
           source: "deploy/docker-compose.prod.yml,deploy/Caddyfile"
           target: "~/app/"
+
+    - name: GHCR 이미지 존재 확인
+        run: |
+          echo "${{ secrets.GHCR_TOKEN }}" | docker login ghcr.io -u ${{ secrets.GHCR_USERNAME }} --password-stdin
+          for IMG in "${{ env.IMAGE_BE }}:latest" "${{ env.IMAGE_AI }}:latest"; do
+            if docker manifest inspect "$IMG" > /dev/null 2>&1; then
+              echo "OK  $IMG"
+            else
+              echo "MISSING  $IMG"
+              echo "이미지가 GHCR에 없습니다. Actions 탭에서 Run workflow로 force_ai를 체크해 빌드하세요."
+              exit 1
+            fi
+          done
 
       - name: EC2 pull & 재기동
         uses: appleboy/ssh-action@v1.2.0
