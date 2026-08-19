@@ -8,3 +8,7 @@
 firmware/libraries/
 firmware/hardware/
 firmware/**/build/
+
+# 배포 시크릿 (deploy/*.env.example 만 커밋)
+deploy/*.env
+!deploy/*.env.example

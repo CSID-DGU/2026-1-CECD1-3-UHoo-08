@@ -1,0 +1,54 @@
+services:
+  backend:
+    image: ghcr.io/csid-dgu/2026-1-cecd1-3-uhoo-08/be:latest
+    restart: always
+    env_file:
+      - ./backend.env
+    environment:
+      JAVA_TOOL_OPTIONS: "-XX:MaxRAMPercentage=60 -Duser.timezone=Asia/Seoul -Dfile.encoding=UTF-8"
+      AI_SERVER_URL: "http://ai:8000"
+    expose:
+      - "8080"
+    mem_limit: 1200m
+    networks: [web]
+    logging:
+      driver: "json-file"
+      options: { max-size: "10m", max-file: "3" }
+
+  ai:
+    image: ghcr.io/csid-dgu/2026-1-cecd1-3-uhoo-08/ai:latest
+    restart: always
+    env_file:
+      - ./ai.env
+    expose:
+      - "8000"
+    volumes:
+      - hf_cache:/root/.cache/huggingface
+    mem_limit: 3g
+    networks: [web]
+    logging:
+      driver: "json-file"
+      options: { max-size: "10m", max-file: "3" }
+
+  caddy:
+    image: caddy:2-alpine
+    restart: always
+    ports:
+      - "80:80"
+      - "443:443"
+    volumes:
+      - ./Caddyfile:/etc/caddy/Caddyfile:ro
+      - caddy_data:/data
+      - caddy_config:/config
+    networks: [web]
+    logging:
+      driver: "json-file"
+      options: { max-size: "10m", max-file: "3" }
+
+volumes:
+  hf_cache:
+  caddy_data:
+  caddy_config:
+
+networks:
+  web:
