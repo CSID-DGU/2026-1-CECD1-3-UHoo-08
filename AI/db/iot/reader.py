@@ -125,3 +125,94 @@ def list_nodes() -> List[Dict[str, Any]]:
         .execute()
     )
     return res.data or []
+
+
+# 보유 제품으로 볼 사용 상태. INTERESTED는 위시리스트라 점검 대상이 아니다.
+_OWNED_USAGE = ("USING", "USED")
+
+
+def get_care_products(
+    user_id: str,
+    *,
+    usage_types: tuple = _OWNED_USAGE,
+) -> List[Dict[str, Any]]:
+    """
+    점검 대상 제품 목록. user_products + products + product_thermal_profile.
+
+    PostgREST의 임베디드 조회(`products(...)`) 대신 세 번 나눠 읽고 파이썬에서
+    합친다. 임베딩은 FK 관계 추론에 의존해서, 관계가 모호하면 조용히 빈 객체를
+    돌려주거나 400을 낸다. 지금 단계에서는 어디서 끊겼는지 바로 보이는 쪽이 낫다.
+
+    thermal_profile이 없는 제품도 제외하지 않고 None으로 실어 보낸다.
+    호출자가 "프로파일 미등록"을 인지해야 하기 때문이다. 조용히 빠지면
+    점검 목록에서 사라진 이유를 찾기 어렵다.
+    """
+    sb = get_supabase()
+
+    ups = (
+        sb.table("user_products")
+        .select("id, product_id, usage_type, rating, "
+                "purchased_at, opened_at, storage_node_id, last_checked_at")
+        .eq("user_id", user_id)
+        .in_("usage_type", list(usage_types))
+        .execute()
+    ).data or []
+
+    if not ups:
+        return []
+
+    product_ids = sorted({u["product_id"] for u in ups if u.get("product_id")})
+
+    products = (
+        sb.table("products")
+        .select("product_id, name, brand, category")
+        .in_("product_id", product_ids)
+        .execute()
+    ).data or []
+    pmap = {p["product_id"]: p for p in products}
+
+    profiles = (
+        sb.table("product_thermal_profile")
+        .select("product_id, sensitivity_k, pao_months, optical_grade, driver_note")
+        .in_("product_id", product_ids)
+        .execute()
+    ).data or []
+    fmap = {f["product_id"]: f for f in profiles}
+
+    out: List[Dict[str, Any]] = []
+    for u in ups:
+        pid = u.get("product_id")
+        p = pmap.get(pid, {})
+        f = fmap.get(pid)
+        out.append({
+            "user_product_id": u["id"],
+            "product_id": pid,
+            "name": p.get("name"),
+            "brand": p.get("brand"),
+            "category": p.get("category"),
+            "usage_type": u.get("usage_type"),
+            "purchased_at": u.get("purchased_at"),
+            "opened_at": u.get("opened_at"),
+            "storage_node_id": u.get("storage_node_id"),
+            "last_checked_at": u.get("last_checked_at"),
+            "sensitivity_k": f.get("sensitivity_k") if f else None,
+            "pao_months": f.get("pao_months") if f else None,
+            "optical_grade": f.get("optical_grade") if f else None,
+            "has_profile": f is not None,
+        })
+
+    return out
+
+
+def get_latest_optical(user_product_id: str) -> Optional[Dict[str, Any]]:
+    """가장 최근 광학 측정 1건. 없으면 None."""
+    sb = get_supabase()
+    res = (
+        sb.table("optical_measurements")
+        .select("ts, delta_pct")
+        .eq("user_product_id", user_product_id)
+        .order("ts", desc=True)
+        .limit(1)
+        .execute()
+    )
+    return res.data[0] if res.data else None
