@@ -1,9 +1,57 @@
 import { defineConfig } from "vite";
 import react from "@vitejs/plugin-react";
 import tailwindcss from "@tailwindcss/vite";
+import { VitePWA } from "vite-plugin-pwa";
 
 export default defineConfig({
-  plugins: [react(), tailwindcss()],
+  plugins: [
+    react(), 
+    tailwindcss(),
+    VitePWA({
+      registerType: "autoUpdate",
+      includeAssets: ["favicon.svg", "apple-touch-icon.png"],
+      manifest: {
+        name: "화담(HWADAM) — 스마트 화장품 보관 관리 및 추천",
+        short_name: "화담(hwadam)",
+        description: "센서로 보관 환경을 감지를 통한 화장품 상태 관리 및 화장품 추천 서비스",
+        start_url: "/",
+        scope: "/",
+        display: "standalone",
+        orientation: "portrait",
+        background_color: "#ffffff",
+        theme_color: "#E8E4FF",
+        lang: "ko",
+        icons: [
+          { src: "/pwa-192x192.png", sizes: "192x192", type: "image/png" },
+          { src: "/pwa-512x512.png", sizes: "512x512", type: "image/png" },
+          {
+            src: "/pwa-maskable-512x512.png",
+            sizes: "512x512",
+            type: "image/png",
+            purpose: "maskable",
+          },
+        ],
+      },
+      workbox: {
+        globPatterns: ["**/*.{js,css,html,svg,png,woff2}"],
+        // Spline 3D 번들이 2MB를 넘어 기본 한도(2MiB)에 걸린다
+        maximumFileSizeToCacheInBytes: 6 * 1024 * 1024,
+        navigateFallbackDenylist: [/^\/api/],
+        runtimeCaching: [
+          {
+            // 구글 폰트는 오래 캐싱해도 안전하다
+            urlPattern: /^https:\/\/fonts\.(googleapis|gstatic)\.com\//,
+            handler: "CacheFirst",
+            options: {
+              cacheName: "google-fonts",
+              expiration: { maxEntries: 20, maxAgeSeconds: 60 * 60 * 24 * 365 },
+            },
+          },
+        ],
+      },
+      devOptions: { enabled: false },
+    }),
+  ],
   server: {
     proxy: {
       "/auth": {
