@@ -12,7 +12,7 @@ export default defineConfig({
       includeAssets: ["favicon.svg", "apple-touch-icon.png"],
       manifest: {
         name: "화담(HWADAM) — 스마트 화장품 보관 관리 및 추천",
-        short_name: "화담(hwadam)",
+        short_name: "화담",
         description: "센서로 보관 환경을 감지를 통한 화장품 상태 관리 및 화장품 추천 서비스",
         start_url: "/",
         scope: "/",
