@@ -44,7 +44,9 @@ from typing import Any, Dict, List, Optional, Tuple
 
 from db.iot.reader import get_care_products, get_reading_span, list_nodes
 from db.supabase_client import get_supabase
-from services.iot.thermal_profile import CATEGORIES, resolve_profile
+from services.iot.thermal_profile import (
+    CATEGORIES, GRADE_UNSUITABLE, K_HIGH, resolve_profile,
+)
 
 # 011 시드로 만든 테스트 사용자
 DEFAULT_USER = "aa000000-0000-0000-0000-000000000001"
@@ -123,19 +125,21 @@ def _signature(prof) -> tuple:
     return (prof.sensitivity_k, prof.pao_months, prof.optical_grade)
 
 
-def pick_candidates(
-    need: int,
-    exclude_product_ids: set,
-    already: List[tuple],
-    rng: random.Random,
-) -> List[Dict[str, Any]]:
-    """
-    products에서 need개를 고른다.
+# ── 시연에 반드시 있어야 하는 제품 ────────────────────────────────
+#
+# 무작위로 고르면 k=1.0 제품만 다섯 개가 뽑히는 일이 실제로 일어난다.
+# 그러면 "성분에 따라 점수가 갈린다"(§5-1)와 "광학으로 못 재는 제품이
+# 있다"(§5-2)를 화면으로 보여줄 수 없다. 아래 두 종류는 후보 풀에
+# 존재하는 한 먼저 확보하고, 나머지를 다양성 기준으로 채운다.
+#
+# 이미 가진 제품이 조건을 만족하면 건너뛴다.
+_COVERAGE = (
+    ("고민감 성분 (k=1.5)", lambda p: p.sensitivity_k >= K_HIGH),
+    ("광학 측정 대상 아님 (unsuitable)", lambda p: p.optical_grade == GRADE_UNSUITABLE),
+)
 
-    카테고리별로 후보를 모은 뒤, 이미 가진 제품과 프로파일이 겹치지 않는
-    것을 우선한다. 전부 같은 (k, PAO, 광학등급)이면 개봉일 차이만 남아
-    "성분에 따라 점수가 갈린다"는 시연의 요지가 흐려지기 때문이다.
-    """
+
+def _load_pool(exclude_product_ids: set, rng: random.Random) -> List[Dict[str, Any]]:
     sb = get_supabase()
     pool: List[Dict[str, Any]] = []
 
@@ -149,25 +153,68 @@ def pick_candidates(
         ).data or []
         pool.extend(r for r in rows if r["product_id"] not in exclude_product_ids)
 
-    if not pool:
-        return []
-
     rng.shuffle(pool)
-
     for r in pool:
         r["_profile"] = resolve_profile(
             r.get("name"), category=r.get("category"), brand=r.get("brand")
         )
+    return pool
 
-    seen = dict.fromkeys(already, 1)
+
+def pick_candidates(
+    need: int,
+    exclude_product_ids: set,
+    already_profiles: List[Any],
+    rng: random.Random,
+) -> List[Dict[str, Any]]:
+    """
+    products에서 need개를 고른다.
+
+    ① 시연에 꼭 필요한 종류(_COVERAGE)를 먼저 확보한다
+    ② 남은 자리는 이미 가진 것과 겹치지 않는 시그니처부터 채운다
+
+    already_profiles에는 기존 보유 제품의 ThermalProfile을 넘긴다.
+    프로파일이 아직 DB에 없더라도 규칙 테이블로 계산해서 넘겨야 한다.
+    (has_profile=False라는 이유로 빼면 이미 가진 것과 같은 종류를
+     또 고르게 된다)
+    """
+    if need <= 0:
+        return []
+
+    pool = _load_pool(exclude_product_ids, rng)
+    if not pool:
+        return []
+
     picked: List[Dict[str, Any]] = []
+    seen: Dict[tuple, int] = {}
+    for prof in already_profiles:
+        sig = _signature(prof)
+        seen[sig] = seen.get(sig, 0) + 1
 
-    # 시그니처가 덜 등장한 후보부터 고른다. 같은 등급이면 순서는 셔플된
-    # 상태를 그대로 따르므로 seed로 재현된다.
+    # ── ① 필수 종류 확보 ─────────────────────────────────────────
+    for label, pred in _COVERAGE:
+        if len(picked) >= need:
+            break
+        if any(pred(prof) for prof in already_profiles):
+            continue                      # 이미 가지고 있다
+        hit = next((r for r in pool if pred(r["_profile"])), None)
+        if hit is None:
+            print(f"  ! products에 '{label}' 조건을 만족하는 제품이 없습니다.")
+            print(f"    이 종류 없이 진행합니다. 시연에서 해당 사례는 빠집니다.")
+            continue
+        pool.remove(hit)
+        hit["_reason"] = label
+        seen[_signature(hit["_profile"])] = seen.get(_signature(hit["_profile"]), 0) + 1
+        picked.append(hit)
+
+    # ── ② 나머지는 다양성 기준 ───────────────────────────────────
+    # 시그니처가 덜 등장한 후보부터 고른다. 같은 등급이면 셔플된 순서를
+    # 그대로 따르므로 seed로 재현된다.
     while len(picked) < need and pool:
         pool.sort(key=lambda r: seen.get(_signature(r["_profile"]), 0))
         chosen = pool.pop(0)
         sig = _signature(chosen["_profile"])
+        chosen["_reason"] = "다양성" if seen.get(sig, 0) == 0 else "보충"
         seen[sig] = seen.get(sig, 0) + 1
         picked.append(chosen)
 
@@ -212,13 +259,17 @@ def build_plan(
     existing = get_care_products(user_id)
     owned_ids = {it["product_id"] for it in existing if it.get("product_id")}
 
-    already_sigs = [
-        (it["sensitivity_k"], it["pao_months"], it["optical_grade"])
-        for it in existing if it["has_profile"]
+    # 이미 가진 제품이 어떤 종류인지 파악한다. DB에 프로파일이 없어도
+    # 규칙 테이블로 계산해서 센다. 여기서 빼면 방금 가진 것과 같은 종류를
+    # 또 고르게 된다(닥터지 선 → 식물나라 선 중복 사례).
+    already_profiles = [
+        resolve_profile(it.get("name"), category=it.get("category"),
+                        brand=it.get("brand"))
+        for it in existing
     ]
 
     need = max(0, target - len(existing))
-    new_products = pick_candidates(need, owned_ids, already_sigs, rng) if need else []
+    new_products = pick_candidates(need, owned_ids, already_profiles, rng) if need else []
 
     # 개봉일이 비어 있는 기존 행 + 새로 추가할 행 전부에 날짜를 배정한다.
     need_opened = [it for it in existing if not it.get("opened_at")]
@@ -339,9 +390,10 @@ def print_plan(plan: Dict[str, Any], span: Optional[dict]) -> None:
     for ins in plan["inserts"]:
         p = ins["product"]
         prof = p["_profile"]
-        print(f"  {_s(_label(p), 26)}{_s(p.get('category'), 12)}"
+        print(f"  {_s(_label(p), 26)}{_s(p.get('category'), 10)}"
               f"개봉 {ins['days']:>3}일 전  k={prof.sensitivity_k}  "
-              f"PAO={prof.pao_months:>2}  {prof.optical_grade}")
+              f"PAO={prof.pao_months:>2}  {_s(prof.optical_grade, 13)}"
+              f"← {p.get('_reason', '-')}")
 
     _rule(f"④ product_thermal_profile — {len(plan['profiles'])}건")
     if not plan["profiles"]:
@@ -392,10 +444,25 @@ def print_plan(plan: Dict[str, Any], span: Optional[dict]) -> None:
 
     # ── 측정 구간 경고 ───────────────────────────────────────────
     if span and span.get("first_ts"):
-        first = str(span["first_ts"])[:10]
-        print(f"\n  노드 {plan['node_id']} 최초 측정 {first} · {span['count']}건")
-        print("  개봉일이 이보다 앞서면 그 구간은 20℃ 상당으로 가정 적산됩니다")
-        print("  (risk_score의 assumed_hours). 시연에서 구분해 설명할 것.")
+        first_d = date.fromisoformat(str(span["first_ts"])[:10])
+        last_d = date.fromisoformat(str(span["last_ts"])[:10]) if span.get("last_ts") else date.today()
+        span_days = max((last_d - first_d).days, 0)
+        print(f"\n  노드 {plan['node_id']} 측정 {first_d} ~ {last_d} · {span['count']}건")
+
+        # 10분 주기라면 하루 144건. 실제 건수가 그보다 훨씬 적으면
+        # 노드가 계속 켜져 있지 않았다는 뜻이고, 열이력 대부분이
+        # 가정값(20℃)으로 채워진다.
+        expected = max(span_days, 1) * 144
+        duty = span["count"] / expected * 100 if expected else 0.0
+        print(f"  기간 {span_days}일 기준 예상 {expected}건 대비 가동률 약 {duty:.0f}%")
+
+        if rows:
+            worst = max(r[3] for r in rows)
+            measured_share = min(span_days / worst, 1.0) * 100 if worst else 0.0
+            print(f"  가장 오래된 개봉 {worst}일 중 실측 구간은 최대 {span_days}일 "
+                  f"({measured_share:.0f}%)")
+        print("  나머지는 20℃ 상당으로 가정 적산됩니다 (risk_score의 assumed_hours).")
+        print("  → 발표에서 '몇 개월치 열이력을 측정했다'고 말하면 사실과 다릅니다.")
     else:
         print(f"\n  ! 노드 {plan['node_id']}에 sensor_readings가 없습니다.")
         print("    열이력 항목이 빠진 채 점수가 계산됩니다.")
