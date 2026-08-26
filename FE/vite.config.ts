@@ -9,7 +9,9 @@ export default defineConfig({
     tailwindcss(),
     VitePWA({
       registerType: "autoUpdate",
-      includeAssets: ["favicon.svg", "apple-touch-icon.png"],
+      // 키오스크용 manifest는 /kiosk 페이지에서 런타임에 갈아끼운다.
+      // 프리캐시에 포함시켜야 오프라인에서도 홈 화면 추가가 동작한다.
+      includeAssets: ["favicon.svg", "apple-touch-icon.png", "kiosk.webmanifest"],
       manifest: {
         name: "화담(HWADAM) — 스마트 화장품 보관 관리 및 추천",
         short_name: "화담",
@@ -33,7 +35,7 @@ export default defineConfig({
         ],
       },
       workbox: {
-        globPatterns: ["**/*.{js,css,html,svg,png,woff2}"],
+        globPatterns: ["**/*.{js,css,html,svg,png,woff2,webmanifest}"],
         // Spline 3D 번들이 2MB를 넘어 기본 한도(2MiB)에 걸린다
         maximumFileSizeToCacheInBytes: 6 * 1024 * 1024,
         navigateFallbackDenylist: [/^\/api/],
