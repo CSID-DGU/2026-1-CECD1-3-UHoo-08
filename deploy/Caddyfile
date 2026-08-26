@@ -1,7 +1,10 @@
 uhoo08-api.duckdns.org {
 	encode gzip
 
-	handle /api/iot/* {
+	# ESP32 수집(/api/iot)과 키오스크 조회(/api/care)는 Spring을 거치지 않는다.
+	# 둘 다 AI 서버가 직접 처리하므로 여기서 갈라 보낸다.
+	@ai path /api/iot/* /api/care/*
+	handle @ai {
 		reverse_proxy ai:8000
 	}
 
