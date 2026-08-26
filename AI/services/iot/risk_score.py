@@ -28,6 +28,11 @@
 광학 측정을 아직 안 한 제품은 w4 항이 빠지고, 남은 가중치로 다시
 정규화한다. 그냥 0으로 두면 "측정 안 한 제품이 안전해 보이는" 역전이
 생긴다. optical_grade가 unsuitable(투명 토너 등)인 경우도 같다.
+
+같은 원칙을 이탈 항(w2)에도 적용한다. 노드가 여섯 시간만 측정했다면
+"이탈 0회"는 안전하다는 뜻이 아니라 모른다는 뜻이다. 그것을 0으로
+넣으면 모든 제품의 점수가 일률적으로 눌린다. 실측 구간이
+MIN_MEASURED_HOURS_FOR_EXCURSION 미만이면 이 항도 분모에서 뺀다.
 """
 from __future__ import annotations
 
@@ -73,6 +78,16 @@ EXC_MAX_GAP_MINUTES = 35.0
 # 이 구간은 measured_hours와 분리해 보고하므로 UI·발표에서 구분할 수 있다.
 ASSUMED_AF_BEFORE_NODE = 1.0
 
+# ── 이탈 통계를 신뢰할 수 있는 최소 실측 구간 ────────────────────
+# 이보다 짧게 측정한 구간에서 나온 "이탈 0회"는 안전의 근거가 아니라
+# 정보 부족이다. 하루를 기준으로 삼는 이유는 이탈이 주로 낮 시간대에
+# 발생하므로 최소한 하루의 온도 주기는 관측해야 의미가 있기 때문이다.
+#
+# 이 문턱을 넘겨도 한계는 남는다. 8개월 보관 중 9일만 측정했다면 그
+# 9일에서 센 이탈 횟수일 뿐이다. measured_hours를 함께 보고하므로
+# UI·발표에서 어느 구간의 통계인지 밝힐 수 있다.
+MIN_MEASURED_HOURS_FOR_EXCURSION = 24.0
+
 # 광학 등급별 w4 배율 (설계서 §5-2)
 OPTICAL_GRADE_FACTOR = {
     "suitable": 1.0,
@@ -112,6 +127,7 @@ class RiskScore:
     excursions: ExcursionStats
     measured_hours: float         # 노드가 실제로 측정한 구간
     assumed_hours: float          # 개봉~노드 설치 사이의 미측정 구간
+    excursion_counted: bool       # 이탈 항을 점수에 반영했는지
     consumed_ratio: Optional[float]   # 두 구간을 합친 최종 소모 비율
     days_since_last_check: Optional[float]
     optical_delta_pct: Optional[float]
@@ -269,7 +285,11 @@ def compute_risk_score(
     s_consumed = (_clamp01(consumed_ratio / RATIO_FULL)
                   if consumed_ratio is not None else None)
 
-    s_excursion = _clamp01(exc.total_events / EXCURSION_FULL)
+    # 실측이 너무 짧으면 이탈 통계 자체가 정보가 아니다. 광학과 같은
+    # 규칙으로 항목을 통째로 뺀다. 0을 넣으면 "안전"으로 오독된다.
+    excursion_counted = measured_hours >= MIN_MEASURED_HOURS_FOR_EXCURSION
+    s_excursion = (_clamp01(exc.total_events / EXCURSION_FULL)
+                   if excursion_counted else None)
 
     ref = _as_utc(last_checked_at) or _as_utc(opened_at)
     days_since = (now - ref).total_seconds() / 86400.0 if ref else None
@@ -326,6 +346,7 @@ def compute_risk_score(
         excursions=exc,
         measured_hours=measured_hours,
         assumed_hours=assumed_hours,
+        excursion_counted=excursion_counted,
         consumed_ratio=consumed_ratio,
         days_since_last_check=days_since,
         optical_delta_pct=optical_delta_pct,
@@ -342,8 +363,10 @@ def rank_products(items: Sequence[dict]) -> list:
     식별·표시용 필드(user_product_id, name 등)를 담은 dict다.
     계산에 쓰이지 않는 키는 결과에 그대로 실어 보낸다.
     """
+    # now를 포함시키는 이유: 넣지 않으면 각 항목이 실제 현재 시각을 쓰게 되어
+    # 고정 시나리오의 결과가 실행일마다 달라진다. (자체 테스트 대조값이 흔들렸다)
     kw = {"readings", "sensitivity", "pao_months", "opened_at",
-          "last_checked_at", "optical_delta_pct", "optical_grade"}
+          "last_checked_at", "optical_delta_pct", "optical_grade", "now"}
 
     out = []
     for item in items:
@@ -398,6 +421,7 @@ if __name__ == "__main__":
             "sensitivity": sens,
             "pao_months": pao,
             "opened_at": now - timedelta(days=opened_days),
+            "now": now,
         })
 
     print(f"  {'제품':<12}{'점수':>7}{'밴드':>8}   근거")
@@ -420,6 +444,7 @@ if __name__ == "__main__":
         "pao_months": 12,
         "opened_at": now - timedelta(days=90),
     }
+    base["now"] = now
     a = compute_risk_score(**base)
     b = compute_risk_score(**base, optical_delta_pct=6.0, optical_grade="suitable")
     c = compute_risk_score(**base, optical_delta_pct=6.0, optical_grade="unsuitable")

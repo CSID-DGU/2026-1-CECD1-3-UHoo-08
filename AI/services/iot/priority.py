@@ -235,6 +235,9 @@ def build_priority(
             "mean_temp_c": rs.load.history.mean_temp_c,
             "max_temp_c": rs.excursions.max_temp_c,
             "excursion_events": rs.excursions.total_events,
+            # 실측 구간이 짧으면 이탈 통계를 점수에 반영하지 않는다.
+            # 화면에서 "아직 판단할 만큼 측정되지 않음"으로 구분해야 한다.
+            "excursion_counted": rs.excursion_counted,
             "hours_above_temp": round(rs.excursions.hours_above_temp, 1),
             "hours_above_humid": round(rs.excursions.hours_above_humid, 1),
             "days_since_last_check": (round(rs.days_since_last_check, 1)
