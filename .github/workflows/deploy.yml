@@ -110,11 +110,18 @@ jobs:
             set -e
             cd ~/app/deploy
             echo "${{ secrets.GHCR_TOKEN }}" | docker login ghcr.io -u ${{ secrets.GHCR_USERNAME }} --password-stdin
+            
+            # pull 전에 공간을 확보하고 현황을 남긴다. 실패 시 원인 파악용
+            docker image prune -f
+            docker builder prune -f
+            df -h /
+            
             docker compose -f docker-compose.prod.yml pull
             docker compose -f docker-compose.prod.yml up -d
             # Caddyfile은 볼륨 마운트라 up -d 로는 변경이 반영되지 않는다
             docker compose -f docker-compose.prod.yml restart caddy
-            docker image prune -f
+            docker image prune -af
+            df -h /
 
             echo "헬스체크 시작"
             for i in $(seq 1 24); do
