@@ -73,7 +73,8 @@ class Rule:
 
     value: Any
     label: str
-    keywords: tuple = ()
+    keywords: tuple = ()     # 하나라도 걸리면 통과
+    all_of: tuple = ()       # 전부 걸려야 통과 (조합 조건)
     excludes: tuple = ()
     categories: tuple = ()   # 비어 있으면 전 카테고리
 
@@ -82,6 +83,10 @@ class Rule:
             return False
         if any(x in text for x in self.excludes):
             return False
+        if self.all_of and not all(k in text for k in self.all_of):
+            return False
+        if not self.keywords:
+            return bool(self.all_of)
         return any(k in text for k in self.keywords)
 
 
@@ -117,11 +122,21 @@ _SENSITIVITY_RULES: tuple = (
          keywords=("레티놀", "레티날", "레티노이드", "레티닐",
                    "retinol", "retinal", "바쿠치올")),
     Rule(K_HIGH, "고민감(순수 비타민C)",
-         keywords=("비타민c", "비타민씨", "vitaminc", "vitc",
-                   "아스코르빅", "아스코르브", "ascorbic", "퓨어비타민"),
+         # 국내 제품명은 C를 여러 방식으로 쓴다. 실제 DB에서
+         # "코스알엑스 더 비타민 23 세럼"을 놓친 뒤 표기 변형을 늘렸다.
+         keywords=("비타민c", "비타민씨", "비타c", "비타씨", "바이타민c",
+                   "vitaminc", "vitc", "아스코르빅", "아스코르브",
+                   "ascorbic", "퓨어비타민"),
          # 유도체(에틸아스코빌 등)는 훨씬 안정하지만 이름만으로는
          # 구분이 어렵다. 보수적으로 고민감으로 둔다.
-         excludes=("비타민워터",)),
+         excludes=("비타민워터", "비타민나무")),
+    Rule(K_HIGH, "고민감(비타민 고농축 제형)",
+         # "비타민 23 세럼"처럼 C가 생략된 표기를 잡는다.
+         # '비타민'만으로는 멀티비타민 로션까지 걸리므로, 고농축 제형
+         # (세럼·앰플)과 함께 나올 때만 채택한다.
+         keywords=("세럼", "앰플", "serum", "ampoule"),
+         all_of=("비타민",),
+         excludes=("비타민나무", "멀티비타민", "비타민워터")),
 
     Rule(K_LOW, "저민감(무기 자외선차단제)",
          keywords=("무기자차", "미네랄자차", "물리자차", "논케미컬",
@@ -153,12 +168,17 @@ _SENSITIVITY_DEFAULT = {
 
 # ── 개봉 후 사용기간(PAO) 규칙 ─────────────────────────────────────
 #
-# 실제 PAO는 용기에 인쇄된 값이 정답이고, 
-# 이 표는 그것을 모를 때 쓰는 관용적 추정이다.
+# 실제 PAO는 용기에 인쇄된 값이 정답이고, 이 표는 그것을 모를 때 쓰는
+# 관용적 추정이다. 설계서 §5-1 예시(레티놀 세럼 6 / 수분 크림 12 /
+# 무기 자차 12)와 어긋나지 않게 맞췄다.
 _PAO_RULES: tuple = (
     Rule(6, "고농도 활성 성분",
          keywords=("레티놀", "레티날", "레티노이드", "비타민c", "비타민씨",
-                   "아스코르빅", "ascorbic", "퓨어비타민")),
+                   "비타c", "비타씨", "아스코르빅", "ascorbic", "퓨어비타민")),
+    Rule(6, "고농도 활성 성분(비타민 세럼·앰플)",
+         keywords=("세럼", "앰플", "serum", "ampoule"),
+         all_of=("비타민",),
+         excludes=("비타민나무", "멀티비타민")),
     Rule(6, "고농축 제형(세럼·앰플·에센스)",
          keywords=("세럼", "앰플", "에센스", "serum", "ampoule"),
          categories=("skincare",)),
@@ -309,6 +329,12 @@ if __name__ == "__main__":
         # (카테고리, 제품명, 기대 k, 기대 PAO, 기대 광학등급)
         ("skincare", "레티놀 0.1% 나이트 세럼", 1.5, 6, "conditional"),
         ("skincare", "비타민C 21.5 앰플", 1.5, 6, "conditional"),
+        # 실제 DB 제품. C가 빠진 표기를 잡는지 확인한다.
+        ("skincare", "코스알엑스 더 비타민 23 세럼", 1.5, 6, "conditional"),
+        ("skincare", "구달 청귤 비타C 잡티세럼", 1.5, 6, "conditional"),
+        # 조합 조건의 반대편. '비타민'이 있어도 고농축 제형이 아니면 일반.
+        ("skincare", "멀티비타민 데일리 로션", 1.0, 12, "conditional"),
+        ("skincare", "비타민나무 수분 크림", 1.0, 12, "conditional"),
         ("skincare", "히알루론산 수분 크림", 1.0, 12, "conditional"),
         ("skincare", "그린티 밸런싱 토너", 1.0, 12, "unsuitable"),
         ("skincare", "라이스 퍼스트 에센스", 1.0, 6, "unsuitable"),
