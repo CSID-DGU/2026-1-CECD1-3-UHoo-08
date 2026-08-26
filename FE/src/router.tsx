@@ -29,11 +29,13 @@ import { WishlistPage } from "./pages/wishlist/WishlistPage";
 import { WishlistCategoryPage } from "./pages/wishlist/WishlistCategoryPage";
 import { PriceTrackingAddPage } from "./pages/priceTracking/PriceTrackingAddPage";
 import { PriceHistoryPage } from "./pages/priceTracking/PriceHistoryPage";
+import { KioskPage } from "./pages/kiosk/KioskPage";
 
 export const router = createBrowserRouter([
   // 인증 불필요
   { path: "/", element: <LoginPage /> },
   { path: "/auth/social", element: <KakaoCallbackPage /> },
+  { path: "/kiosk", element: <KioskPage /> },
 
   // 인증 필요
   {
