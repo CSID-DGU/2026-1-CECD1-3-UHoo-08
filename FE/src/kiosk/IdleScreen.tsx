@@ -106,7 +106,6 @@ export function IdleScreen({ dashboard, priority, error, onEnter }: Props) {
             {LEVEL_LABEL[aura.level]}
           </span>
           <span className="text-[17px] font-medium opacity-90">{aura.lead.line}</span>
-          <span className="ml-auto text-[15px] opacity-60">화면을 누르면 점검 화면으로</span>
         </div>
       </div>
     </div>
