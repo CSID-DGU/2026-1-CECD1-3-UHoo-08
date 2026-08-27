@@ -4,5 +4,8 @@
   "installCommand": "pnpm -C FE install --frozen-lockfile",
   "buildCommand": "pnpm -C FE run build",
   "outputDirectory": "FE/dist",
-  "rewrites": [{ "source": "/(.*)", "destination": "/index.html" }]
+  "rewrites": [
+    { "source": "/kiosk", "destination": "/kiosk.html" },
+    { "source": "/(.*)", "destination": "/index.html" }
+  ]
 }
