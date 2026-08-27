@@ -1,25 +1,28 @@
-// 화담 CARE — BME688 가스 센서 브링업
-// 배선: VIN→3V3, GND→GND, SCL→GPIO22, SDA→GPIO21
-//       (SHT31 0x44 · AS7341 0x39과 같은 버스. 주소가 겹치지 않는다)
+// 화담 CARE — BME680 가스 센서 브링업
+// 배선: VIN→3V3, GND→GND, SCK→GPIO22, SDI→GPIO21
+//       (3Vo · SDO · CS는 연결하지 않는다. SDO를 띄우면 주소는 0x77)
+//       SHT31 0x44 · AS7341 0x39와 같은 버스를 쓴다. 주소가 겹치지 않는다.
 // 라이브러리: Adafruit BME680 + Adafruit Unified Sensor
 //
 // ─────────────────────────────────────────────────────────────
-// 라이브러리 이름이 "BME680"인 이유
+// 설계서에는 BME688로 적혀 있지만 실물은 BME680이다
 //
-// BME688은 BME680과 칩 ID가 같고 레지스터 구조도 호환된다. 그래서
-// Adafruit_BME680 라이브러리가 그대로 동작한다. BME688에만 있는 기능은
-// 히터 프로파일 스캔(여러 온도를 순차로 가열해 가스를 구분)인데, 그건
-// Bosch BSEC2를 써야 하고 우리는 쓰지 않는다.
+// 두 칩은 칩 ID와 레지스터 구조가 호환되어 같은 라이브러리로 동작한다.
+// BME688에만 있는 기능은 히터 프로파일 스캔(여러 온도로 순차 가열해
+// 가스를 구분)인데, 그건 Bosch BSEC2가 있어야 하고 우리는 쓰지 않는다.
 //
-// BSEC2를 안 쓰는 이유: BSEC은 폐쇄 바이너리이고 내부에서 자체 기준선을
-// 학습해 IAQ 점수를 뱉는다. 그 학습 과정을 우리가 통제할 수 없고, 언제
-// 어떻게 보정되는지 설명할 수 없다. 설계서는 log(R)을 온습도로 회귀
-// 보정해 잔차를 보는 방식이라, 원시 저항값만 있으면 충분하다.
+// BSEC2를 안 쓰는 이유: 폐쇄 바이너리이고 내부에서 자체 기준선을 학습해
+// IAQ 점수를 뱉는다. 그 학습을 우리가 통제할 수 없고 언제 어떻게
+// 보정되는지 설명할 수 없다. 설계서 방식은 log(R)을 온습도로 회귀 보정해
+// 잔차를 보는 것이라 원시 저항값만 있으면 충분하고, 그건 BME680도 준다.
+//
+// 따라서 기능상 손해는 없다. 다만 문서와 실물이 다르면 심사에서 신뢰에
+// 흠집이 나므로 설계서 표기를 BME680으로 정정한다.
 //
 // ─────────────────────────────────────────────────────────────
 // 이 센서로 알 수 있는 것과 없는 것
 //
-// BME688이 주는 값은 가열된 금속산화물의 **저항 하나**다.
+// BME680이 주는 값은 가열된 금속산화물의 저항 하나다.
 //   공기가 깨끗하다 → 저항이 높다
 //   VOC가 늘어난다  → 저항이 떨어진다
 //
@@ -29,13 +32,39 @@
 // 키오스크가 사용자에게 되묻는 구조를 택한 것이다.
 //
 // ─────────────────────────────────────────────────────────────
+// 실측으로 확인한 것 (2026-08-27, 실내 31℃ / 55%RH)
+//
+//   자체 발열   SHT31 대비 +0.54℃, 습도 -8.2%RH
+//               열이력에 그대로 쓰면 노화 속도가 +3.8% 어긋난다
+//               → 온습도는 SHT31, 가스는 BME680으로 나눠 쓴다
+//
+//   예열        25.8 kΩ → 80 kΩ (3.5배), 약 30분에 안정
+//               30분 이후 기울기가 ±400 Ω/분 안에서 부호가 오간다
+//               → 가동 후 최소 1시간은 기준선 학습에서 제외한다
+//
+//   VOC 반응    향수를 분사하니 79.3 kΩ → 5.6 kΩ (-92.9%)
+//               약 15초 만에 -1%까지 회복
+//               → 탐지 임계 40% 하락은 충분한 여유가 있다
+//
+//   민감도 한계 향수병을 열어 곁에 둔 상태(사람이 냄새를 맡는 농도)에서는
+//               저항이 움직이지 않았다. 직접 분사해야 반응했다.
+//               산패한 화장품이 내는 VOC는 그보다 훨씬 옅을 수 있으므로,
+//               실제 시료로 반응 여부를 따로 확인해야 한다.
+//
+//   측정 주기   주기를 바꾸면 저항의 절대값이 바뀐다. 예열 감시(5초)에서
+//               반응 시험(1.5초)으로 옮기자 79 → 110 kΩ으로 올랐다.
+//               히터가 더 자주 켜져 표면이 더 뜨겁고 건조해지기 때문으로
+//               보인다. 히터 온도와 마찬가지로 **주기도 기준선 학습 내내
+//               고정**해야 한다.
+//
+// ─────────────────────────────────────────────────────────────
 // 명령 (시리얼 모니터에서 문자 하나 + Enter)
 //   ?  도움말
 //   i  센서 상태
 //   s  단일 측정 (SHT31이 있으면 나란히 비교)
-//   c  자체 발열 측정 — BME688 온도가 SHT31보다 얼마나 높은가   ★
+//   c  자체 발열 측정 — BME680 온도가 SHT31보다 얼마나 높은가   ★
 //   w  예열 드리프트 감시 — 저항이 언제 안정되는가              ★
-//   t  반응 시험 — 알코올 솜·입김에 저항이 떨어지는가           ★
+//   t  반응 시험 — 알코올 솜·향수에 저항이 떨어지는가           ★
 //   l  CSV 로그 — 회귀 보정용 데이터 수집
 // ─────────────────────────────────────────────────────────────
 
@@ -96,7 +125,7 @@ float absoluteHumidity(float t, float rh) {
 void cmdInfo() {
   Serial.println();
   Serial.println("── 센서 상태 ──");
-  Serial.printf("  BME688   0x%02X\n", bmeAddr);
+  Serial.printf("  BME680   0x%02X\n", bmeAddr);
   Serial.printf("  SHT31    %s\n", shtOk ? "0x44 연결됨" : "없음 — 자체 발열 비교 불가");
   Serial.printf("  히터     %u℃ · %ums\n", HEATER_TEMP_C, HEATER_MS);
   Serial.println();
@@ -108,13 +137,13 @@ void cmdSingle() {
   Reading r = readAll();
   if (!r.ok) { Serial.println("  읽기 실패"); return; }
 
-  Serial.printf("  BME688  %.2f℃  %.1f%%RH  %.1f hPa\n", r.tBme, r.rhBme, r.pHpa);
+  Serial.printf("  BME680  %.2f℃  %.1f%%RH  %.1f hPa\n", r.tBme, r.rhBme, r.pHpa);
   Serial.printf("  가스저항  %.0f Ω  (%.1f kΩ)\n", r.rOhm, r.rOhm / 1000.0);
 
   if (shtOk && !isnan(r.tSht)) {
     Serial.printf("  SHT31   %.2f℃  %.1f%%RH  AH %.2f g/m³\n",
                   r.tSht, r.rhSht, absoluteHumidity(r.tSht, r.rhSht));
-    Serial.printf("  차이    온도 %+.2f℃  습도 %+.1f%%RH  (BME − SHT)\n",
+    Serial.printf("  차이    온도 %+.2f℃  습도 %+.1f%%RH  (BME680 − SHT31)\n",
                   r.tBme - r.tSht, r.rhBme - r.rhSht);
   }
   Serial.println();
@@ -122,15 +151,15 @@ void cmdSingle() {
 
 // ── 자체 발열 측정 ───────────────────────────────────────────
 //
-// BME688은 가스를 재려고 내부 히터를 320℃까지 올린다. 그 열이 같은
-// 패키지 안의 온도 센서로 새어 들어가서, BME688의 온도는 실제 공기보다
+// BME680은 가스를 재려고 내부 히터를 320℃까지 올린다. 그 열이 같은
+// 패키지 안의 온도 센서로 새어 들어가서, BME680의 온도는 실제 공기보다
 // 높게 나온다. 습도는 온도에 연동되므로 함께 낮게 나온다.
 //
 // 이게 왜 중요한가: 열이력 적산(erl.py)은 온도를 Q10 지수에 넣는다.
 // 1℃가 높게 들어가면 노화 속도가 약 7% 부풀려진다. 몇 달 적산하면
 // 무시할 수 없는 차이가 된다.
 //
-// 따라서 보관 노드에서 **온습도는 SHT31, 가스는 BME688**로 나눠 쓴다.
+// 따라서 보관 노드에서 온습도는 SHT31, 가스는 BME680으로 나눠 쓴다.
 // 이 명령은 그 차이가 실제로 얼마인지 재서 판단 근거를 남긴다.
 void cmdSelfHeat() {
   const int N = 10;
@@ -145,7 +174,7 @@ void cmdSelfHeat() {
 
   Serial.println("  두 센서를 같은 자리에 두고 10회 비교합니다. 손을 대지 마세요.");
   Serial.println();
-  Serial.println("  회차   BME688     SHT31      온도차     습도차");
+  Serial.println("  회차   BME680     SHT31      온도차     습도차");
 
   double sumT = 0, sumRh = 0;
   int n = 0;
@@ -176,8 +205,8 @@ void cmdSelfHeat() {
   if (fabs(mT) < 0.3) {
     Serial.println("  → 차이가 작습니다. 다만 원칙대로 온습도는 SHT31을 쓰는 것이 맞습니다.");
   } else {
-    Serial.println("  → 예상대로 BME688이 높게 나옵니다.");
-    Serial.println("     보관 노드에서 온습도는 SHT31, 가스는 BME688로 나눠 씁니다.");
+    Serial.println("  → 예상대로 BME680이 높게 나옵니다.");
+    Serial.println("     보관 노드에서 온습도는 SHT31, 가스는 BME680으로 나눠 씁니다.");
   }
   Serial.println();
 }
@@ -195,7 +224,9 @@ void cmdWarmup() {
   Serial.println();
   Serial.println("── 예열 드리프트 감시 ──");
   Serial.println("  5초마다 재고 30초마다 요약합니다. 아무 키나 누르면 중단합니다.");
-  Serial.println("  최소 20분은 지켜보세요. 그동안 방 안에 향수·알코올을 쓰지 마세요.");
+  Serial.println("  실측으로는 약 30분에 안정됐습니다. 그동안 방 안에 향수·알코올을 쓰지 마세요.");
+  Serial.println("  ! 이 명령의 측정 주기는 5초입니다. 다른 명령과 주기가 다르면");
+  Serial.println("    저항의 절대값이 달라지므로 값을 직접 비교하지 마세요.");
   Serial.println();
   Serial.println("  경과      저항(kΩ)   시작대비   최근1분기울기   온도    습도");
 
@@ -265,7 +296,8 @@ void cmdResponse() {
   Serial.println();
   Serial.println("── 반응 시험 ──");
   Serial.println("  1) 먼저 30초간 기준값을 잡습니다. 가만히 두세요.");
-  Serial.println("  2) 그다음 알코올 솜을 센서 5cm 앞에서 열거나 입김을 부세요.");
+  Serial.println("  2) 그다음 알코올 솜이나 향수를 센서 가까이서 분사하세요.");
+  Serial.println("     곁에 두기만 하면 반응하지 않습니다. 실측에서 확인했습니다.");
   Serial.println("  아무 키나 누르면 중단합니다.");
   Serial.println();
 
@@ -371,7 +403,7 @@ void setup() {
   Wire.begin(SDA_PIN, SCL_PIN);
 
   Serial.println();
-  Serial.println("=== 화담 CARE — BME688 브링업 ===");
+  Serial.println("=== 화담 CARE — BME680 브링업 ===");
 
   // 주소는 보드마다 다르다. SDO가 GND면 0x76, 3V3이면 0x77이다.
   // 둘 다 시도해서 잡히는 쪽을 쓴다.
@@ -380,13 +412,14 @@ void setup() {
   } else if (bme.begin(0x77)) {
     bmeAddr = 0x77;
   } else {
-    Serial.println("BME688을 찾지 못했습니다.");
+    Serial.println("BME680을 찾지 못했습니다.");
     Serial.println("  · I2C_Scanner로 0x76 또는 0x77이 잡히는지 확인");
+    Serial.println("  · 핀 이름이 SPI 기준이다. SCK가 SCL, SDI가 SDA다");
     Serial.println("  · 보드에 CS 핀이 있으면 3V3에 연결해야 I2C로 동작하는 경우가 있음");
     Serial.println("  · SDO는 띄우거나 GND(0x76) / 3V3(0x77)");
     while (1) delay(1000);
   }
-  Serial.printf("BME688 OK (0x%02X)\n", bmeAddr);
+  Serial.printf("BME680 OK (0x%02X)\n", bmeAddr);
 
   // 오버샘플링과 IIR 필터.
   // 온습도는 어차피 SHT31을 쓸 것이므로 과하게 잡지 않고, 가스 측정의
@@ -407,8 +440,8 @@ void setup() {
 
   cmdInfo();
   help();
-  Serial.println("전원을 켠 직후에는 저항이 계속 움직입니다.");
-  Serial.println("먼저 w로 언제 안정되는지 확인하세요.");
+  Serial.println("전원을 켠 직후에는 저항이 계속 움직입니다(실측 약 30분).");
+  Serial.println("먼저 w로 안정되는 것을 확인한 뒤 다른 명령으로 넘어가세요.");
 }
 
 void loop() {
