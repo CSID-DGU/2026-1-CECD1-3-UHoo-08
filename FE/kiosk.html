@@ -1,0 +1,47 @@
+<!doctype html>
+<html lang="ko">
+  <head>
+    <meta charset="UTF-8" />
+    <link rel="icon" type="image/svg+xml" href="/favicon.svg" />
+    <!--
+      키오스크는 KioskFrame이 1024×600을 통째로 확대한다. 브라우저가
+      확대·축소에 개입하면 그 계산이 어긋나므로 막는다. viewport-fit=cover는
+      아이패드 홈 화면 실행 시 안전영역까지 화면을 쓰기 위한 것.
+    -->
+    <meta
+      name="viewport"
+      content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover"
+    />
+    <title>화담 CARE 키오스크</title>
+
+    <!--
+      키오스크 manifest를 앱 manifest보다 먼저 선언한다.
+      vite-plugin-pwa가 head 끝에 앱 manifest 링크를 하나 더 끼워 넣지만,
+      브라우저는 rel=manifest 중 첫 번째만 쓰므로 이 줄이 이긴다.
+      (start_url·scope /kiosk, landscape, 다크 배경)
+
+      주의: 이 파일의 주석에 head 닫는 태그를 문자열로 적지 말 것.
+      플러그인이 처음 나오는 그 문자열을 찾아 스크립트를 끼워 넣기 때문에
+      주석 안으로 들어가 버린다(= 화면이 빈 채로 뜬다).
+    -->
+    <link rel="manifest" href="/kiosk.webmanifest" />
+
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link
+      href="https://fonts.googleapis.com/css2?family=Outfit:wght@300;400;500;600;700&display=swap"
+      rel="stylesheet"
+    />
+
+    <!-- 레터박스 여백색(KioskFrame의 LETTERBOX_BG)과 맞춘다 -->
+    <meta name="theme-color" content="#2a2d33" />
+    <meta name="apple-mobile-web-app-capable" content="yes" />
+    <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
+    <meta name="apple-mobile-web-app-title" content="화담 CARE" />
+    <link rel="apple-touch-icon" href="/apple-touch-icon.png" />
+  </head>
+  <body>
+    <div id="root"></div>
+    <script type="module" src="/src/kiosk-main.tsx"></script>
+  </body>
+</html>
