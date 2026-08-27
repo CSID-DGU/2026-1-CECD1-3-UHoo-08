@@ -1,10 +1,11 @@
-import { useEffect, useState } from "react";
+import { useState } from "react";
 import { KioskFrame } from "./KioskFrame";
 import { IdleScreen } from "./IdleScreen";
-import { TabBar, TopBar, Brand, type TabKey } from "./ui";
-import { kioskGet, KIOSK_USER_ID, API_BASE, API_BASE_FROM_ENV } from "./lib/kioskApi";
+import { PriorityScreen } from "./PriorityScreen";
+import { TabBar, TopBar, type TabKey } from "./ui";
+import { kioskGet, KIOSK_USER_ID } from "./lib/kioskApi";
 import { useKioskQuery } from "./lib/useKioskQuery";
-import type { DashboardResponse, PriorityResponse } from "./lib/types";
+import type { DashboardResponse, PriorityItem, PriorityResponse } from "./lib/types";
 
 /**
  * 키오스크 셸.
@@ -19,11 +20,18 @@ import type { DashboardResponse, PriorityResponse } from "./lib/types";
 const DASHBOARD_INTERVAL_MS = 60_000;
 const PRIORITY_INTERVAL_MS = 5 * 60_000;
 
-/** 화면 상태. 탭 4개 + 대기 화면 + 하위 화면들. */
-export type ScreenKey = "idle" | TabKey;
+/** 대기 화면 + 탭 4개 + 탭 아래로 들어가는 하위 화면들. */
+export type ScreenKey = "idle" | TabKey | "measure" | "events";
+
+/** 하위 화면에 있을 때 어느 탭이 켜져 보여야 하는지. */
+const OWNER_TAB: Record<"measure" | "events", TabKey> = {
+  measure: "priority",
+  events: "priority",
+};
 
 export function KioskApp() {
   const [screen, setScreen] = useState<ScreenKey>("idle");
+  const [target, setTarget] = useState<PriorityItem | null>(null);
 
   const dashboard = useKioskQuery<DashboardResponse>(
     () => kioskGet<DashboardResponse>("/api/care/dashboard", { user_id: KIOSK_USER_ID }),
@@ -35,171 +43,141 @@ export function KioskApp() {
     PRIORITY_INTERVAL_MS
   );
 
+  const activeTab: TabKey =
+    screen === "idle"
+      ? "priority"
+      : screen === "measure" || screen === "events"
+        ? OWNER_TAB[screen]
+        : screen;
+
+  const goHome = () => setScreen("idle");
+
   return (
     <KioskFrame>
-      <div className="flex h-full flex-col">
-        {screen === "idle" ? (
+      {screen === "idle" ? (
+        <div className="flex h-full flex-col">
           <IdleScreen
             dashboard={dashboard.data}
             priority={priority.data}
             error={dashboard.error}
             onEnter={() => setScreen("priority")}
           />
-        ) : (
-          <PlaceholderScreen
-            title={screen}
-            note="해당 탭은 다음 단계에서 구현합니다."
-            dashboard={dashboard}
-            priority={priority}
-            onTab={setScreen}
-            onHome={() => setScreen("idle")}
-          />
-        )}
-
-        <TabBar
-          active={screen === "idle" ? null : screen}
-          onChange={(t) => setScreen(t)}
+          <TabBar active={null} onChange={(t) => setScreen(t)} />
+        </div>
+      ) : screen === "priority" ? (
+        <PriorityScreen
+          priority={priority}
+          dashboard={dashboard.data}
+          activeTab={activeTab}
+          onTab={setScreen}
+          onHome={goHome}
+          onMeasure={(item) => {
+            setTarget(item);
+            setScreen("measure");
+          }}
+          onEvents={() => setScreen("events")}
         />
-      </div>
+      ) : screen === "measure" ? (
+        <Pending
+          title="광학 측정"
+          back="← 점검 우선순위"
+          onBack={() => setScreen("priority")}
+          activeTab={activeTab}
+          onTab={setScreen}
+          note={
+            target
+              ? `${target.name ?? "선택한 제품"} 측정 흐름은 다음 단계에서 구현합니다.`
+              : "측정 흐름은 다음 단계에서 구현합니다."
+          }
+          detail="백색 표준판으로 기준을 잡고 → 측정 → 확인 항목 안내 → 사용자 피드백 순으로 네 화면이 필요합니다. AS7341 재장착 반복성을 더 낮춘 뒤에 붙입니다."
+        />
+      ) : screen === "events" ? (
+        <Pending
+          title="이벤트 이력"
+          back="← 점검 우선순위"
+          onBack={() => setScreen("priority")}
+          activeTab={activeTab}
+          onTab={setScreen}
+          note="risk_events 조회 API가 아직 없습니다."
+          detail="GET /api/care/events 추가가 먼저입니다. 고온 노출·이탈 이벤트를 시간순으로 보여주는 화면입니다."
+        />
+      ) : screen === "skin" ? (
+        <Pending
+          title="피부"
+          back="← 대기 화면"
+          onBack={goHome}
+          activeTab={activeTab}
+          onTab={setScreen}
+          note="AS7341 피부 측정 흐름이 아직 없습니다."
+          detail="skin_measurements 테이블은 있으나 측정 절차와 조회 API가 남았습니다. 광학 지그 반복성이 정리된 뒤에 붙입니다."
+        />
+      ) : screen === "reco" ? (
+        <Pending
+          title="추천"
+          back="← 대기 화면"
+          onBack={goHome}
+          activeTab={activeTab}
+          onTab={setScreen}
+          note="기존 추천 파이프라인을 키오스크에 붙이는 작업이 남았습니다."
+          detail="모바일 앱의 추천 API를 그대로 쓰되, 키오스크는 로그인이 없어 사용자 식별 방법을 먼저 정해야 합니다."
+        />
+      ) : (
+        <Pending
+          title="환경"
+          back="← 대기 화면"
+          onBack={goHome}
+          activeTab={activeTab}
+          onTab={setScreen}
+          note="노드 카드와 24시간 차트가 들어갈 자리입니다."
+          detail="차트에 필요한 시계열이 현재 API에 없습니다. GET /api/care/history 추가가 선행되어야 합니다."
+        />
+      )}
     </KioskFrame>
   );
 }
 
 /**
- * 1단계 확인용 임시 화면.
+ * 아직 구현하지 않은 화면.
  *
- * 확대 배율이 맞는지, 두 API가 실제로 응답하는지, 폴링이 도는지를
- * 아이패드에서 눈으로 확인하기 위한 것이다. 2단계부터 실제 화면으로
- * 하나씩 교체한다.
+ * 빈 화면을 두지 않는 이유: 시연 중 잘못 눌렀을 때 아무것도 없으면
+ * 고장처럼 보인다. 무엇이 들어올 자리이고 무엇이 선행되어야 하는지
+ * 적어두면 화면이 비어 보이지 않는다.
  */
-function PlaceholderScreen({
+function Pending({
   title,
   note,
-  dashboard,
-  priority,
+  detail,
+  back,
+  onBack,
+  activeTab,
   onTab,
-  onHome,
 }: {
   title: string;
   note: string;
-  dashboard: ReturnType<typeof useKioskQuery<DashboardResponse>>;
-  priority: ReturnType<typeof useKioskQuery<PriorityResponse>>;
-  onTab: (t: ScreenKey) => void;
-  onHome?: () => void;
+  detail: string;
+  back: string;
+  onBack: () => void;
+  activeTab: TabKey;
+  onTab: (t: TabKey) => void;
 }) {
-  const [now, setNow] = useState(new Date());
-  useEffect(() => {
-    const t = window.setInterval(() => setNow(new Date()), 10_000);
-    return () => window.clearInterval(t);
-  }, []);
-
-  const clock = now.toLocaleString("ko-KR", {
-    month: "long",
-    day: "numeric",
-    weekday: "short",
-    hour: "2-digit",
-    minute: "2-digit",
-    hour12: false,
-  });
-
   return (
-    <>
+    <div className="flex h-full flex-col">
       <TopBar
         left={
-          onHome ? (
-            <button onClick={onHome} className="py-1.5 text-[18px] font-semibold text-gray-300">
-              ← 대기 화면
-            </button>
-          ) : (
-            <Brand />
-          )
+          <button onClick={onBack} className="text-[18px] font-semibold text-gray-300">
+            {back}
+          </button>
         }
-        right={clock}
+        right={title}
       />
 
-      <div className="flex-1 overflow-hidden px-[26px] py-[18px]">
-        <div className="text-[24px] font-bold">{title}</div>
-        <div className="mt-1 text-[16px] text-gray-300">{note}</div>
-
-        <div className="mt-4 grid grid-cols-2 gap-3">
-          <StatusCard
-            label="GET /api/care/dashboard"
-            state={dashboard}
-            summary={(d) =>
-              `노드 ${d.totals.nodes ?? "?"}개 · 온라인 ${d.totals.online ?? "?"} · 측정 ${
-                d.totals.readings ?? "?"
-              }건`
-            }
-          />
-          <StatusCard
-            label="GET /api/care/priority"
-            state={priority}
-            summary={(p) =>
-              `보유 ${p.summary.total} · 산출 ${p.summary.scored} · 확인 필요 ${p.summary.needs_check}`
-            }
-          />
-        </div>
-
-        <div className="mt-3 rounded-[14px] border border-primary-100 bg-primary-50 p-4 text-[15px] text-gray-400">
-          <div>
-            API 기준 주소 <b>{API_BASE}</b> ({API_BASE_FROM_ENV ? "환경변수" : "기본값"})
-          </div>
-          <div className="mt-1">사용자 {KIOSK_USER_ID}</div>
-          <div className="mt-1">
-            표시 영역 {window.innerWidth} × {window.innerHeight} · 프레임 1024 × 600
-          </div>
-        </div>
-
-        <button
-          onClick={() => onTab("priority")}
-          className="mt-4 h-[62px] rounded-[14px] bg-primary-500 px-[34px] text-[20px] font-semibold text-white"
-        >
-          점검 탭으로
-        </button>
-      </div>
-    </>
-  );
-}
-
-function StatusCard<T>({
-  label,
-  state,
-  summary,
-}: {
-  label: string;
-  state: ReturnType<typeof useKioskQuery<T>>;
-  summary: (data: T) => string;
-}) {
-  const { data, error, loading, lastUpdated, refetch } = state;
-
-  return (
-    <div className="rounded-[16px] bg-white p-[17px_19px]">
-      <div className="flex items-center justify-between">
-        <span className="text-[15px] font-medium text-gray-300">{label}</span>
-        <button onClick={refetch} className="text-[14px] font-medium text-primary-500">
-          새로고침
-        </button>
+      <div className="flex flex-1 flex-col items-center justify-center gap-3 px-[80px] text-center">
+        <div className="text-[28px] font-bold">{title}</div>
+        <div className="text-[19px] text-gray-400">{note}</div>
+        <div className="max-w-[640px] text-[16px] leading-[1.6] text-gray-300">{detail}</div>
       </div>
 
-      {loading && !data ? (
-        <div className="mt-2 text-[18px] text-gray-300">불러오는 중…</div>
-      ) : data ? (
-        <div className="mt-2 text-[18px] font-medium">{summary(data)}</div>
-      ) : null}
-
-      {error ? (
-        <div className="mt-2 rounded bg-gray-100 p-2 text-[13px] break-all">
-          <div className="font-semibold text-[#E05A5A]">{error.summary}</div>
-          <div className="mt-0.5">{error.message}</div>
-          <div className="mt-0.5 text-gray-300">{error.url}</div>
-        </div>
-      ) : null}
-
-      {lastUpdated ? (
-        <div className="mt-2 text-[13px] text-gray-300">
-          갱신 {lastUpdated.toLocaleTimeString("ko-KR", { hour12: false })}
-        </div>
-      ) : null}
+      <TabBar active={activeTab} onChange={onTab} />
     </div>
   );
 }
