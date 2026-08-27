@@ -1,5 +1,6 @@
 import { useEffect, useState } from "react";
 import { KioskFrame } from "./KioskFrame";
+import { IdleScreen } from "./IdleScreen";
 import { TabBar, TopBar, Brand, type TabKey } from "./ui";
 import { kioskGet, KIOSK_USER_ID, API_BASE, API_BASE_FROM_ENV } from "./lib/kioskApi";
 import { useKioskQuery } from "./lib/useKioskQuery";
@@ -38,12 +39,11 @@ export function KioskApp() {
     <KioskFrame>
       <div className="flex h-full flex-col">
         {screen === "idle" ? (
-          <PlaceholderScreen
-            title="대기 화면"
-            note="2단계에서 노드 카드·24시간 차트·알림 바를 채웁니다."
-            dashboard={dashboard}
-            priority={priority}
-            onTab={setScreen}
+          <IdleScreen
+            dashboard={dashboard.data}
+            priority={priority.data}
+            error={dashboard.error}
+            onEnter={() => setScreen("priority")}
           />
         ) : (
           <PlaceholderScreen
