@@ -1,67 +1,96 @@
 import { useEffect, useState, type ReactNode } from "react";
 
 /**
- * 목업 크기(1024×600)를 고정하고 화면에 맞춰 통째로 확대한다.
+ * 화면을 꽉 채우는 프레임.
  *
- * 왜 반응형으로 짜지 않는가: 목업이 1024×600 기준으로 픽셀 단위까지 잡혀
- * 있고, 아이패드 한 대에서만 돌아가면 된다. 반응형으로 다시 짜면 목업과
- * 어긋나기 시작하고, 그 차이를 맞추는 데 남은 시간을 쓰게 된다.
+ * ── 처음 방식과 무엇이 다른가 ────────────────────────────────
+ * 처음에는 1024×600을 통째로 고정하고 min(가로배율, 세로배율)로 확대했다.
+ * 그러면 아이패드(1194×802)에서 1194×700이 되고 위아래로 102px이 남는다.
+ * 문제는 남는 것이 화면 여백일 뿐, **콘텐츠는 여전히 600px 안에 갇힌다**는
+ * 점이다. 실제로 점검 탭에서 세 번째 카드가 잘리고 버튼이 붙어버렸다.
  *
- * 아이패드 프로 11인치 전체화면 실측은 1194×802였다.
- *   가로 배율 1194/1024 = 1.166
- *   세로 배율  802/600  = 1.337
- * 작은 쪽(1.166)을 쓰면 1194×700이 되고 위아래로 102px이 남는다.
- * 그 여백은 배경색으로 채운다. 큰 쪽을 쓰면 좌우가 잘린다.
+ * 그래서 가로만 1024로 고정하고 세로는 화면에 맞춰 늘린다.
+ *
+ *   배율     = 1194 / 1024 = 1.166
+ *   논리 높이 =  802 / 1.166 = 688
+ *   결과     = 1024×688을 1.166배 → 1194×802  (정확히 일치)
+ *
+ * 가로세로를 따로 늘리면(scaleX ≠ scaleY) 글자가 15% 세로로 늘어나 보인다.
+ * 여기서는 배율이 하나라 왜곡이 없고, 잘리는 곳도 없다. 늘어난 88px은
+ * 본문 영역이 가져간다. 화면들이 flex 세로 배치라 자동으로 채워진다.
+ *
+ * ── 화면이 아주 납작한 경우 ──────────────────────────────────
+ * 가로 기준으로 잡았을 때 논리 높이가 600px보다 작아지면, 목업이 전제한
+ * 최소 높이가 무너진다. 그때는 반대로 세로를 600으로 고정하고 가로를
+ * 늘린다. 어느 쪽이든 화면은 꽉 찬다.
  */
-const FRAME_W = 1024;
-const FRAME_H = 600;
 
-/** 목업 body 배경과 같은 색. 위아래 여백을 이 색으로 채운다. */
-const LETTERBOX_BG = "#2a2d33";
+/** 목업 기준 가로. 이 값을 바꾸면 모든 화면의 글자 크기가 함께 바뀐다. */
+const BASE_W = 1024;
 
-function computeScale(): number {
+/** 목업이 전제한 최소 세로. 이보다 납작해지면 기준을 세로로 바꾼다. */
+const MIN_H = 600;
+
+/** 확대 전 잠깐 보이는 배경. 목업 body 색과 같다. */
+const BASE_BG = "#2a2d33";
+
+type Layout = { w: number; h: number; scale: number };
+
+function computeLayout(): Layout {
   // visualViewport는 iOS에서 주소창·툴바를 제외한 실제 표시 영역을 준다.
   const vw = window.visualViewport?.width ?? window.innerWidth;
   const vh = window.visualViewport?.height ?? window.innerHeight;
-  return Math.min(vw / FRAME_W, vh / FRAME_H);
+
+  const scaleByWidth = vw / BASE_W;
+  const logicalH = vh / scaleByWidth;
+
+  if (logicalH >= MIN_H) {
+    // 보통의 경우. 가로를 기준으로 잡고 세로를 늘린다.
+    return { w: BASE_W, h: logicalH, scale: scaleByWidth };
+  }
+
+  // 아주 납작한 화면. 세로를 기준으로 잡고 가로를 늘린다.
+  const scaleByHeight = vh / MIN_H;
+  return { w: vw / scaleByHeight, h: MIN_H, scale: scaleByHeight };
 }
 
 export function KioskFrame({ children }: { children: ReactNode }) {
-  const [scale, setScale] = useState(computeScale);
+  const [layout, setLayout] = useState<Layout>(computeLayout);
 
   useEffect(() => {
-    const update = () => setScale(computeScale());
+    const update = () => setLayout(computeLayout());
 
     window.addEventListener("resize", update);
     window.addEventListener("orientationchange", update);
     window.visualViewport?.addEventListener("resize", update);
 
     // 홈 화면에서 실행한 직후에는 표시 영역이 한 박자 늦게 확정된다.
-    const t = window.setTimeout(update, 300);
+    // 회전 직후에도 값이 바로 갱신되지 않아 두 번 확인한다.
+    const t1 = window.setTimeout(update, 300);
+    const t2 = window.setTimeout(update, 1000);
 
     return () => {
       window.removeEventListener("resize", update);
       window.removeEventListener("orientationchange", update);
       window.visualViewport?.removeEventListener("resize", update);
-      window.clearTimeout(t);
+      window.clearTimeout(t1);
+      window.clearTimeout(t2);
     };
   }, []);
 
   return (
-    <div
-      className="fixed inset-0 flex items-center justify-center overflow-hidden"
-      style={{ background: LETTERBOX_BG }}
-    >
+    <div className="fixed inset-0 overflow-hidden" style={{ background: BASE_BG }}>
       <div
         style={{
-          width: FRAME_W,
-          height: FRAME_H,
-          transform: `scale(${scale})`,
-          transformOrigin: "center center",
-          // 확대해도 글자가 뭉개지지 않도록 하위 요소를 별도 레이어로 올린다
+          width: layout.w,
+          height: layout.h,
+          transform: `scale(${layout.scale})`,
+          // 좌상단 기준으로 확대해야 위치 계산이 필요 없다.
+          // 가운데 기준이면 확대 후 좌표가 밀려 여백 계산을 따로 해야 한다.
+          transformOrigin: "top left",
           willChange: "transform",
         }}
-        className="relative overflow-hidden rounded-[14px] bg-gray-100"
+        className="relative overflow-hidden bg-gray-100"
       >
         {children}
       </div>
@@ -69,4 +98,10 @@ export function KioskFrame({ children }: { children: ReactNode }) {
   );
 }
 
-export const KIOSK_FRAME_SIZE = { width: FRAME_W, height: FRAME_H };
+/**
+ * 목업 기준 크기.
+ *
+ * 세로는 화면에 따라 늘어나므로 이 값은 "최소 높이"라는 뜻이다.
+ * 절대 위치로 무언가를 배치할 때 이 값을 높이로 쓰면 안 된다.
+ */
+export const KIOSK_FRAME_SIZE = { width: BASE_W, minHeight: MIN_H };
