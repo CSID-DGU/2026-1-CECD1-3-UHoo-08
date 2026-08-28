@@ -23,6 +23,7 @@ from typing import Any, Dict, List, Optional, Tuple
 import httpx
 
 from config import settings
+from services.iot.cache import TTLCache
 
 logger = logging.getLogger(__name__)
 
@@ -39,6 +40,16 @@ OPEN_METEO_FORECAST = "https://api.open-meteo.com/v1/forecast"
 TIMEOUT_S = 6.0
 
 KST = timezone(timedelta(hours=9))
+
+# 실외 값 캐시.
+#
+# 10분인 이유: 초단기실황이 매시 갱신되고 에어코리아도 1시간 단위다.
+# 그보다 자주 불러도 같은 값이 온다. 키오스크 폴링 주기(10분)와 맞췄다.
+#
+# 갱신에 실패하면 만료된 값이라도 계속 쓴다. 응답의 cache_age_s로 언제
+# 받은 값인지 알 수 있다.
+OUTDOOR_TTL_S = 600.0
+_outdoor_cache = TTLCache(OUTDOOR_TTL_S, name="outdoor")
 
 # 시도 16곳.
 #
@@ -480,14 +491,14 @@ def fetch_open_meteo(lat: float, lon: float) -> Optional[Dict[str, Any]]:
 
 # ── 조립 ─────────────────────────────────────────────────────────
 
-def fetch_outdoor(region: Optional[str] = None) -> Optional[Dict[str, Any]]:
+def _fetch_outdoor_uncached(name: str, cfg: Dict[str, Any]) -> Optional[Dict[str, Any]]:
     """
-    실외 현재값. 항목별로 따로 부르고, 실패한 것만 비운다.
+    실외 현재값을 실제로 조회한다. 항목별로 따로 부르고 실패한 것만 비운다.
 
     기온과 미세먼지가 둘 다 없으면 None을 돌려준다. 전부 null인 카드를
-    보여주느니 "불러오지 못했습니다"가 낫다.
+    보여주느니 "불러오지 못했습니다"가 낫다. None을 돌려주면 캐시가
+    이전 값을 계속 쓰게 된다.
     """
-    name, cfg = resolve_region(region)
 
     kma = fetch_kma_current(cfg["grid"])
     uv = fetch_uv(cfg["area_no"])
@@ -528,6 +539,38 @@ def fetch_outdoor(region: Optional[str] = None) -> Optional[Dict[str, Any]]:
         "pm25": (air or {}).get("pm25"),
         "source": " · ".join(sources) if sources else None,
     }
+
+
+def fetch_outdoor(
+    region: Optional[str] = None,
+    *,
+    force: bool = False,
+) -> Optional[Dict[str, Any]]:
+    """
+    실외 현재값. 10분간 캐시한다.
+
+    force=True면 캐시를 무시하고 다시 부른다. 시연 직전에 값을 새로
+    받아두고 싶을 때 쓴다.
+
+    응답에 cache_age_s를 넣어, 몇 초 전에 받은 값인지 화면이 알 수 있게 한다.
+    """
+    name, cfg = resolve_region(region)
+
+    if force:
+        _outdoor_cache.invalidate(name)
+
+    value, age, from_cache = _outdoor_cache.get_or_load(
+        name, lambda: _fetch_outdoor_uncached(name, cfg)
+    )
+
+    if value is None:
+        return None
+
+    # 캐시된 dict를 그대로 돌려주면 호출한 쪽에서 고쳤을 때 캐시가 오염된다.
+    out = dict(value)
+    out["cache_age_s"] = round(age, 1)
+    out["from_cache"] = from_cache
+    return out
 
 
 if __name__ == "__main__":
