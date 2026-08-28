@@ -17,7 +17,7 @@ import logging
 import math
 
 from datetime import datetime, timedelta, timezone
-from typing import Any, Dict, Optional, Tuple
+from typing import Any, Dict, List, Optional, Tuple
 
 import httpx
 
@@ -36,23 +36,43 @@ TIMEOUT_S = 6.0
 
 KST = timezone(timedelta(hours=9))
 
-# 지역별 좌표·코드.
-#   lat/lon    기상청 격자 변환용
-#   area_no    생활기상지수 행정구역 코드
-#   station    에어코리아 측정소 이름
+# 시도 17곳.
 #
-# area_no와 station은 실제 호출로 확인한 값이다. 지역을 추가할 때는
-# scripts/check_gov_api.py로 응답이 오는지 먼저 확인해야 한다.
+# 처음에는 구 단위 세 곳만 넣었는데, 사용자가 사는 곳이 그 셋일 리 없다.
+# 전국 시·군·구를 다 넣으려면 기상청·에어코리아 코드표를 정리해야 해서,
+# 우선 시도 단위로 간다.
+#
+#   lat/lon    기상청 격자 변환용 — 시도청 소재지 좌표
+#   area_no    생활기상지수 행정구역 코드 — 시도청이 있는 구/시
+#   sido       에어코리아 시도명
+#
+# area_no는 기상청 지역코드표의 10자리 행정구역 코드다. 시도 단위 코드가
+# 통하는지 확인되지 않아 시도청 소재지의 구/시 코드를 쓴다. 자외선은 시도
+# 안에서 크게 다르지 않으므로 대표값으로 충분하다.
+#
+# 강원(51)과 전북(52)은 특별자치도 전환으로 코드가 바뀌었다. 특히 확인이
+# 필요하다. scripts/check_region_codes.py로 17곳을 한 번에 검증한다.
 REGIONS: Dict[str, Dict[str, Any]] = {
-    "인천 부평": {"lat": 37.5074, "lon": 126.7218,
-                  "area_no": "2823700000", "station": "부평"},
-    "서울 중구": {"lat": 37.5636, "lon": 126.9976,
-                  "area_no": "1114000000", "station": "중구"},
-    "광주 서구": {"lat": 35.1526, "lon": 126.8899,
-                  "area_no": "2914000000", "station": "서구"},
+    "서울": {"lat": 37.5665, "lon": 126.9780, "area_no": "1114000000", "sido": "서울"},
+    "부산": {"lat": 35.1796, "lon": 129.0756, "area_no": "2647000000", "sido": "부산"},
+    "대구": {"lat": 35.8714, "lon": 128.6014, "area_no": "2711000000", "sido": "대구"},
+    "인천": {"lat": 37.4563, "lon": 126.7052, "area_no": "2823700000", "sido": "인천"},
+    "광주": {"lat": 35.1595, "lon": 126.8526, "area_no": "2914000000", "sido": "광주"},
+    "대전": {"lat": 36.3504, "lon": 127.3845, "area_no": "3017000000", "sido": "대전"},
+    "울산": {"lat": 35.5384, "lon": 129.3114, "area_no": "3114000000", "sido": "울산"},
+    "세종": {"lat": 36.4800, "lon": 127.2890, "area_no": "3611000000", "sido": "세종"},
+    "경기": {"lat": 37.2636, "lon": 127.0286, "area_no": "4111000000", "sido": "경기"},
+    "강원": {"lat": 37.8813, "lon": 127.7300, "area_no": "5111000000", "sido": "강원"},
+    "충북": {"lat": 36.6424, "lon": 127.4890, "area_no": "4311000000", "sido": "충북"},
+    "충남": {"lat": 36.6588, "lon": 126.6728, "area_no": "4480000000", "sido": "충남"},
+    "전북": {"lat": 35.8242, "lon": 127.1480, "area_no": "5211000000", "sido": "전북"},
+    "전남": {"lat": 34.8161, "lon": 126.4630, "area_no": "4684000000", "sido": "전남"},
+    "경북": {"lat": 36.5760, "lon": 128.5056, "area_no": "4717000000", "sido": "경북"},
+    "경남": {"lat": 35.2383, "lon": 128.6924, "area_no": "4812000000", "sido": "경남"},
+    "제주": {"lat": 33.4996, "lon": 126.5312, "area_no": "5011000000", "sido": "제주"},
 }
 
-DEFAULT_REGION = "인천 부평"
+DEFAULT_REGION = "인천"
 
 
 def resolve_region(name: Optional[str]) -> Tuple[str, Dict[str, Any]]:
@@ -287,31 +307,60 @@ def fetch_uv(area_no: str) -> Optional[Dict[str, Any]]:
 
 # ── 에어코리아 (미세먼지) ────────────────────────────────────────
 
-def fetch_air(station: str) -> Optional[Dict[str, Any]]:
+# 이 API는 응답이 느릴 때가 잦다. 실제로 504 Gateway Timeout이 관측됐다.
+# 그래서 다른 곳보다 넉넉히 기다리고 한 번 더 시도한다.
+AIR_TIMEOUT_S = 10.0
+AIR_RETRY = 2
+
+
+def _median(values: List[float]) -> Optional[float]:
+    if not values:
+        return None
+    s = sorted(values)
+    n = len(s)
+    return s[n // 2] if n % 2 else (s[n // 2 - 1] + s[n // 2]) / 2.0
+
+
+def fetch_air(sido: str) -> Optional[Dict[str, Any]]:
     """
-    측정소 실시간 PM2.5·PM10. 실패하면 None.
+    시도별 실시간 측정정보. 실패하면 None.
 
-    기상청과 응답 구조가 다르다. items가 곧바로 배열이며 item 키가 없다.
-    최신 항목이 앞에 온다.
+    측정소 하나가 아니라 시도 전체를 받아 **중앙값**을 쓴다. 이유는 둘이다.
 
+      · 측정소 이름을 지역마다 관리하지 않아도 된다
+      · 측정소 하나가 점검 중이어도 나머지로 값이 나온다
+
+    평균이 아니라 중앙값인 이유는, 공사장 옆 측정소처럼 유난히 높은 값이
+    하나 섞여도 전체가 끌려가지 않게 하기 위해서다.
+
+    응답 구조가 기상청과 다르다. items가 곧바로 배열이며 item 키가 없다.
     pm25Flag가 null이 아니면 통신 장애·점검 중이라 값을 믿을 수 없다.
-    그런 항목은 건너뛰고 다음(한 시간 전) 값을 쓴다.
     """
     key = _key()
     if not key:
         return None
 
-    try:
-        with httpx.Client(timeout=TIMEOUT_S) as client:
-            r = client.get(AIRKOREA_URL, params={
-                "serviceKey": key, "returnType": "json",
-                "numOfRows": 5, "pageNo": 1,
-                "stationName": station, "dataTerm": "DAILY", "ver": "1.3",
-            })
-            r.raise_for_status()
-            body = r.json()
-    except Exception:
-        logger.exception("대기오염 조회 실패 station=%s", station)
+    body = None
+    for attempt in range(AIR_RETRY):
+        try:
+            with httpx.Client(timeout=AIR_TIMEOUT_S) as client:
+                r = client.get(AIRKOREA_URL, params={
+                    "serviceKey": key, "returnType": "json",
+                    # 경기도는 측정소가 100곳이 넘는다. 넉넉히 받는다.
+                    "numOfRows": 200, "pageNo": 1,
+                    "sidoName": sido, "ver": "1.3",
+                })
+                r.raise_for_status()
+                body = r.json()
+            break
+        except Exception:
+            logger.warning("대기오염 조회 실패 sido=%s (%d/%d)",
+                           sido, attempt + 1, AIR_RETRY)
+            if attempt == AIR_RETRY - 1:
+                logger.exception("대기오염 조회 최종 실패 sido=%s", sido)
+                return None
+
+    if body is None:
         return None
 
     resp = body.get("response") or {}
@@ -323,37 +372,44 @@ def fetch_air(station: str) -> Optional[Dict[str, Any]]:
 
     items = (resp.get("body") or {}).get("items") or []
     if not items:
-        # 측정소 이름이 틀리면 여기가 빈다.
-        logger.warning("대기오염 항목 없음. stationName=%s 확인 필요", station)
+        logger.warning("대기오염 항목 없음. sidoName=%s 확인 필요", sido)
         return None
 
-    for it in items:
-        if it.get("pm25Flag") is not None:
-            # 통신 장애·점검 중. 다음 시각으로 넘어간다.
-            continue
-        pm25 = _num(it.get("pm25Value"))
-        if pm25 is None:
-            continue
+    pm25_vals: List[float] = []
+    pm10_vals: List[float] = []
+    latest_time = None
 
-        observed = None
+    for it in items:
+        if it.get("pm25Flag") is None:
+            v = _num(it.get("pm25Value"))
+            if v is not None:
+                pm25_vals.append(v)
+        if it.get("pm10Flag") is None:
+            v = _num(it.get("pm10Value"))
+            if v is not None:
+                pm10_vals.append(v)
+
         raw = it.get("dataTime")
-        if raw:
+        if raw and latest_time is None:
             try:
-                observed = datetime.strptime(str(raw).strip(), "%Y-%m-%d %H:%M") \
+                latest_time = datetime.strptime(str(raw).strip(), "%Y-%m-%d %H:%M") \
                     .replace(tzinfo=KST).isoformat()
             except ValueError:
-                # 24:00 표기가 오는 경우가 있다. 그때는 시각을 비운다.
-                logger.warning("측정시각 파싱 실패 %r", raw)
+                # 24:00 표기가 오는 경우가 있다.
+                pass
 
-        return {
-            "pm25": pm25,
-            "pm10": _num(it.get("pm10Value")),
-            "observed_at": observed,
-            "station": station,
-        }
+    pm25 = _median(pm25_vals)
+    if pm25 is None:
+        logger.warning("대기오염 유효값 없음 sido=%s", sido)
+        return None
 
-    logger.warning("대기오염 유효값 없음 station=%s", station)
-    return None
+    return {
+        "pm25": pm25,
+        "pm10": _median(pm10_vals),
+        "observed_at": latest_time,
+        "sido": sido,
+        "station_n": len(pm25_vals),
+    }
 
 
 # ── Open-Meteo (기온·습도 최후 대체) ─────────────────────────────
@@ -404,7 +460,7 @@ def fetch_outdoor(region: Optional[str] = None) -> Optional[Dict[str, Any]]:
 
     kma = fetch_kma_current(cfg["lat"], cfg["lon"])
     uv = fetch_uv(cfg["area_no"])
-    air = fetch_air(cfg["station"])
+    air = fetch_air(cfg["sido"])
 
     sources = []
     temp = humid = None
@@ -425,7 +481,7 @@ def fetch_outdoor(region: Optional[str] = None) -> Optional[Dict[str, Any]]:
         sources.append("기상청 생활기상지수 예보")
 
     if air:
-        sources.append(f"에어코리아 {air['station']} 측정소")
+        sources.append(f"에어코리아 {air['sido']} 측정소 {air['station_n']}곳 중앙값")
         observed = observed or air.get("observed_at")
 
     if temp is None and (air is None or air.get("pm25") is None):
@@ -449,8 +505,8 @@ if __name__ == "__main__":
     print("지역별 좌표·코드")
     for _name, _cfg in REGIONS.items():
         _nx, _ny = dfs_xy_conv(_cfg["lat"], _cfg["lon"])
-        print(f"  {_name:<12} nx={_nx} ny={_ny}  "
-              f"areaNo={_cfg['area_no']}  측정소={_cfg['station']}")
+        print(f"  {_name:<6} nx={_nx:>3} ny={_ny:>3}  "
+              f"areaNo={_cfg['area_no']}  시도={_cfg['sido']}")
 
     print()
     print(f"초단기실황 발표  {_ncst_base()}")
