@@ -39,5 +39,7 @@ class Settings(BaseSettings):
     IOT_API_KEY: str = ""          # 비어 있으면 인증 생략 (개발용)
     IOT_MAX_BATCH: int = 288       # 10분 주기 × 2일치
 
+    # 기상청 단기예보 (공공데이터포털)
+    KMA_SERVICE_KEY: str = ""
 
 settings = Settings()
