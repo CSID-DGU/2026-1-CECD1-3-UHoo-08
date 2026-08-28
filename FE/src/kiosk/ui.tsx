@@ -25,7 +25,13 @@ export const BAND_STYLE = {
 
 export function TopBar({ left, right }: { left: ReactNode; right?: ReactNode }) {
   return (
-    <div className="flex flex-none items-center justify-between border-b border-primary-100 bg-primary-50 px-[26px] pt-4 pb-[13px]">
+    // 홈 화면 앱으로 실행하면 iOS가 이 자리에 시간·배터리를 얹는다.
+    // 배경(primary-50)은 그대로 화면 맨 위까지 올라가고, 글자만 안전영역
+    // 만큼 내려간다. pt-4(16px)에 안전영역을 더한 값이다.
+    <div
+      className="flex flex-none items-center justify-between border-b border-primary-100 bg-primary-50 px-[26px] pb-[13px]"
+      style={{ paddingTop: "calc(16px + var(--kiosk-safe-top, 0px))" }}
+    >
       {left}
       {right ? <div className="text-[18px] font-medium text-gray-300 tabular-nums">{right}</div> : null}
     </div>
@@ -60,7 +66,11 @@ export function TabBar({
 }) {
   return (
     // 터치 타겟 68px. 목업 기준이며 손가락으로 누르는 화면이라 줄이지 않는다.
-    <div className="grid flex-none grid-cols-4 border-t border-gray-200 bg-white">
+    // 아래쪽은 홈 인디케이터에 가리지 않도록 안전영역만큼 띄운다.
+    <div
+      className="grid flex-none grid-cols-4 border-t border-gray-200 bg-white"
+      style={{ paddingBottom: "var(--kiosk-safe-bottom, 0px)" }}
+    >
       {TABS.map((t) => {
         const on = active === t.key;
         return (
