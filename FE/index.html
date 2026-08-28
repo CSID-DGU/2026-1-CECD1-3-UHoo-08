@@ -3,7 +3,15 @@
   <head>
     <meta charset="UTF-8" />
     <link rel="icon" type="image/svg+xml" href="/favicon.svg" />
-    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <!--
+      viewport-fit=cover: 홈 화면에서 실행했을 때 화면 맨 위(상태 표시줄)
+      까지 웹 콘텐츠가 올라가게 한다. 이게 없으면 env(safe-area-inset-*)이
+      전부 0으로 나와 아래 안전영역 처리가 동작하지 않는다.
+    -->
+    <meta
+      name="viewport"
+      content="width=device-width, initial-scale=1.0, viewport-fit=cover"
+    />
     <title>BeautyMatch</title>
     <link rel="preconnect" href="https://fonts.googleapis.com" />
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
@@ -13,7 +21,14 @@
     />
     <meta name="theme-color" content="#E8E4FF" />
     <meta name="apple-mobile-web-app-capable" content="yes" />
-    <meta name="apple-mobile-web-app-status-bar-style" content="default" />
+    <!--
+      default는 상태 표시줄이 불투명한 띠로 그려지고 그 아래부터 웹 콘텐츠가
+      시작된다. 앱 배경과 분리돼 보이는 원인이다. black-translucent이면
+      상태 표시줄이 투명해지고 우리 배경 위에 시간·배터리만 얹힌다.
+      글자색은 iOS가 아래 배경 밝기를 보고 알아서 정한다.
+      (kiosk.html은 이미 같은 설정이다)
+    -->
+    <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
     <meta name="apple-mobile-web-app-title" content="화담" />
     <link rel="apple-touch-icon" href="/apple-touch-icon.png" />
   </head>

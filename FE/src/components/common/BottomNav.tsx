@@ -57,7 +57,15 @@ export function BottomNav() {
   const centerActive = pathname.startsWith("/recommendation");
 
   return (
-    <nav className="fixed bottom-0 left-1/2 grid h-[72px] w-full max-w-[430px] -translate-x-1/2 grid-cols-3 items-center border-t border-gray-100 bg-white px-4">
+    // viewport-fit=cover로 화면 맨 아래까지 콘텐츠가 내려가므로, 홈 인디케이터
+    // 높이만큼 바닥을 띄운다. 흰 배경은 아래까지 그대로 이어진다.
+    <nav
+      className="fixed bottom-0 left-1/2 grid w-full max-w-[430px] -translate-x-1/2 grid-cols-3 items-center border-t border-gray-100 bg-white px-4"
+      style={{
+        height: "calc(72px + var(--safe-bottom))",
+        paddingBottom: "var(--safe-bottom)",
+      }}
+    >
       <button
         className={`mx-auto flex flex-col items-center gap-1 ${homeActive ? "text-primary-500" : "text-gray-300"}`}
         onClick={() => navigate("/home")}
