@@ -16,17 +16,37 @@ import type { QueryState } from "./lib/useKioskQuery";
  * 걸렸는지(brief.rules)를 함께 받아 근거를 접어둔 형태로 보인다.
  */
 
-/** 지역 선택지. 예선(서울)과 본선(광주)을 미리 넣어둔다. */
-const REGIONS = ["인천 부평", "서울 중구", "광주 서구"] as const;
+/**
+ * 지역 선택지 — 시도 17곳.
+ *
+ * 처음에는 구 단위 세 곳만 뒀는데, 사용자가 사는 곳이 그 셋일 리 없다.
+ * 전국 시·군·구를 다 넣으려면 기상청·에어코리아 코드표 정리가 필요해서
+ * 우선 시도 단위로 간다. 서버(services/iot/weather.py)의 REGIONS와
+ * 이름이 정확히 같아야 한다.
+ */
+const REGIONS = [
+  "서울", "부산", "대구", "인천",
+  "광주", "대전", "울산", "세종",
+  "경기", "강원", "충북", "충남",
+  "전북", "전남", "경북", "경남",
+  "제주",
+] as const;
 
 const REGION_KEY = "hwadam.kiosk.region";
 
+/** 서버의 DEFAULT_REGION과 같아야 한다. */
+const DEFAULT_REGION = "인천";
+
 export function readSavedRegion(): string {
   try {
-    return window.localStorage.getItem(REGION_KEY) || REGIONS[0];
+    const saved = window.localStorage.getItem(REGION_KEY);
+    // 예전에 저장된 구 단위 이름("인천 부평")이 남아 있을 수 있다.
+    // 목록에 없는 값이면 서버가 기본 지역으로 떨어뜨리므로 여기서 정리한다.
+    if (saved && (REGIONS as readonly string[]).includes(saved)) return saved;
+    return DEFAULT_REGION;
   } catch {
     // 사파리 시크릿 모드 등에서 접근이 막힐 수 있다. 기본값으로 간다.
-    return REGIONS[0];
+    return DEFAULT_REGION;
   }
 }
 
@@ -328,13 +348,15 @@ function RegionPicker({
           선택한 지역의 날씨로 케어 안내를 만듭니다.
         </div>
 
-        <div className="mt-3 space-y-2">
+        {/* 17개를 4열 격자로. 손가락으로 누르는 화면이라 버튼 높이를
+            56px 아래로 줄이지 않는다. */}
+        <div className="mt-3 grid grid-cols-4 gap-2">
           {REGIONS.map((r) => (
             <button
               key={r}
               onClick={() => onSelect(r)}
               className={
-                "h-[58px] w-full rounded-[14px] border px-4 text-left text-[19px] font-semibold " +
+                "h-[56px] rounded-[14px] border text-[19px] font-semibold " +
                 (r === current
                   ? "border-primary-500 bg-primary-50 text-primary-500"
                   : "border-gray-200 bg-white")
