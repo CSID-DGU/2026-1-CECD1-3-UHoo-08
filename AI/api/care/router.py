@@ -12,17 +12,22 @@ from __future__ import annotations
 
 import logging
 
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 from typing import Any, Dict, List, Optional
 
 from fastapi import APIRouter, HTTPException, Query
 from pydantic import BaseModel, Field
 
-from db.iot.reader import get_reading_span, list_nodes
+from db.iot.reader import get_readings, get_reading_span, list_nodes
+from db.iot.skin_reader import get_skin_measurements
 from db.iot.writer import get_latest_reading
+from services.iot.care_rules import build_brief, compare_indoor
 from services.iot.erl import T_REF_C, acceleration_factor
 from services.iot.humidity import DRY_THRESHOLD_GM3, absolute_humidity, is_dry
 from services.iot.priority import build_priority
+from services.iot.psri import compute_psri, relation_sentence
+from services.iot.recommend_rules import build_candidates, context_line, pick_products
+from services.iot.weather import DEFAULT_REGION, fetch_outdoor
 
 logger = logging.getLogger(__name__)
 
@@ -31,6 +36,12 @@ router = APIRouter(prefix="/api/care", tags=["care"])
 # 이 시간 동안 측정이 없으면 오프라인으로 본다.
 # 펌웨어 전송 주기가 10분이므로 3회 연속 실패에 해당한다.
 DEFAULT_STALE_MINUTES = 30
+
+# PSRI 적분 구간. 이보다 넓게 읽어도 psri가 알아서 자른다.
+SKIN_WINDOW_HOURS = 24
+
+# 피부 추이에 보여줄 측정 횟수. 화면이 2주 추이를 그린다.
+SKIN_TREND_N = 14
 
 
 # ── 응답 모델 ─────────────────────────────────────────────────────
@@ -296,4 +307,373 @@ def get_dashboard(
             "offline": len(out) - online_count,
             "readings": total_readings,
         },
+    )
+
+# ── 공통 조립 ─────────────────────────────────────────────────────
+
+def _indoor_nodes(user_id: Optional[str]) -> List[Dict[str, Any]]:
+    """
+    실내 노드의 현재값.
+
+    환경·피부·추천 세 엔드포인트가 모두 이 형태를 쓴다. 각자 만들면
+    한쪽만 고치는 사고가 난다.
+
+    measure(휴대형) 노드는 뺀다. 사람이 손에 들고 다니는 것이라
+    "그 공간의 환경"을 대표하지 않는다.
+    """
+    out: List[Dict[str, Any]] = []
+
+    for n in list_nodes():
+        if user_id and n.get("user_id") != user_id:
+            continue
+        if n.get("node_type") == "measure":
+            continue
+
+        node_id = n["node_id"]
+        try:
+            latest = get_latest_reading(node_id)
+        except Exception:
+            logger.exception("최신값 조회 실패 node_id=%s", node_id)
+            latest = None
+
+        temp = latest.get("temperature") if latest else None
+        humid = latest.get("humidity") if latest else None
+        pm25 = latest.get("pm25") if latest else None
+        ah = absolute_humidity(temp, humid)
+
+        online = False
+        if latest and latest.get("ts"):
+            try:
+                s = str(latest["ts"]).replace("Z", "+00:00")
+                dt = datetime.fromisoformat(s)
+                if dt.tzinfo is None:
+                    dt = dt.replace(tzinfo=timezone.utc)
+                age_min = (datetime.now(timezone.utc) - dt).total_seconds() / 60.0
+                online = age_min <= DEFAULT_STALE_MINUTES
+            except ValueError:
+                logger.warning("ts 파싱 실패 node_id=%s", node_id)
+
+        out.append({
+            "node_id": node_id,
+            "label": n.get("location_label") or node_id,
+            "node_type": n.get("node_type"),
+            "online": online,
+            "temperature": temp,
+            "humidity": humid,
+            "absolute_humidity": round(ah, 2) if ah is not None else None,
+            "pm25": pm25,
+        })
+
+    return out
+
+
+# ── 오늘의 환경 ───────────────────────────────────────────────────
+
+class OutdoorWeather(BaseModel):
+    region: str
+    observed_at: Optional[str] = None
+    temperature: Optional[float] = None
+    humidity: Optional[float] = None
+    uv_index: Optional[float] = None
+    pm10: Optional[float] = None
+    pm25: Optional[float] = None
+    source: Optional[str] = None
+
+
+class IndoorNode(BaseModel):
+    node_id: str
+    label: str
+    online: bool
+    temperature: Optional[float] = None
+    humidity: Optional[float] = None
+    absolute_humidity: Optional[float] = None
+    pm25: Optional[float] = None
+
+
+class CareBriefModel(BaseModel):
+    headline: str
+    lines: List[str]
+    rules: List[str]
+
+
+class EnvironmentResponse(BaseModel):
+    generated_at: str
+    outdoor: Optional[OutdoorWeather] = None
+    indoor: List[IndoorNode]
+    brief: CareBriefModel
+    comparison: Optional[str] = None
+
+
+@router.get(
+    "/environment",
+    response_model=EnvironmentResponse,
+    summary="오늘의 환경과 케어 안내",
+    description=(
+        "실내는 센서 값, 실외는 외부 날씨 API에서 온다. 출처가 다르므로 "
+        "source를 함께 준다. 케어 안내는 규칙 테이블이 고른 문장이며 "
+        "LLM을 쓰지 않는다. 어떤 규칙이 걸렸는지 rules로 함께 돌려준다."
+    ),
+)
+def get_environment(
+    user_id: Optional[str] = Query(None, description="지정하면 해당 사용자의 노드만"),
+    region: str = Query(DEFAULT_REGION, description="외출 지역"),
+) -> EnvironmentResponse:
+    now = datetime.now(timezone.utc)
+
+    try:
+        indoor = _indoor_nodes(user_id)
+    except Exception:
+        logger.exception("실내 노드 조회 실패 user_id=%s", user_id)
+        raise HTTPException(status_code=500, detail="실내 환경을 불러오지 못했습니다")
+
+    # 외부 API는 우리가 통제할 수 없다. 실패해도 실내 값은 보여준다.
+    outdoor = fetch_outdoor(region)
+
+    brief = build_brief(outdoor, indoor)
+
+    return EnvironmentResponse(
+        generated_at=now.isoformat(),
+        outdoor=OutdoorWeather(**outdoor) if outdoor else None,
+        indoor=[IndoorNode(**{k: v for k, v in n.items() if k != "node_type"})
+                for n in indoor],
+        brief=CareBriefModel(**brief.as_dict()),
+        comparison=compare_indoor(indoor),
+    )
+
+
+# ── 피부 ──────────────────────────────────────────────────────────
+
+class PsriBreakdown(BaseModel):
+    score: float
+    band: str = Field(..., description="good | caution | check")
+    dryness: float
+    irritation: float
+    personal_weight: float
+    personal_label: Optional[str] = None
+    window_hours: int
+
+
+class SkinMeasurementModel(BaseModel):
+    measured_at: str
+    ita: Optional[float] = None
+    ita_class: Optional[str] = None
+    erythema: Optional[float] = None
+    erythema_delta: Optional[float] = None
+
+
+class SkinTrendPoint(BaseModel):
+    date: str
+    erythema: Optional[float] = None
+    ita: Optional[float] = None
+
+
+class SkinResponse(BaseModel):
+    generated_at: str
+    psri: PsriBreakdown
+    relation: Optional[str] = None
+    latest: Optional[SkinMeasurementModel] = None
+    trend: List[SkinTrendPoint]
+    trend_note: Optional[str] = None
+
+
+def _worst_psri(indoor: List[Dict[str, Any]], now: datetime) -> Dict[str, Any]:
+    """
+    노드별로 PSRI를 계산해 가장 나쁜 것을 고른다.
+
+    평균을 내지 않는 이유: 침실이 쾌적해도 하루의 절반을 건조한 사무실에서
+    보냈다면 피부가 받은 부담은 사무실 쪽이다. 평균을 내면 그게 묻힌다.
+    체류 시간을 알면 가중할 수 있지만 지금은 그 정보가 없다.
+    """
+    since = now - timedelta(hours=SKIN_WINDOW_HOURS)
+    best: Optional[Dict[str, Any]] = None
+
+    for n in indoor:
+        try:
+            rows = get_readings(n["node_id"], since=since)
+        except Exception:
+            logger.exception("측정값 조회 실패 node_id=%s", n["node_id"])
+            continue
+
+        p = compute_psri(rows, now=now)
+        if not p.get("computable"):
+            continue
+        if best is None or p["score"] > best["score"]:
+            best = p
+
+    if best is None:
+        # 측정이 없으면 0점이 아니라 "계산 불가"다. 다만 화면이 항상
+        # 무언가를 그려야 하므로 0으로 채우고 sample_n으로 구분하게 한다.
+        return compute_psri([], now=now)
+    return best
+
+
+@router.get(
+    "/skin",
+    response_model=SkinResponse,
+    summary="피부 환경 지수와 측정 추이",
+    description=(
+        "PSRI는 지난 24시간의 환경(절대습도·초미세먼지)을 적분한 값으로, "
+        "피부 상태가 아니라 피부에 작용한 환경을 나타낸다. "
+        "ITA°와 홍반 지수는 측정 이력에서 계산하며, 절대값으로 판정하지 않고 "
+        "같은 부위의 변화 추이만 보여준다."
+    ),
+)
+def get_skin(
+    user_id: str = Query(..., description="예선 한정. 본선에서는 토큰에서 추출한다."),
+) -> SkinResponse:
+    now = datetime.now(timezone.utc)
+
+    try:
+        indoor = _indoor_nodes(user_id)
+        psri = _worst_psri(indoor, now)
+    except Exception:
+        logger.exception("PSRI 계산 실패 user_id=%s", user_id)
+        raise HTTPException(status_code=500, detail="피부 환경 지수를 계산하지 못했습니다")
+
+    try:
+        rows = get_skin_measurements(user_id, limit=40)
+    except Exception:
+        logger.exception("피부 측정 조회 실패 user_id=%s", user_id)
+        rows = []
+
+    latest_model = None
+    trend: List[SkinTrendPoint] = []
+    note = None
+
+    if rows:
+        # 부위가 다르면 값도 다르다. 최신 측정의 부위로만 추이를 그린다.
+        site = rows[0].get("site")
+        same = [r for r in rows if r.get("site") == site]
+
+        # 최신순으로 왔으므로 뒤집어 시간순으로 만든다
+        asc = list(reversed(same))[-SKIN_TREND_N:]
+
+        cur = same[0]
+        prev = same[1] if len(same) > 1 else None
+        delta = None
+        if prev and cur.get("erythema") is not None and prev.get("erythema") is not None:
+            delta = round(float(cur["erythema"]) - float(prev["erythema"]), 2)
+
+        latest_model = SkinMeasurementModel(
+            measured_at=str(cur.get("ts")),
+            ita=cur.get("ita"),
+            ita_class=cur.get("ita_class"),
+            erythema=cur.get("erythema"),
+            erythema_delta=delta,
+        )
+
+        for r in asc:
+            try:
+                d = datetime.fromisoformat(str(r["ts"]).replace("Z", "+00:00"))
+                label = f"{d.month}/{d.day}"
+            except (ValueError, KeyError):
+                label = "—"
+            trend.append(SkinTrendPoint(
+                date=label,
+                erythema=r.get("erythema"),
+                ita=r.get("ita"),
+            ))
+
+        note = _trend_note(asc)
+
+    return SkinResponse(
+        generated_at=now.isoformat(),
+        psri=PsriBreakdown(
+            score=psri["score"],
+            band=psri["band"],
+            dryness=psri["dryness"],
+            irritation=psri["irritation"],
+            personal_weight=psri["personal_weight"],
+            personal_label=psri.get("personal_label"),
+            window_hours=psri["window_hours"],
+        ),
+        relation=relation_sentence(indoor),
+        latest=latest_model,
+        trend=trend,
+        trend_note=note,
+    )
+
+
+def _trend_note(asc: List[Dict[str, Any]]) -> Optional[str]:
+    """
+    추이를 한 줄로. 앞 절반과 뒤 절반의 평균을 비교한다.
+
+    마지막 두 점만 보면 잡음에 흔들린다. 절반씩 나눠 비교하면 방향이
+    안정적으로 잡힌다. 변화가 작으면 굳이 "올랐다"고 말하지 않는다.
+    """
+    vals = [float(r["erythema"]) for r in asc if r.get("erythema") is not None]
+    if len(vals) < 4:
+        return None
+
+    half = len(vals) // 2
+    first = sum(vals[:half]) / half
+    second = sum(vals[half:]) / (len(vals) - half)
+    diff = second - first
+
+    if abs(diff) < 0.3:
+        return "최근 2주간 큰 변화 없음"
+    direction = "상승" if diff > 0 else "하락"
+    return f"최근 2주간 {direction} 경향 (평균 {abs(diff):.1f} 차이)"
+
+
+# ── 추천 ──────────────────────────────────────────────────────────
+
+class RecommendedProduct(BaseModel):
+    product_id: str
+    name: str
+    brand: Optional[str] = None
+    image_url: Optional[str] = None
+    reason: str
+
+
+class RecommendationsResponse(BaseModel):
+    generated_at: str
+    context: Optional[str] = None
+    items: List[RecommendedProduct]
+    qr_url: str
+
+
+# 휴대폰에서 이어보는 주소. 키오스크에서 요약을 보고 자세한 것은
+# 각자 폰에서 본다. 환경변수로 빼지 않은 이유는 배포 도메인이 하나뿐이고,
+# 바뀌면 이 상수만 고치면 되기 때문이다.
+APP_URL = "https://2026-1-cecd-1-3-u-hoo-08.vercel.app"
+
+
+@router.get(
+    "/recommendations",
+    response_model=RecommendationsResponse,
+    summary="환경 기반 제품 추천",
+    description=(
+        "지금 이 공간의 상태를 근거로 제품을 고른다. 카드마다 어떤 측정값 "
+        "때문에 골랐는지를 함께 준다. 조건에 맞는 제품이 DB에 없으면 그 자리를 "
+        "비우며, 이유와 맞지 않는 제품으로 채우지 않는다."
+    ),
+)
+def get_recommendations(
+    user_id: Optional[str] = Query(None, description="지정하면 해당 사용자의 노드만"),
+    region: str = Query(DEFAULT_REGION, description="외출 지역"),
+    limit: int = Query(3, ge=1, le=6),
+) -> RecommendationsResponse:
+    now = datetime.now(timezone.utc)
+
+    try:
+        indoor = _indoor_nodes(user_id)
+    except Exception:
+        logger.exception("실내 노드 조회 실패 user_id=%s", user_id)
+        raise HTTPException(status_code=500, detail="추천을 만들지 못했습니다")
+
+    outdoor = fetch_outdoor(region)
+    candidates = build_candidates(outdoor, indoor)
+
+    try:
+        items = pick_products(candidates, limit=limit)
+    except Exception:
+        logger.exception("추천 제품 선정 실패")
+        items = []
+
+    return RecommendationsResponse(
+        generated_at=now.isoformat(),
+        context=context_line(outdoor, indoor),
+        items=[RecommendedProduct(**i) for i in items],
+        qr_url=APP_URL,
     )
