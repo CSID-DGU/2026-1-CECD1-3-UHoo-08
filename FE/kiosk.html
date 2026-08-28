@@ -4,13 +4,17 @@
     <meta charset="UTF-8" />
     <link rel="icon" type="image/svg+xml" href="/favicon.svg" />
     <!--
-      키오스크는 KioskFrame이 1024×600을 통째로 확대한다. 브라우저가
-      확대·축소에 개입하면 그 계산이 어긋나므로 막는다. viewport-fit=cover는
-      아이패드 홈 화면 실행 시 안전영역까지 화면을 쓰기 위한 것.
+      키오스크는 KioskFrame이 목업 크기를 통째로 확대한다. 브라우저가
+      확대·축소에 개입하면 그 계산이 어긋나므로 막는다.
+
+      viewport-fit=cover는 쓰지 않는다. 아이패드 홈 화면 앱에서 이걸 켜면
+      화면(834)보다 그릴 수 있는 영역(802)이 32px 작아서, 아래에 body
+      배경색만 나오는 띠가 남는다(실측). 켜지 않으면 상태 표시줄 아래에서
+      화면이 시작되고 위아래 어디에도 빈 곳이 생기지 않는다.
     -->
     <meta
       name="viewport"
-      content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover"
+      content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no"
     />
     <title>화담 CARE 키오스크</title>
 
@@ -36,7 +40,12 @@
     <!-- 레터박스 여백색(KioskFrame의 LETTERBOX_BG)과 맞춘다 -->
     <meta name="theme-color" content="#2a2d33" />
     <meta name="apple-mobile-web-app-capable" content="yes" />
-    <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
+    <!--
+      default: 상태 표시줄이 별도 띠로 그려지고 그 아래부터 화면이 시작된다.
+      black-translucent로 상태 표시줄 뒤까지 배경을 올려봤지만, 위 주석의
+      이유로 아래쪽에 띠가 남아 되돌렸다.
+    -->
+    <meta name="apple-mobile-web-app-status-bar-style" content="default" />
     <meta name="apple-mobile-web-app-title" content="화담 CARE" />
     <link rel="apple-touch-icon" href="/apple-touch-icon.png" />
   </head>

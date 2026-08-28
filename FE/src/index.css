@@ -40,43 +40,6 @@ body {
   color: #18191d;
 }
 
-/* ── iOS 홈 화면 실행 시 안전영역 ────────────────────────────────
- *
- * 두 진입점 모두 status-bar-style이 black-translucent라 상태 표시줄 자리
- * 까지 웹 콘텐츠가 올라간다. 배경은 그대로 이어지고, 시간·배터리만 그 위에
- * 얹힌다. 글자색은 iOS가 아래 배경 밝기를 보고 알아서 정한다.
- *
- * 남는 문제는 겹침뿐이다. 그래서 배경은 건드리지 않고, 글자가 들어가는
- * 영역만 안전영역만큼 밀어낸다. 색·크기·간격은 아무것도 바꾸지 않는다.
- *
- * env()를 모르는 환경에서는 값이 0px이라 이전과 완전히 같다.
- */
-:root {
-  --safe-top: env(safe-area-inset-top, 0px);
-  --safe-bottom: env(safe-area-inset-bottom, 0px);
-}
-
-/*
- * AppLayout의 main에 붙는다. 흰 배경은 화면 맨 위까지 그대로 올라가고,
- * 안쪽 내용만 상태 표시줄 아래에서 시작한다.
- */
-.app-safe {
-  padding-top: var(--safe-top);
-}
-
-/*
- * 위가 밀린 만큼 화면 높이도 줄인다. 이 규칙이 없으면 h-screen 자식이
- * 아래로 안전영역만큼 삐져나가 스크롤이 생긴다. .app-safe 안쪽에만
- * 적용되므로 로그인처럼 레이아웃을 안 쓰는 화면은 영향이 없다.
- */
-.app-safe .h-screen {
-  height: calc(100vh - var(--safe-top));
-}
-
-.app-safe .min-h-screen {
-  min-height: calc(100vh - var(--safe-top));
-}
-
 button {
   cursor: pointer;
   transition: opacity 0.15s ease, transform 0.15s ease;
