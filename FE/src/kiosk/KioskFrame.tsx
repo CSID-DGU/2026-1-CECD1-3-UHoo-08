@@ -1,4 +1,4 @@
-import { useEffect, useState, type ReactNode } from "react";
+import { useEffect, useState, type CSSProperties, type ReactNode } from "react";
 
 /**
  * 화면을 꽉 채우는 프레임.
@@ -85,11 +85,17 @@ export function KioskFrame({ children }: { children: ReactNode }) {
           width: layout.w,
           height: layout.h,
           transform: `scale(${layout.scale})`,
+          // 안전영역(상태 표시줄·홈 인디케이터)은 실제 화면 픽셀 단위인데,
+          // 이 안쪽은 scale배 확대되는 좌표계다. 그대로 쓰면 확대된 만큼
+          // 더 밀리므로 배율로 나눠 논리 픽셀로 바꿔 내려보낸다.
+          "--kiosk-safe-top": `calc(env(safe-area-inset-top, 0px) / ${layout.scale})`,
+          "--kiosk-safe-bottom": `calc(env(safe-area-inset-bottom, 0px) / ${layout.scale})`,
           // 좌상단 기준으로 확대해야 위치 계산이 필요 없다.
           // 가운데 기준이면 확대 후 좌표가 밀려 여백 계산을 따로 해야 한다.
           transformOrigin: "top left",
           willChange: "transform",
-        }}
+          // CSSProperties에는 커스텀 속성 키가 없어 단언이 필요하다.
+        } as CSSProperties}
         className="relative overflow-hidden bg-gray-100"
       >
         {children}
