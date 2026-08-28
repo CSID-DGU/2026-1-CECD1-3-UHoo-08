@@ -79,19 +79,7 @@ export function IdleScreen({ dashboard, priority, error, onEnter }: Props) {
         }}
       />
 
-      {/*
-        대기 화면에는 상단 바가 없다. 오른쪽 위 시계가 iOS 배터리 아이콘과
-        같은 자리라 겹치므로 안전영역만큼 내려 그린다. 아우라 배경은 그대로
-        화면 맨 위까지 채워진다.
-      */}
-      <div
-        className="relative flex h-full flex-col px-[46px] text-white"
-        style={{
-          paddingTop: "calc(26px + var(--kiosk-safe-top, 0px))",
-          // 대기 화면에는 탭바가 없어 맨 아래 줄이 홈 인디케이터에 닿는다.
-          paddingBottom: "calc(22px + var(--kiosk-safe-bottom, 0px))",
-        }}
-      >
+      <div className="relative flex h-full flex-col px-[46px] pt-[26px] pb-[22px] text-white">
         <div className="flex flex-none items-start justify-between">
           <div className="drop-shadow-[0_2px_10px_rgba(0,0,0,0.45)]">
             <Brand />
