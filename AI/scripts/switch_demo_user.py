@@ -7,7 +7,7 @@ import argparse
 
 from db.supabase_client import get_supabase
 
-OLD_USER = "aa000000-0000-0000-0000-000000000001"
+OLD_USER = "e3985354-0a60-4330-b7cb-b83b674c0eb0"
 
 
 def main() -> None:

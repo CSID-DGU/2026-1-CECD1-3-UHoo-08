@@ -21,7 +21,7 @@ import argparse
 from db.iot.reader import get_care_products, get_reading_span, list_nodes
 
 # 011 시드로 만든 테스트 사용자
-DEFAULT_USER = "aa000000-0000-0000-0000-000000000001"
+DEFAULT_USER = "e3985354-0a60-4330-b7cb-b83b674c0eb0"
 
 
 def _s(v, width: int, dash: str = "-") -> str:

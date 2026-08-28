@@ -248,6 +248,63 @@ def assign_opened_days(n: int, rng: random.Random) -> List[int]:
 
 # ── 계획 수립 ─────────────────────────────────────────────────────
 
+def load_all_user_products(user_id: str) -> List[Dict[str, Any]]:
+    """
+    사용자의 user_products 전부. usage_type을 가리지 않는다.
+
+    get_care_products()는 USING·USED만 본다(위시리스트는 점검 대상이 아니므로
+    옳은 동작이다). 그런데 시드는 그 필터를 그대로 쓰면 안 된다.
+
+    실제로 겪은 문제: 앱에서 제품 13개를 등록한 계정에 시드를 돌렸더니
+    "보유 0개"로 판단하고 이미 가진 제품을 또 넣으려다
+    user_products_user_id_product_id_key 유니크 제약에 걸렸다.
+
+    그래서 여기서는 전부 읽어 두 가지에 쓴다.
+      · 중복 삽입 방지 (owned_ids)
+      · 승격 후보 찾기 (INTERESTED 등을 USING으로 바꿀 대상)
+    """
+    sb = get_supabase()
+    rows = (
+        sb.table("user_products")
+        .select("id, product_id, usage_type, opened_at, storage_node_id, last_checked_at")
+        .eq("user_id", user_id)
+        .execute()
+    ).data or []
+
+    if not rows:
+        return []
+
+    # 제품 이름·카테고리를 붙인다. 열민감도 판정에 필요하다.
+    ids = list({r["product_id"] for r in rows if r.get("product_id")})
+    meta: Dict[str, Dict[str, Any]] = {}
+    for i in range(0, len(ids), 100):
+        chunk = ids[i:i + 100]
+        got = (
+            sb.table("products")
+            .select("product_id, name, brand, category")
+            .in_("product_id", chunk)
+            .execute()
+        ).data or []
+        for m in got:
+            meta[m["product_id"]] = m
+
+    out = []
+    for r in rows:
+        m = meta.get(r.get("product_id"), {})
+        out.append({
+            "user_product_id": r["id"],
+            "product_id": r.get("product_id"),
+            "usage_type": r.get("usage_type"),
+            "opened_at": r.get("opened_at"),
+            "storage_node_id": r.get("storage_node_id"),
+            "last_checked_at": r.get("last_checked_at"),
+            "name": m.get("name"),
+            "brand": m.get("brand"),
+            "category": m.get("category"),
+        })
+    return out
+
+
 def build_plan(
     user_id: str,
     node_id: str,
@@ -256,24 +313,51 @@ def build_plan(
     refresh_profiles: bool,
 ) -> Dict[str, Any]:
     """무엇을 바꿀지 계산만 한다. 이 함수는 DB에 쓰지 않는다."""
-    existing = get_care_products(user_id)
-    owned_ids = {it["product_id"] for it in existing if it.get("product_id")}
+    existing = get_care_products(user_id)          # USING·USED만
+    all_rows = load_all_user_products(user_id)     # 전부
+    owned_ids = {r["product_id"] for r in all_rows if r.get("product_id")}
 
     # 이미 가진 제품이 어떤 종류인지 파악한다. DB에 프로파일이 없어도
     # 규칙 테이블로 계산해서 센다. 여기서 빼면 방금 가진 것과 같은 종류를
-    # 또 고르게 된다(닥터지 선 → 식물나라 선 중복 사례).
+    # 또 고르게 된다.
     already_profiles = [
         resolve_profile(it.get("name"), category=it.get("category"),
                         brand=it.get("brand"))
         for it in existing
     ]
 
+    # ── 승격을 먼저 고려한다 ─────────────────────────────────────
+    # 앱에서 이미 등록한 제품이 있으면 그것을 USING으로 바꾸는 편이,
+    # 카탈로그에서 아무거나 골라 넣는 것보다 낫다. 시연에서 "제가 앱에
+    # 등록한 제품입니다"라고 말할 수 있다.
+    used_ids = {it["product_id"] for it in existing}
+    promotable = [r for r in all_rows
+                  if r["product_id"] not in used_ids and r.get("name")]
+
     need = max(0, target - len(existing))
+    promotions: List[Dict[str, Any]] = []
+
+    if need and promotable:
+        # 종류가 겹치지 않는 것부터 고른다. pick_candidates와 같은 기준이다.
+        seen = {_signature(p): 1 for p in already_profiles}
+        scored = []
+        for r in promotable:
+            prof = resolve_profile(r.get("name"), category=r.get("category"),
+                                   brand=r.get("brand"))
+            scored.append((seen.get(_signature(prof), 0), rng.random(), r, prof))
+        scored.sort(key=lambda x: (x[0], x[1]))
+
+        for _, _, r, prof in scored[:need]:
+            r["_profile"] = prof
+            promotions.append(r)
+            already_profiles.append(prof)
+            need -= 1
+
     new_products = pick_candidates(need, owned_ids, already_profiles, rng) if need else []
 
-    # 개봉일이 비어 있는 기존 행 + 새로 추가할 행 전부에 날짜를 배정한다.
+    # 개봉일이 비어 있는 기존 행 + 승격 + 새로 추가할 행 전부에 날짜를 배정한다.
     need_opened = [it for it in existing if not it.get("opened_at")]
-    days = assign_opened_days(len(need_opened) + len(new_products), rng)
+    days = assign_opened_days(len(need_opened) + len(promotions) + len(new_products), rng)
     today = date.today()
 
     updates: List[Dict[str, Any]] = []
@@ -287,6 +371,19 @@ def build_plan(
             patch["storage_node_id"] = node_id
         if patch:
             updates.append({"item": it, "patch": patch})
+
+    # 승격은 update로 처리한다. usage_type을 바꾸고 빈 칸을 채운다.
+    for r in promotions:
+        d = days.pop()
+        patch = {
+            "usage_type": SEED_USAGE_TYPE,
+            "storage_node_id": r.get("storage_node_id") or node_id,
+            "_days": d,
+            "_promoted_from": r.get("usage_type"),
+        }
+        if not r.get("opened_at"):
+            patch["opened_at"] = (today - timedelta(days=d)).isoformat()
+        updates.append({"item": r, "patch": patch})
 
     now_iso = datetime.now(timezone.utc).isoformat()
     inserts: List[Dict[str, Any]] = []
@@ -319,6 +416,14 @@ def build_plan(
             "brand": it.get("brand"),
             "category": it.get("category"),
             "existing": it["has_profile"],
+        })
+    for r in promotions:
+        profile_targets.append({
+            "product_id": r["product_id"],
+            "name": r.get("name"),
+            "brand": r.get("brand"),
+            "category": r.get("category"),
+            "existing": False,
         })
     for p in new_products:
         profile_targets.append({
@@ -373,7 +478,7 @@ def print_plan(plan: Dict[str, Any], span: Optional[dict]) -> None:
                   f"{_s(it.get('opened_at'), 12)}{_s(it.get('storage_node_id'), 12)}"
                   f"{_s('있음' if it['has_profile'] else '없음', 10)}")
 
-    _rule(f"② 기존 행의 빈 칸 채우기 — {len(plan['updates'])}건")
+    _rule(f"② 기존 행 수정 — {len(plan['updates'])}건 (빈 칸 채우기 · 승격)")
     if not plan["updates"]:
         print("  채울 빈 칸이 없습니다.")
     for u in plan["updates"]:
@@ -382,6 +487,8 @@ def print_plan(plan: Dict[str, Any], span: Optional[dict]) -> None:
             fields.append(f"opened_at={u['patch']['opened_at']} ({u['patch']['_days']}일 전)")
         if "storage_node_id" in u["patch"]:
             fields.append(f"storage_node_id={u['patch']['storage_node_id']}")
+        if "_promoted_from" in u["patch"]:
+            fields.append(f"usage_type {u['patch']['_promoted_from']} → {SEED_USAGE_TYPE}")
         print(f"  {_s(_label(u['item']), 26)}{' · '.join(fields)}")
 
     _rule(f"③ 새로 추가할 제품 — {len(plan['inserts'])}건")
@@ -412,6 +519,17 @@ def print_plan(plan: Dict[str, Any], span: Optional[dict]) -> None:
     upatch = {u["item"]["user_product_id"]: u["patch"] for u in plan["updates"]}
 
     rows = []
+    # 승격된 행은 existing에 없다(USING이 아니었으므로). updates에서 직접 읽는다.
+    for u in plan["updates"]:
+        it = u["item"]
+        if "_promoted_from" not in u["patch"]:
+            continue
+        prof = pmap.get(it["product_id"])
+        if not prof:
+            continue
+        rows.append((_label(it), prof.sensitivity_k, prof.pao_months,
+                     u["patch"].get("_days")))
+
     for it in existing:
         patch = upatch.get(it["user_product_id"], {})
         opened = patch.get("opened_at") or it.get("opened_at")

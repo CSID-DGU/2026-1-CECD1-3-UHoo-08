@@ -305,7 +305,7 @@ def build_priority(
 if __name__ == "__main__":
     import sys
 
-    uid = sys.argv[1] if len(sys.argv) > 1 else "aa000000-0000-0000-0000-000000000001"
+    uid = sys.argv[1] if len(sys.argv) > 1 else "e3985354-0a60-4330-b7cb-b83b674c0eb0"
     res = build_priority(uid, include_components=True)
     s = res["summary"]
 

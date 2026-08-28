@@ -45,7 +45,7 @@ from typing import Any, Dict, List, Optional
 from db.iot.reader import get_care_products, list_nodes
 from db.supabase_client import get_supabase
 
-DEFAULT_USER = "aa000000-0000-0000-0000-000000000001"
+DEFAULT_USER = "e3985354-0a60-4330-b7cb-b83b674c0eb0"
 
 # 펌웨어 전송 주기와 같게 맞춘다. 다르게 하면 화면의 "N건" 표시가
 # 실제 운영과 어긋난다.
