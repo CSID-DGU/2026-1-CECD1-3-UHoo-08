@@ -1,4 +1,4 @@
-import { useEffect, useState, type CSSProperties, type ReactNode } from "react";
+import { useEffect, useRef, useState, type CSSProperties, type ReactNode } from "react";
 
 /**
  * 화면을 꽉 채우는 프레임.
@@ -36,10 +36,20 @@ const BASE_BG = "#2a2d33";
 
 type Layout = { w: number; h: number; scale: number };
 
-function computeLayout(): Layout {
-  // visualViewport는 iOS에서 주소창·툴바를 제외한 실제 표시 영역을 준다.
-  const vw = window.visualViewport?.width ?? window.innerWidth;
-  const vh = window.visualViewport?.height ?? window.innerHeight;
+function computeLayout(host: HTMLElement | null): Layout {
+  // 프레임을 감싸는 상자(fixed inset-0)의 실제 크기를 쓴다.
+  //
+  // 예전에는 visualViewport를 썼는데, viewport-fit=cover로 홈 화면에서
+  // 실행하면 이 값이 **홈 인디케이터 영역을 뺀** 높이를 준다. 그 높이로
+  // 프레임을 만들면 화면 아래쪽이 프레임 밖으로 남고, 그 자리에 body
+  // 배경색(#eceff2)이 그대로 드러난다. 아이패드에서 아래가 잘려 보인
+  // 원인이다.
+  //
+  // 감싸는 상자는 안전영역을 포함한 화면 전체를 차지하므로, 그 크기를
+  // 그대로 쓰면 위아래 어디에도 빈 곳이 남지 않는다. host가 아직 없는
+  // 첫 렌더에서만 예전 값으로 대체한다.
+  const vw = host?.clientWidth || window.visualViewport?.width || window.innerWidth;
+  const vh = host?.clientHeight || window.visualViewport?.height || window.innerHeight;
 
   const scaleByWidth = vw / BASE_W;
   const logicalH = vh / scaleByWidth;
@@ -55,10 +65,16 @@ function computeLayout(): Layout {
 }
 
 export function KioskFrame({ children }: { children: ReactNode }) {
-  const [layout, setLayout] = useState<Layout>(computeLayout);
+  const hostRef = useRef<HTMLDivElement>(null);
+  const [layout, setLayout] = useState<Layout>(() => computeLayout(null));
 
   useEffect(() => {
-    const update = () => setLayout(computeLayout());
+    const update = () => setLayout(computeLayout(hostRef.current));
+
+    // 감싸는 상자 자체를 관찰한다. observe 직후 한 번 호출되므로 첫 값도
+    // 여기서 잡힌다. 회전·분할 화면처럼 창 이벤트가 안 오는 경우도 덮는다.
+    const observer = new ResizeObserver(update);
+    if (hostRef.current) observer.observe(hostRef.current);
 
     window.addEventListener("resize", update);
     window.addEventListener("orientationchange", update);
@@ -70,6 +86,7 @@ export function KioskFrame({ children }: { children: ReactNode }) {
     const t2 = window.setTimeout(update, 1000);
 
     return () => {
+      observer.disconnect();
       window.removeEventListener("resize", update);
       window.removeEventListener("orientationchange", update);
       window.visualViewport?.removeEventListener("resize", update);
@@ -79,7 +96,7 @@ export function KioskFrame({ children }: { children: ReactNode }) {
   }, []);
 
   return (
-    <div className="fixed inset-0 overflow-hidden" style={{ background: BASE_BG }}>
+    <div ref={hostRef} className="fixed inset-0 overflow-hidden" style={{ background: BASE_BG }}>
       <div
         style={{
           width: layout.w,
