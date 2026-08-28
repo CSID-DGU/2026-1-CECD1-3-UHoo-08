@@ -4,7 +4,7 @@
 ── 공공데이터포털 세 서비스를 쓴다 ────────────────────────────────
     기온·습도    기상청 초단기실황 getUltraSrtNcst      — 관측값
     자외선 지수  기상청 생활기상지수 getUVIdxV5          — 3시간 단위 예측값
-    미세먼지     에어코리아 getMsrstnAcctoRltmMesureDnsty — 측정소 실측값
+    미세먼지     에어코리아 getCtprvnRltmMesureDnsty — 시도 측정소 실측값
 
 ── 실패해도 화면은 떠야 한다 ───────────────────────────────────────
 외부 API는 우리가 통제할 수 없다. 항목별로 따로 부르고, 실패한 항목만
@@ -15,6 +15,7 @@ from __future__ import annotations
 
 import logging
 import math
+import time
 
 from datetime import datetime, timedelta, timezone
 from typing import Any, Dict, List, Optional, Tuple
@@ -27,7 +28,10 @@ logger = logging.getLogger(__name__)
 
 KMA_NCST_URL = "https://apis.data.go.kr/1360000/VilageFcstInfoService_2.0/getUltraSrtNcst"
 KMA_UV_URL = "https://apis.data.go.kr/1360000/LivingWthrIdxServiceV5/getUVIdxV5"
-AIRKOREA_URL = "https://apis.data.go.kr/B552584/ArpltnInforInqireSvc/getMsrstnAcctoRltmMesureDnsty"
+# 측정소별(getMsrstnAcctoRltmMesureDnsty)이 아니라 시도별이다.
+# fetch_air가 sidoName으로 부르므로 엔드포인트도 시도별이어야 한다.
+# 측정소별 URL에 sidoName을 보내면 NO_MANDATORY_REQUEST_PARAMETERS_ERROR가 난다.
+AIRKOREA_URL = "https://apis.data.go.kr/B552584/ArpltnInforInqireSvc/getCtprvnRltmMesureDnsty"
 OPEN_METEO_FORECAST = "https://api.open-meteo.com/v1/forecast"
 
 # 외부 호출은 짧게 끊는다. 세 곳을 순차로 부르므로 최악의 경우 이 값의
@@ -36,40 +40,56 @@ TIMEOUT_S = 6.0
 
 KST = timezone(timedelta(hours=9))
 
-# 시도 17곳.
+# 시도 16곳.
 #
-# 처음에는 구 단위 세 곳만 넣었는데, 사용자가 사는 곳이 그 셋일 리 없다.
-# 전국 시·군·구를 다 넣으려면 기상청·에어코리아 코드표를 정리해야 해서,
-# 우선 시도 단위로 간다.
+# 기상청이 배포하는 지역코드 파일(dfs-zone-tree, 2026-07-01 기준)에서
+# 1단계만 있고 2·3단계가 빈 행, 즉 시도 단위 행을 그대로 옮겼다.
+# 격자(nx, ny)도 파일에 있는 값을 쓴다. 계산해도 같은 값이 나오지만,
+# 공식 파일 값을 쓰면 변환식 오차를 걱정할 필요가 없다.
 #
-#   lat/lon    기상청 격자 변환용 — 시도청 소재지 좌표
-#   area_no    생활기상지수 행정구역 코드 — 시도청이 있는 구/시
+# ── areaNo는 시도 단위 코드가 정식이다 ───────────────────────────
+# 생활기상지수 API 문서의 샘플이 1100000000(서울)이다. 처음에는 구 단위
+# 코드(1114000000 서울 중구)를 썼는데, 그것도 통하지만 시도 단위가 맞다.
+#
+#   lat/lon    참고용. 조회에는 grid를 쓴다
+#   grid       기상청 격자 (nx, ny)
+#   area_no    생활기상지수 지점코드
 #   sido       에어코리아 시도명
-#
-# area_no는 기상청 지역코드표의 10자리 행정구역 코드다. 시도 단위 코드가
-# 통하는지 확인되지 않아 시도청 소재지의 구/시 코드를 쓴다. 자외선은 시도
-# 안에서 크게 다르지 않으므로 대표값으로 충분하다.
-#
-# 강원(51)과 전북(52)은 특별자치도 전환으로 코드가 바뀌었다. 특히 확인이
-# 필요하다. scripts/check_region_codes.py로 17곳을 한 번에 검증한다.
 REGIONS: Dict[str, Dict[str, Any]] = {
-    "서울": {"lat": 37.5665, "lon": 126.9780, "area_no": "1114000000", "sido": "서울"},
-    "부산": {"lat": 35.1796, "lon": 129.0756, "area_no": "2647000000", "sido": "부산"},
-    "대구": {"lat": 35.8714, "lon": 128.6014, "area_no": "2711000000", "sido": "대구"},
-    "인천": {"lat": 37.4563, "lon": 126.7052, "area_no": "2823700000", "sido": "인천"},
-    "광주": {"lat": 35.1595, "lon": 126.8526, "area_no": "2914000000", "sido": "광주"},
-    "대전": {"lat": 36.3504, "lon": 127.3845, "area_no": "3017000000", "sido": "대전"},
-    "울산": {"lat": 35.5384, "lon": 129.3114, "area_no": "3114000000", "sido": "울산"},
-    "세종": {"lat": 36.4800, "lon": 127.2890, "area_no": "3611000000", "sido": "세종"},
-    "경기": {"lat": 37.2636, "lon": 127.0286, "area_no": "4111000000", "sido": "경기"},
-    "강원": {"lat": 37.8813, "lon": 127.7300, "area_no": "5111000000", "sido": "강원"},
-    "충북": {"lat": 36.6424, "lon": 127.4890, "area_no": "4311000000", "sido": "충북"},
-    "충남": {"lat": 36.6588, "lon": 126.6728, "area_no": "4480000000", "sido": "충남"},
-    "전북": {"lat": 35.8242, "lon": 127.1480, "area_no": "5211000000", "sido": "전북"},
-    "전남": {"lat": 34.8161, "lon": 126.4630, "area_no": "4684000000", "sido": "전남"},
-    "경북": {"lat": 36.5760, "lon": 128.5056, "area_no": "4717000000", "sido": "경북"},
-    "경남": {"lat": 35.2383, "lon": 128.6924, "area_no": "4812000000", "sido": "경남"},
-    "제주": {"lat": 33.4996, "lon": 126.5312, "area_no": "5011000000", "sido": "제주"},
+    "서울": {"lat": 37.5636, "lon": 126.9800, "grid": (60, 127),
+             "area_no": "1100000000", "sido": "서울"},
+    "부산": {"lat": 35.1770, "lon": 129.0770, "grid": (98, 76),
+             "area_no": "2600000000", "sido": "부산"},
+    "대구": {"lat": 35.8685, "lon": 128.6036, "grid": (89, 90),
+             "area_no": "2700000000", "sido": "대구"},
+    "인천": {"lat": 37.4532, "lon": 126.7074, "grid": (55, 124),
+             "area_no": "2800000000", "sido": "인천"},
+    "대전": {"lat": 36.3471, "lon": 127.3866, "grid": (67, 100),
+             "area_no": "3000000000", "sido": "대전"},
+    "울산": {"lat": 35.5354, "lon": 129.3137, "grid": (102, 84),
+             "area_no": "3100000000", "sido": "울산"},
+    "세종": {"lat": 36.4800, "lon": 127.2891, "grid": (66, 103),
+             "area_no": "3600000000", "sido": "세종"},
+    "경기": {"lat": 37.2718, "lon": 127.0117, "grid": (60, 120),
+             "area_no": "4100000000", "sido": "경기"},
+    "강원": {"lat": 37.8827, "lon": 127.7320, "grid": (73, 134),
+             "area_no": "5100000000", "sido": "강원"},
+    "충북": {"lat": 36.6325, "lon": 127.4936, "grid": (69, 107),
+             "area_no": "4300000000", "sido": "충북"},
+    "충남": {"lat": 36.6588, "lon": 126.6728, "grid": (55, 107),
+             "area_no": "4400000000", "sido": "충남"},
+    "전북": {"lat": 35.8173, "lon": 127.1111, "grid": (63, 89),
+             "area_no": "5200000000", "sido": "전북"},
+    # 통합 이전 명칭으로는 에어코리아가 여전히 광주·전남을 따로 다룰 수
+    # 있다. sido 값은 check_region_codes.py로 확인한 뒤 확정한다.
+    "전남광주": {"lat": 34.8130, "lon": 126.4650, "grid": (51, 67),
+                 "area_no": "1200000000", "sido": "전남"},
+    "경북": {"lat": 36.5760, "lon": 128.5058, "grid": (87, 106),
+             "area_no": "4700000000", "sido": "경북"},
+    "경남": {"lat": 35.2347, "lon": 128.6942, "grid": (91, 77),
+             "area_no": "4800000000", "sido": "경남"},
+    "제주": {"lat": 33.4857, "lon": 126.5003, "grid": (52, 38),
+             "area_no": "5000000000", "sido": "제주"},
 }
 
 DEFAULT_REGION = "인천"
@@ -112,7 +132,11 @@ def dfs_xy_conv(lat: float, lon: float) -> Tuple[int, int]:
     기상청이 배포한 변환 공식 그대로다. 람베르트 정각원뿔 도법이며
     상수는 격자 정의에 고정되어 있어 바꾸면 안 된다.
 
-    검증: 서울 중구(37.5636, 126.9976) → nx=60, ny=127 (기상청 예제값과 일치)
+    지금은 조회에 쓰지 않는다. REGIONS에 기상청 공식 파일의 격자를 그대로
+    넣었기 때문이다. 지역을 새로 추가할 때 파일에 없는 좌표를 격자로
+    바꾸거나, 표의 값이 맞는지 대조할 때 쓴다.
+
+    검증: 서울(37.5636, 126.9800) → nx=60, ny=127 (공식 파일과 일치)
     """
     RE, GRID = 6371.00877, 5.0
     SLAT1, SLAT2 = 30.0, 60.0
@@ -173,7 +197,7 @@ def _uv_base(now: Optional[datetime] = None) -> str:
 
 # ── 기상청 초단기실황 ────────────────────────────────────────────
 
-def fetch_kma_current(lat: float, lon: float) -> Optional[Dict[str, Any]]:
+def fetch_kma_current(grid: Tuple[int, int]) -> Optional[Dict[str, Any]]:
     """
     기온(T1H)과 습도(REH). 실패하면 None.
 
@@ -184,7 +208,7 @@ def fetch_kma_current(lat: float, lon: float) -> Optional[Dict[str, Any]]:
     if not key:
         return None
 
-    nx, ny = dfs_xy_conv(lat, lon)
+    nx, ny = grid
     base_date, base_time = _ncst_base()
 
     try:
@@ -344,21 +368,28 @@ def fetch_air(sido: str) -> Optional[Dict[str, Any]]:
     for attempt in range(AIR_RETRY):
         try:
             with httpx.Client(timeout=AIR_TIMEOUT_S) as client:
+                # 파라미터가 까다롭다. numOfRows·pageNo를 넣으면 헤더 없는
+                # 빈 응답이 온다. 실제로 통하는 조합은 아래 셋뿐이다.
+                # 그래서 기본 페이지 크기(10곳)만 받는다. 중앙값을 내기에는
+                # 충분하고, 늘릴 방법도 없다.
                 r = client.get(AIRKOREA_URL, params={
-                    "serviceKey": key, "returnType": "json",
-                    # 경기도는 측정소가 100곳이 넘는다. 넉넉히 받는다.
-                    "numOfRows": 200, "pageNo": 1,
-                    "sidoName": sido, "ver": "1.3",
+                    "serviceKey": key,
+                    "returnType": "json",
+                    "sidoName": sido,
+                    "ver": "1.3",
                 })
                 r.raise_for_status()
                 body = r.json()
             break
-        except Exception:
-            logger.warning("대기오염 조회 실패 sido=%s (%d/%d)",
-                           sido, attempt + 1, AIR_RETRY)
+        except Exception as e:
+            # 타임아웃·504는 흔한 일이라 예외 전문을 찍지 않는다.
+            # 지역 17곳을 도는 스크립트에서 스택 트레이스가 화면을 덮어
+            # 정작 어느 지역이 실패했는지 안 보였다.
+            logger.warning("대기오염 조회 실패 sido=%s (%d/%d) %s",
+                           sido, attempt + 1, AIR_RETRY, type(e).__name__)
             if attempt == AIR_RETRY - 1:
-                logger.exception("대기오염 조회 최종 실패 sido=%s", sido)
                 return None
+            time.sleep(0.6)
 
     if body is None:
         return None
@@ -458,7 +489,7 @@ def fetch_outdoor(region: Optional[str] = None) -> Optional[Dict[str, Any]]:
     """
     name, cfg = resolve_region(region)
 
-    kma = fetch_kma_current(cfg["lat"], cfg["lon"])
+    kma = fetch_kma_current(cfg["grid"])
     uv = fetch_uv(cfg["area_no"])
     air = fetch_air(cfg["sido"])
 

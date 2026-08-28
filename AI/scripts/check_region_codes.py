@@ -1,10 +1,10 @@
 """
-시도 17곳의 지역 코드가 실제로 통하는지 한 번에 확인한다.
+REGIONS에 등록된 지역 코드가 실제로 통하는지 한 번에 확인한다.
 
     python -m scripts.check_region_codes
     python -m scripts.check_region_codes --only 강원,전북
 
-에어코리아는 일 500회 제한이다. 17곳을 다 돌면 17회를 쓴다.
+에어코리아는 일 500회 제한이다. 지역 하나당 1회를 쓴다.
 """
 from __future__ import annotations
 
@@ -41,9 +41,13 @@ def main() -> None:
             print(f"  {name:<6} 표에 없는 지역")
             continue
 
-        nx, ny = dfs_xy_conv(cfg["lat"], cfg["lon"])
+        # 조회에는 공식 파일의 격자를 쓴다. 변환식 결과와 다르면 표에
+        # 함께 찍는다. 좌표를 잘못 적어 넣은 경우가 그렇게 드러난다.
+        nx, ny = cfg["grid"]
+        calc = dfs_xy_conv(cfg["lat"], cfg["lon"])
+        grid_txt = f"{nx},{ny}" if calc == (nx, ny) else f"{nx},{ny}≠{calc[0]},{calc[1]}"
 
-        kma = fetch_kma_current(cfg["lat"], cfg["lon"])
+        kma = fetch_kma_current(cfg["grid"])
         temp = f"{kma['temperature']:.0f}℃" if kma and kma.get("temperature") is not None else "실패"
 
         uv = fetch_uv(cfg["area_no"])
@@ -61,7 +65,7 @@ def main() -> None:
         if not kma or not uv or (not args.skip_air and air_txt == "실패"):
             bad.append(name)
 
-        print(f"  {name:<6}{f'{nx},{ny}':<12}{temp:<10}{uv_txt:<12}{air_txt:<20}")
+        print(f"  {name:<6}{grid_txt:<12}{temp:<10}{uv_txt:<12}{air_txt:<20}")
 
     print()
     if bad:
@@ -69,7 +73,7 @@ def main() -> None:
         print("  · 자외선 실패 → areaNo가 틀렸다. 기상청 지역코드표에서 다시 찾는다")
         print("  · 미세먼지 실패 → sidoName 표기이거나 서버 지연이다. 다시 실행해 본다")
     else:
-        print("  17곳 모두 정상입니다.")
+        print(f"  {len(names)}곳 모두 정상입니다.")
 
 
 if __name__ == "__main__":
