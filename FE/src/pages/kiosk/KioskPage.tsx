@@ -15,7 +15,7 @@ import { useCallback, useEffect, useRef, useState } from "react";
 
 // 예선 한정. 키오스크는 브라우저라 X-Node-Key를 쓸 수 없어 user_id를
 // 쿼리로 넘긴다. 본선 전에 카카오 JWT 검증으로 바꾼다.
-const DEFAULT_USER_ID = "aa000000-0000-0000-0000-000000000001";
+const DEFAULT_USER_ID = "e3985354-0a60-4330-b7cb-b83b674c0eb0";
 
 // Vercel 환경변수가 비어 있어도 화면이 뜨도록 기본값을 둔다.
 // 환경변수가 잡히면 그쪽이 우선이며, 화면에 어느 쪽을 썼는지 표시한다.

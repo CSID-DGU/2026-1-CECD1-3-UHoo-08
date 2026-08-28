@@ -25,7 +25,7 @@ export const API_BASE_FROM_ENV = Boolean(ENV_BASE);
  * 예선 한정. 키오스크는 브라우저라 X-Node-Key를 쓸 수 없고 로그인도 없다.
  * 본선 전에 카카오 JWT 검증으로 바꾸고 이 값은 제거한다.
  */
-const DEFAULT_USER_ID = "aa000000-0000-0000-0000-000000000001";
+const DEFAULT_USER_ID = "e3985354-0a60-4330-b7cb-b83b674c0eb0";
 
 export const KIOSK_USER_ID =
   new URLSearchParams(window.location.search).get("user_id") || DEFAULT_USER_ID;
