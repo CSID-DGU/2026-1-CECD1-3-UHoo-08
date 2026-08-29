@@ -28,8 +28,10 @@ def describe(event: Dict[str, Any], node_label: Optional[str] = None) -> Dict[st
     if kind == "temp_excursion":
         return {
             "title": "고온 노출",
-            "detail": (f"{where} 최고 {mag:.1f}℃ · 30분 이상 지속"
+            "detail": (f"{where} 최고 {mag:.1f}℃ · 30분 이상 지속. "
+                       "이 시간만큼 화장품이 더 빨리 나이 듭니다."
                        if mag is not None else f"{where} 고온 지속"),
+            # 되물을 것이 없다. 서랍이 더웠다는 사실 자체가 기록이다.
             "question": None,
             "unit": "℃",
         }
@@ -44,10 +46,15 @@ def describe(event: Dict[str, Any], node_label: Optional[str] = None) -> Dict[st
         }
 
     if kind == "voc_spike":
+        # "가스 저항이 64% 낮아졌습니다"만 보면 그게 좋은 일인지 나쁜 일인지
+        # 알 수 없다. 센서 원리를 아는 사람만 이해하는 문장이다.
+        # 무엇을 뜻하는지 한 마디로 덧붙인다.
         return {
             "title": "공기 성분 변화",
-            "detail": (f"{where} 가스 저항이 평소보다 {mag:.0f}% 낮아졌습니다"
-                       if mag is not None else f"{where} 가스 저항 변화"),
+            "detail": (f"{where} 가스 저항이 평소보다 {mag:.0f}% 낮아졌습니다. "
+                       "공기 중에 냄새 성분이 늘었다는 뜻입니다."
+                       if mag is not None
+                       else f"{where} 공기 중 냄새 성분이 늘었습니다"),
             # 이 질문이 Human-in-the-loop의 입구다.
             #
             # 처음에는 "향수나 스프레이 제품을 두셨나요"였는데 너무 좁았다.
@@ -147,6 +154,9 @@ def status_line(
         return "확인함 · 일시적 외부 요인의 영향"
 
     if answer == ANSWER_NONE:
+        # 여러 제품을 확인했으면 코드가 그만큼 들어온다. 같은 항목이
+        # 두 제품에서 나와도 한 번만 쓴다. "냄새 변화 · 냄새 변화"는
+        # 읽는 사람에게 아무 정보도 더 주지 않는다.
         labels = []
         for c in finding_codes or []:
             lab = _FINDING_LABEL.get(c)

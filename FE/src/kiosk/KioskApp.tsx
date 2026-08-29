@@ -74,6 +74,9 @@ export function KioskApp() {
   const [protocolBack, setProtocolBack] = useState<ScreenKey>("priority");
   // 이벤트에서 이어진 확인이면 그 id. 점검 목록에서 바로 들어오면 null.
   const [protocolEvent, setProtocolEvent] = useState<number | null>(null);
+  // 여러 제품을 이어서 확인할 때의 대기열과 위치.
+  const [queue, setQueue] = useState<string[]>([]);
+  const [queueIndex, setQueueIndex] = useState(0);
   // 측정할 제품을 고르는 모달. 점검 탭의 "측정하기"가 연다.
   const [pickingMeasure, setPickingMeasure] = useState(false);
 
@@ -164,9 +167,11 @@ export function KioskApp() {
         <ProductPicker
           title="어떤 제품을 측정할까요?"
           products={(priority.data?.items ?? []).map(toPickerProduct)}
-          onPick={(id) => {
+          onPick={(ids) => {
             setPickingMeasure(false);
-            const found = priority.data?.items.find((i) => i.user_product_id === id);
+            const found = priority.data?.items.find(
+              (i) => i.user_product_id === ids[0]
+            );
             if (found) setTarget(found);
             setScreen("measure");
           }}
@@ -199,6 +204,8 @@ export function KioskApp() {
           onProtocol={(id) => {
             setProtocolTarget(id);
             setProtocolEvent(null);
+            setQueue([id]);
+            setQueueIndex(0);
             setProtocolBack("priority");
             setScreen("protocol");
           }}
@@ -234,8 +241,11 @@ export function KioskApp() {
           activeTab={activeTab}
           onTab={setScreen}
           onBack={() => setScreen("priority")}
-          onProduct={(id, eventId) => {
-            setProtocolTarget(id);
+          onProduct={(ids, eventId) => {
+            if (ids.length === 0) return;
+            setQueue(ids);
+            setQueueIndex(0);
+            setProtocolTarget(ids[0]);
             setProtocolEvent(eventId);
             setProtocolBack("events");
             setScreen("protocol");
@@ -247,7 +257,19 @@ export function KioskApp() {
           // 없으면 앞 제품에서 고른 항목이 남는다.
           key={protocolTarget}
           userProductId={protocolTarget}
-          eventId={protocolEvent}
+          // 이벤트는 마지막 제품에서만 닫는다. 중간에 닫으면 남은 제품을
+          // 확인하는 동안 질문이 이미 사라진 상태가 된다.
+          eventId={queueIndex === queue.length - 1 ? protocolEvent : null}
+          step={{ index: queueIndex + 1, total: queue.length }}
+          onNext={
+            queueIndex < queue.length - 1
+              ? () => {
+                  const next = queueIndex + 1;
+                  setQueueIndex(next);
+                  setProtocolTarget(queue[next]);
+                }
+              : undefined
+          }
           activeTab={activeTab}
           onTab={setScreen}
           onBack={() => {

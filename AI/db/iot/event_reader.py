@@ -37,6 +37,15 @@ ANSWER_NONE = "none"
 
 VALID_ANSWERS = (ANSWER_EXTERNAL, ANSWER_NONE)
 
+# 사용자에게 물어볼 것이 있는 종류.
+#
+# 고온 노출은 원인이 분명하다. 서랍이 더웠다는 사실 자체가 기록이고,
+# 사용자에게 되물을 것이 없다. 그런데도 pending으로 두면 "답을 기다리는
+# 질문 20개"에 섞여 들어가, 사용자가 열어봐도 답할 버튼이 없다.
+#
+# VOC 급락만 원인을 가릴 수 없어 묻는다.
+QUESTIONABLE_TYPES = ("voc_spike",)
+
 _COLUMNS = ("id, node_id, ts, event_type, magnitude, user_answer, excluded, "
             "answered_at, created_at")
 
@@ -71,7 +80,12 @@ def get_risk_events(
 
 
 def count_pending(node_ids: List[str]) -> int:
-    """답을 기다리는 이벤트 수. 알림 바 표시 여부를 정한다."""
+    """
+    답을 기다리는 이벤트 수. 알림 바 표시 여부를 정한다.
+
+    질문이 있는 종류만 센다. 고온 노출은 되물을 것이 없어 pending이어도
+    사용자가 할 일이 없다.
+    """
     if not node_ids:
         return 0
     sb = get_supabase()
@@ -79,6 +93,7 @@ def count_pending(node_ids: List[str]) -> int:
         sb.table("risk_events")
         .select("id", count="exact")
         .in_("node_id", node_ids)
+        .in_("event_type", list(QUESTIONABLE_TYPES))
         .eq("user_answer", ANSWER_PENDING)
         .execute()
     )

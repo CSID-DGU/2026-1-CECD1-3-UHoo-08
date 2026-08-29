@@ -1,3 +1,4 @@
+import { useState } from "react";
 import { BAND_STYLE } from "./ui";
 import type { PriorityItem, RiskBand } from "./lib/types";
 
@@ -45,14 +46,31 @@ export function ProductPicker({
   onPick,
   onClose,
   emptyText = "보관 중인 제품이 없습니다.",
+  multi = false,
+  confirmLabel = "선택 완료",
 }: {
   title: string;
   description?: string;
   products: PickerProduct[];
-  onPick: (userProductId: string) => void;
+  /** 단일 선택이면 id 하나, 복수 선택이면 고른 순서대로 여러 개. */
+  onPick: (userProductIds: string[]) => void;
   onClose: () => void;
   emptyText?: string;
+  /** 여러 제품을 한 번에 고를 수 있게 한다. */
+  multi?: boolean;
+  confirmLabel?: string;
 }) {
+  const [picked, setPicked] = useState<string[]>([]);
+
+  const toggle = (id: string) => {
+    if (!multi) {
+      onPick([id]);
+      return;
+    }
+    setPicked((prev) =>
+      prev.includes(id) ? prev.filter((x) => x !== id) : [...prev, id]
+    );
+  };
   return (
     <div
       className="absolute inset-0 z-20 flex items-center justify-center bg-black/40 p-6"
@@ -74,16 +92,46 @@ export function ProductPicker({
           {products.length === 0 ? (
             <div className="py-10 text-center text-[18px] text-gray-300">{emptyText}</div>
           ) : (
-            products.map((p) => <Row key={p.user_product_id} product={p} onPick={onPick} />)
+            products.map((p) => (
+              <Row
+                key={p.user_product_id}
+                product={p}
+                onPick={toggle}
+                multi={multi}
+                // 고른 순서를 번호로 보여준다. 여러 개를 고를 때
+                // 무엇을 몇 번째로 볼지 미리 알 수 있다.
+                order={multi ? picked.indexOf(p.user_product_id) + 1 : 0}
+              />
+            ))
           )}
         </div>
 
-        <button
-          onClick={onClose}
-          className="h-[58px] flex-none rounded-[14px] border border-gray-200 text-[19px] font-semibold text-gray-400"
-        >
-          닫기
-        </button>
+        {multi ? (
+          <div className="flex flex-none gap-2">
+            <button
+              onClick={onClose}
+              className="h-[58px] w-[140px] rounded-[14px] border border-gray-200 text-[19px] font-semibold text-gray-400"
+            >
+              닫기
+            </button>
+            <button
+              disabled={picked.length === 0}
+              onClick={() => onPick(picked)}
+              className="h-[58px] flex-1 rounded-[14px] bg-primary-500 text-[19px] font-semibold text-white disabled:bg-gray-200 disabled:text-gray-300"
+            >
+              {picked.length === 0
+                ? "확인할 제품을 골라 주세요"
+                : `${confirmLabel} (${picked.length}개)`}
+            </button>
+          </div>
+        ) : (
+          <button
+            onClick={onClose}
+            className="h-[58px] flex-none rounded-[14px] border border-gray-200 text-[19px] font-semibold text-gray-400"
+          >
+            닫기
+          </button>
+        )}
       </div>
     </div>
   );
@@ -92,17 +140,35 @@ export function ProductPicker({
 function Row({
   product,
   onPick,
+  multi,
+  order,
 }: {
   product: PickerProduct;
   onPick: (id: string) => void;
+  multi: boolean;
+  order: number;
 }) {
   const style = product.band ? BAND_STYLE[product.band] : null;
+  const on = order > 0;
 
   return (
     <button
       onClick={() => onPick(product.user_product_id)}
-      className="mb-2 flex w-full items-center gap-3 rounded-[14px] border border-gray-200 p-[13px_16px] text-left active:bg-primary-50"
+      className={
+        "mb-2 flex w-full items-center gap-3 rounded-[14px] border p-[13px_16px] text-left " +
+        (on ? "border-primary-500 bg-primary-50" : "border-gray-200 active:bg-primary-50")
+      }
     >
+      {multi ? (
+        <span
+          className={
+            "grid h-7 w-7 flex-none place-items-center rounded-md text-[15px] font-bold " +
+            (on ? "bg-primary-500 text-white" : "border border-gray-200 text-gray-300")
+          }
+        >
+          {on ? order : ""}
+        </span>
+      ) : null}
       {style ? (
         <span
           className="grid h-10 w-10 flex-none place-items-center rounded-[11px] text-[19px]"

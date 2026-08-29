@@ -29,6 +29,10 @@ type Props = {
    * 채워져 있으면 확인을 마칠 때 그 이벤트가 완료로 바뀐다.
    */
   eventId?: number | null;
+  /** 여러 제품을 이어서 확인할 때 몇 번째인지. 하나뿐이면 표시하지 않는다. */
+  step?: { index: number; total: number };
+  /** 다음 제품이 있으면 호출한다. 없으면 undefined. */
+  onNext?: (findings: string[]) => void;
   activeTab: TabKey;
   onTab: (t: TabKey) => void;
   onBack: () => void;
@@ -39,6 +43,8 @@ type Props = {
 export function ProtocolScreen({
   userProductId,
   eventId,
+  step,
+  onNext,
   activeTab,
   onTab,
   onBack,
@@ -100,7 +106,13 @@ export function ProtocolScreen({
             ← 확인 절차
           </button>
         }
-        right={data?.label}
+        right={
+          // 여러 제품을 이어서 확인할 때만 진행을 보여준다.
+          // 하나뿐인데 1/1이라고 쓰면 군더더기다.
+          step && step.total > 1
+            ? `${step.index}/${step.total} · ${data?.label ?? ""}`
+            : data?.label
+        }
       />
 
       <div className="flex-1 overflow-hidden px-[26px] py-[16px]">
@@ -217,7 +229,14 @@ export function ProtocolScreen({
       </div>
 
       {result ? (
-        <ResultCard result={result} onClose={onBack} />
+        <ResultCard
+          result={result}
+          hasNext={Boolean(onNext) && Boolean(step) && step!.index < step!.total}
+          onClose={() => {
+            if (onNext) onNext(result.findings);
+            else onBack();
+          }}
+        />
       ) : null}
 
       {saveError ? (
@@ -285,9 +304,11 @@ function Header({ data }: { data: ProtocolResponse }) {
 function ResultCard({
   result,
   onClose,
+  hasNext,
 }: {
   result: InspectionResponse;
   onClose: () => void;
+  hasNext: boolean;
 }) {
   return (
     <div className="absolute inset-0 z-10 flex items-center justify-center bg-black/35 p-8">
@@ -333,7 +354,7 @@ function ResultCard({
           onClick={onClose}
           className="h-[58px] flex-none rounded-[14px] bg-primary-500 text-[19px] font-semibold text-white"
         >
-          확인
+          {hasNext ? "다음 제품 확인하기" : "확인"}
         </button>
       </div>
     </div>

@@ -25,8 +25,10 @@ type Props = {
   activeTab: TabKey;
   onTab: (t: TabKey) => void;
   onBack: () => void;
-  /** 안내에서 제품을 눌렀을 때 확인 절차로 넘긴다. */
-  onProduct: (userProductId: string, eventId: number) => void;
+  /**
+   * 확인할 제품들과 이벤트 id. 여러 개면 순서대로 확인한다.
+   */
+  onProduct: (userProductIds: string[], eventId: number) => void;
 };
 
 export function EventsScreen({ activeTab, onTab, onBack, onProduct }: Props) {
@@ -60,13 +62,17 @@ export function EventsScreen({ activeTab, onTab, onBack, onProduct }: Props) {
   }, [lastUpdated]);
   const [answerError, setAnswerError] = useState<KioskApiError | null>(null);
 
-  const answer = async (id: number, value: "external_source" | "none") => {
+  const answer = async (
+    id: number,
+    value: "external_source" | "none",
+    inspect = true
+  ) => {
     setAnswering(id);
     setAnswerError(null);
     try {
       const res = await carePost<EventAnswerResponse>(
         `/api/care/events/${id}/answer`,
-        { answer: value },
+        { answer: value, inspect },
         { user_id: KIOSK_USER_ID }
       );
       setResult(res);
@@ -133,10 +139,18 @@ export function EventsScreen({ activeTab, onTab, onBack, onProduct }: Props) {
       {result ? (
         <GuidanceCard
           result={result}
-          onClose={() => {
-            // 확인해 볼 제품이 있으면 목록으로 이어진다.
-            if (result.next?.products?.length) setPicking(result);
+          onClose={() => setResult(null)}
+          onInspect={() => {
+            setPicking(result);
             setResult(null);
+          }}
+          onSkip={() => {
+            // 확인하지 않겠다고 하면 그 자리에서 답변을 확정한다.
+            // 냄새의 원인이 늘 화장품인 것도 아니고, 지금 확인할
+            // 상황이 아닐 수도 있다. 강요하지 않는다.
+            const id = result.event.id;
+            setResult(null);
+            void answer(id, "none", false);
           }}
         />
       ) : null}
@@ -151,10 +165,12 @@ export function EventsScreen({ activeTab, onTab, onBack, onProduct }: Props) {
             score: p.score,
             band: p.band,
           }))}
-          onPick={(id) => {
+          multi
+          confirmLabel="확인 시작"
+          onPick={(ids) => {
             const eid = picking.event.id;
             setPicking(null);
-            onProduct(id, eid);
+            onProduct(ids, eid);
           }}
           onClose={() => setPicking(null)}
         />
@@ -259,10 +275,15 @@ function EventRow({
 function GuidanceCard({
   result,
   onClose,
+  onInspect,
+  onSkip,
 }: {
   result: EventAnswerResponse;
   onClose: () => void;
+  onInspect: () => void;
+  onSkip: () => void;
 }) {
+  const canInspect = Boolean(result.next?.products?.length);
   return (
     <div className="absolute inset-0 z-10 flex items-center justify-center bg-black/35 p-8">
       <div className="w-full max-w-[760px] rounded-[18px] bg-white p-[24px]">
@@ -276,12 +297,29 @@ function GuidanceCard({
           ))}
         </div>
 
-        <button
-          onClick={onClose}
-          className="mt-4 h-[58px] w-full rounded-[14px] bg-primary-500 text-[19px] font-semibold text-white"
-        >
-          {result.next?.products?.length ? "제품 고르기" : "닫기"}
-        </button>
+        {canInspect ? (
+          <div className="mt-4 flex gap-2">
+            <button
+              onClick={onSkip}
+              className="h-[58px] flex-1 rounded-[14px] border border-gray-200 text-[19px] font-semibold text-gray-400"
+            >
+              지금은 괜찮아요
+            </button>
+            <button
+              onClick={onInspect}
+              className="h-[58px] flex-1 rounded-[14px] bg-primary-500 text-[19px] font-semibold text-white"
+            >
+              확인해 볼게요
+            </button>
+          </div>
+        ) : (
+          <button
+            onClick={onClose}
+            className="mt-4 h-[58px] w-full rounded-[14px] bg-primary-500 text-[19px] font-semibold text-white"
+          >
+            닫기
+          </button>
+        )}
       </div>
     </div>
   );

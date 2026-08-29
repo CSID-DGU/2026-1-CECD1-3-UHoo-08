@@ -805,6 +805,14 @@ def get_events(
 
 class AnswerRequest(BaseModel):
     answer: str = Field(..., description="external_source | none")
+    inspect: bool = Field(
+        True,
+        description=(
+            "none일 때 제품 확인으로 이어갈지. "
+            "False면 그 자리에서 답변을 확정하고 제품 목록을 주지 않는다. "
+            "확인을 강요하지 않기 위한 것이다."
+        ),
+    )
 
 
 class GuidanceProduct(BaseModel):
@@ -868,15 +876,15 @@ def post_event_answer(
     if before.get("node_id") not in labels:
         raise HTTPException(status_code=404, detail="이벤트를 찾을 수 없습니다")
 
-    # ── "아니요"는 아직 저장하지 않는다 ──────────────────────────
+    # ── "아니요"를 언제 확정하는가 ───────────────────────────────
     #
-    # 외부 요인이 아니라면 다음은 제품을 확인하는 차례다. 확인이 끝나야
-    # 무엇이 문제였는지 알 수 있으므로, 그때 이벤트를 닫는다.
+    # 제품을 확인하겠다면(inspect=True) 지금은 저장하지 않는다. 확인이
+    # 끝나야 무엇이 문제였는지 알 수 있고, 중간에 그만두면 아무것도
+    # 확인하지 않았는데 질문만 사라지기 때문이다.
     #
-    # 여기서 바로 완료 처리하면 이런 일이 생긴다. 사용자가 "아니요"를
-    # 누르고 제품 목록을 보다가 그만두면, 아무것도 확인하지 않았는데
-    # 질문만 사라진다. 실제로 그렇게 동작해서 고쳤다.
-    if body.answer == "none":
+    # 확인하지 않겠다면(inspect=False) 그 자리에서 확정한다. 사용자가
+    # 판단을 마친 것이므로 질문을 계속 띄울 이유가 없다.
+    if body.answer == "none" and body.inspect:
         updated = dict(before)
     else:
         try:
@@ -890,9 +898,9 @@ def post_event_answer(
         if not updated:
             raise HTTPException(status_code=500, detail="답변 후 이벤트를 읽지 못했습니다")
 
-    # "아니요"일 때만 제품을 붙인다. 외부 요인이면 제품 이야기가 필요 없다.
+    # "아니요"이면서 확인을 이어가겠다고 할 때만 제품을 붙인다.
     top: List[Dict[str, Any]] = []
-    if body.answer == "none":
+    if body.answer == "none" and body.inspect:
         try:
             pri = build_priority(user_id, limit=GUIDANCE_PRODUCT_N)
             node_id = updated.get("node_id")
