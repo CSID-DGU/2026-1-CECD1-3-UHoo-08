@@ -22,8 +22,8 @@ from db.iot.reader import (
     get_care_products, get_readings, get_reading_span, list_nodes,
 )
 from db.iot.event_reader import (
-    VALID_ANSWERS, answer_event, count_pending, get_event,
-    get_feedback_since, get_risk_events,
+    VALID_ANSWERS, answer_event, close_event_by_inspection, count_pending,
+    get_event, get_event_findings, get_risk_events,
 )
 from db.iot.skin_reader import get_skin_measurements
 from db.iot.writer import get_latest_reading
@@ -33,7 +33,7 @@ from services.iot.event_rules import (
     alert_line, describe, guidance, status_line, when,
 )
 from services.iot.inspection_rules import (
-    ANSWERS, FEEDBACK_CODE, answer_guidance, build_protocol, summary_label,
+    ANSWERS, FEEDBACK_CODE, answer_guidance, build_protocol,
 )
 from services.iot.humidity import DRY_THRESHOLD_GM3, absolute_humidity, is_dry
 from services.iot.priority import FEEDBACK_LABEL, build_priority
@@ -759,29 +759,13 @@ def get_events(
         logger.exception("이벤트 조회 실패 user_id=%s", user_id)
         raise HTTPException(status_code=500, detail="이벤트 이력을 불러오지 못했습니다")
 
-    # "아니요"라고 답한 뒤 제품을 확인했다면 그 결과를 함께 보여준다.
-    #
-    # 이벤트와 확인 결과는 테이블이 달라 직접 연결되어 있지 않다. 시각으로
-    # 잇는다. 답변 이후에 생긴 확인만 본다.
-    findings_map: Dict[int, List[str]] = {}
-    answered = [r for r in rows if r.get("user_answer") == "none"]
-    if answered:
-        oldest = min(str(r.get("ts")) for r in answered)
-        try:
-            fb = get_feedback_since(node_ids, oldest)
-        except Exception:
-            logger.exception("확인 결과 조회 실패")
-            fb = []
-
-        for r in answered:
-            after = [f for f in fb if str(f.get("ts")) >= str(r.get("ts"))]
-            labels_found: List[str] = []
-            for f in after:
-                lab = FEEDBACK_LABEL.get(f.get("answer") or "")
-                if lab and lab not in labels_found:
-                    labels_found.append(lab)
-            if labels_found:
-                findings_map[r["id"]] = labels_found
+    # 확인 결과를 FK로 붙인다. 시각으로 추측하던 방식은 이벤트와 무관한
+    # 확인까지 섞여 들어왔다.
+    try:
+        findings = get_event_findings([r["id"] for r in rows])
+    except Exception:
+        logger.exception("확인 결과 조회 실패")
+        findings = {}
 
     items: List[EventItem] = []
     for r in rows:
@@ -790,7 +774,7 @@ def get_events(
         # 이미 답한 건은 질문을 다시 띄우지 않는다.
         question = d["question"] if r.get("user_answer") == "pending" else None
         items.append(EventItem(
-            status=status_line(r, findings_map.get(r["id"])),
+            status=status_line(r, findings.get(r["id"])),
             id=r["id"],
             node_id=r.get("node_id"),
             node_label=label,
@@ -884,16 +868,27 @@ def post_event_answer(
     if before.get("node_id") not in labels:
         raise HTTPException(status_code=404, detail="이벤트를 찾을 수 없습니다")
 
-    try:
-        updated = answer_event(event_id, body.answer)
-    except ValueError as e:
-        raise HTTPException(status_code=422, detail=str(e))
-    except Exception:
-        logger.exception("이벤트 답변 저장 실패 id=%s", event_id)
-        raise HTTPException(status_code=500, detail="답변을 저장하지 못했습니다")
+    # ── "아니요"는 아직 저장하지 않는다 ──────────────────────────
+    #
+    # 외부 요인이 아니라면 다음은 제품을 확인하는 차례다. 확인이 끝나야
+    # 무엇이 문제였는지 알 수 있으므로, 그때 이벤트를 닫는다.
+    #
+    # 여기서 바로 완료 처리하면 이런 일이 생긴다. 사용자가 "아니요"를
+    # 누르고 제품 목록을 보다가 그만두면, 아무것도 확인하지 않았는데
+    # 질문만 사라진다. 실제로 그렇게 동작해서 고쳤다.
+    if body.answer == "none":
+        updated = dict(before)
+    else:
+        try:
+            updated = answer_event(event_id, body.answer)
+        except ValueError as e:
+            raise HTTPException(status_code=422, detail=str(e))
+        except Exception:
+            logger.exception("이벤트 답변 저장 실패 id=%s", event_id)
+            raise HTTPException(status_code=500, detail="답변을 저장하지 못했습니다")
 
-    if not updated:
-        raise HTTPException(status_code=500, detail="답변 후 이벤트를 읽지 못했습니다")
+        if not updated:
+            raise HTTPException(status_code=500, detail="답변 후 이벤트를 읽지 못했습니다")
 
     # "아니요"일 때만 제품을 붙인다. 외부 요인이면 제품 이야기가 필요 없다.
     top: List[Dict[str, Any]] = []
@@ -1051,6 +1046,14 @@ class InspectionRequest(BaseModel):
         description="확인한 항목들. 여러 개를 고를 수 있다.",
         min_length=1,
     )
+    event_id: Optional[int] = Field(
+        None,
+        description=(
+            "이 확인이 어느 이상 이벤트에서 이어진 것인지. "
+            "이벤트 이력에서 들어왔다면 그 id를 보낸다. "
+            "채워져 있으면 확인을 마칠 때 그 이벤트를 완료로 바꾼다."
+        ),
+    )
 
 
 class GuidanceSection(BaseModel):
@@ -1150,11 +1153,24 @@ def post_inspection(
                 "delta_pct": (item.get("optical_delta_pct")
                               if isinstance(item, dict) else None),
                 "answer": code,
+                # 이벤트에서 이어진 확인이면 그 id를 남긴다. 아니면 NULL.
+                "event_id": body.event_id,
             })
         if rows:
             sb.table("user_feedback").insert(rows).execute()
     except Exception:
         logger.exception("확인 결과 저장 실패 %s", user_product_id)
+
+    # 이벤트에서 이어진 확인이면 그 이벤트를 닫는다.
+    #
+    # "짚이는 외부 요인이 없다"고 답한 뒤 제품을 확인한 흐름의 끝이다.
+    # 확인 결과는 user_feedback에 FK로 이어져 있으므로, 목록을 그릴 때
+    # 그쪽에서 읽어온다. 여기서 문구를 따로 저장하지 않는다.
+    if body.event_id is not None:
+        try:
+            close_event_by_inspection(body.event_id)
+        except Exception:
+            logger.exception("이벤트 마감 실패 event_id=%s", body.event_id)
 
     return InspectionResponse(
         user_product_id=user_product_id,

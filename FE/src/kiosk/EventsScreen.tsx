@@ -26,7 +26,7 @@ type Props = {
   onTab: (t: TabKey) => void;
   onBack: () => void;
   /** 안내에서 제품을 눌렀을 때 확인 절차로 넘긴다. */
-  onProduct: (userProductId: string) => void;
+  onProduct: (userProductId: string, eventId: number) => void;
 };
 
 export function EventsScreen({ activeTab, onTab, onBack, onProduct }: Props) {
@@ -152,8 +152,9 @@ export function EventsScreen({ activeTab, onTab, onBack, onProduct }: Props) {
             band: p.band,
           }))}
           onPick={(id) => {
+            const eid = picking.event.id;
             setPicking(null);
-            onProduct(id);
+            onProduct(id, eid);
           }}
           onClose={() => setPicking(null)}
         />

@@ -24,6 +24,7 @@ from __future__ import annotations
 
 import logging
 
+from datetime import datetime, timezone
 from typing import Any, Dict, List, Optional
 
 from db.supabase_client import get_supabase
@@ -36,7 +37,8 @@ ANSWER_NONE = "none"
 
 VALID_ANSWERS = (ANSWER_EXTERNAL, ANSWER_NONE)
 
-_COLUMNS = "id, node_id, ts, event_type, magnitude, user_answer, excluded, created_at"
+_COLUMNS = ("id, node_id, ts, event_type, magnitude, user_answer, excluded, "
+            "answered_at, created_at")
 
 
 def get_risk_events(
@@ -109,39 +111,69 @@ def answer_event(event_id: int, answer: str) -> Optional[Dict[str, Any]]:
         raise ValueError(f"허용되지 않는 답: {answer}")
 
     sb = get_supabase()
-    patch = {
+    patch: Dict[str, Any] = {
         "user_answer": answer,
         "excluded": answer == ANSWER_EXTERNAL,
+        "answered_at": datetime.now(timezone.utc).isoformat(),
     }
     (sb.table("risk_events").update(patch).eq("id", event_id).execute())
 
     return get_event(event_id)
 
 
-# ── 확인 결과 ────────────────────────────────────────────────────
-
-def get_feedback_since(node_ids: List[str], since: str) -> List[Dict[str, Any]]:
+def close_event_by_inspection(event_id: int) -> Optional[Dict[str, Any]]:
     """
-    특정 시각 이후의 확인 결과. 이벤트 목록이 쓴다.
+    제품 확인이 끝났을 때 그 이벤트를 완료로 바꾼다.
 
-    이벤트와 확인 결과는 서로 다른 테이블이라 연결 고리가 없다. 대신
-    시각으로 잇는다. 이벤트에 "아니요"라고 답한 뒤 제품을 확인했다면,
-    그 확인은 답변 시각 이후에 생긴다.
+    "짚이는 외부 요인이 없다"는 답만으로는 아직 끝이 아니다. 그다음
+    제품을 확인해야 무엇이 문제였는지 알 수 있다. 그래서 "아니요"를
+    누른 시점에는 이벤트를 그대로 두고, 확인이 끝난 뒤 여기서 닫는다.
 
-    완벽한 연결은 아니다. 사용자가 이벤트와 무관하게 제품을 확인해도
-    같은 창에 들어온다. 다만 시연 흐름에서는 그 둘이 사실상 같은 행동이고,
-    이벤트마다 확인 이력을 따로 묶으려면 컬럼을 하나 늘려야 한다.
+    중간에 그만두면 질문이 그대로 남는다. 그게 맞다. 확인하지 않았는데
+    답변 완료로 처리하면, 사용자는 아무것도 안 했는데 질문만 사라진다.
     """
+    sb = get_supabase()
+    patch = {
+        "user_answer": ANSWER_NONE,
+        "excluded": False,
+        "answered_at": datetime.now(timezone.utc).isoformat(),
+    }
+    (sb.table("risk_events").update(patch).eq("id", event_id).execute())
+    return get_event(event_id)
+
+
+def get_event_findings(event_ids: List[int]) -> Dict[int, List[str]]:
+    """
+    이벤트별 확인 결과 코드.
+
+    FK로 이어져 있으므로 시각을 추측할 필요가 없다. 같은 확인에서 여러
+    항목을 골랐으면 그만큼 행이 있다.
+    """
+    if not event_ids:
+        return {}
+
     sb = get_supabase()
     rows = (
         sb.table("user_feedback")
-        .select("user_product_id, ts, answer")
-        .gte("ts", since)
+        .select("event_id, answer, ts")
+        .in_("event_id", event_ids)
         .order("ts", desc=True)
-        .limit(100)
+        .limit(200)
         .execute()
     ).data or []
-    return rows
+
+    out: Dict[int, List[str]] = {}
+    for r in rows:
+        eid = r.get("event_id")
+        if eid is None:
+            continue
+        code = r.get("answer")
+        if not code:
+            continue
+        bucket = out.setdefault(eid, [])
+        if code not in bucket:
+            bucket.append(code)
+    return out
 
 
 def get_latest_feedback(user_product_ids: List[str]) -> Dict[str, Dict[str, Any]]:

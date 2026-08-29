@@ -118,13 +118,28 @@ def guidance(
     }
 
 
-def status_line(event: Dict[str, Any], findings: Optional[List[str]] = None) -> Optional[str]:
+# user_feedback.answer 코드 → 표시 문구.
+# DB에는 코드만 저장하고 문구는 읽을 때 만든다. 표기를 바꿔도 과거
+# 데이터가 그대로 유효하다.
+_FINDING_LABEL = {
+    "color": "색 변화",
+    "odor": "냄새 변화",
+    "separation": "층 분리",
+    "texture": "질감 변화",
+    "none": None,          # 이상 없음은 항목으로 세지 않는다
+}
+
+
+def status_line(
+    event: Dict[str, Any],
+    finding_codes: Optional[List[str]] = None,
+) -> Optional[str]:
     """
     답한 이벤트의 상태 한 줄. 목록에 그대로 표시된다.
 
-    답변만으로는 부족하다. "아니요"라고 답한 뒤 제품을 확인해 무엇을
-    발견했는지까지 이어져야 시연에서 흐름이 보인다. findings를 주면
-    그것을 함께 쓴다.
+    finding_codes에는 그 이벤트에 이어진 확인 결과가 코드로 들어온다
+    (user_feedback.answer). FK로 연결되어 있어 어느 확인이 이 이벤트에
+    대한 것인지 추측할 필요가 없다.
     """
     answer = event.get("user_answer")
 
@@ -132,9 +147,14 @@ def status_line(event: Dict[str, Any], findings: Optional[List[str]] = None) -> 
         return "확인함 · 일시적 외부 요인의 영향"
 
     if answer == ANSWER_NONE:
-        if findings:
-            return f"확인함 · {' · '.join(findings)}"
-        return "확인함 · 짚이는 외부 요인 없음"
+        labels = []
+        for c in finding_codes or []:
+            lab = _FINDING_LABEL.get(c)
+            if lab and lab not in labels:
+                labels.append(lab)
+        if labels:
+            return f"{' · '.join(labels)} 확인됨 · 주의가 필요합니다"
+        return "확인함 · 이상 없음"
 
     return None
 

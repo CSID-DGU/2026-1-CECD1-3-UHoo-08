@@ -23,6 +23,12 @@ import type { InspectionResponse, ProtocolResponse } from "./lib/types";
 
 type Props = {
   userProductId: string;
+  /**
+   * 이 확인이 어느 이상 이벤트에서 이어진 것인지.
+   * 이벤트 이력에서 들어왔다면 채워지고, 점검 목록에서 바로 들어왔다면 없다.
+   * 채워져 있으면 확인을 마칠 때 그 이벤트가 완료로 바뀐다.
+   */
+  eventId?: number | null;
   activeTab: TabKey;
   onTab: (t: TabKey) => void;
   onBack: () => void;
@@ -32,6 +38,7 @@ type Props = {
 
 export function ProtocolScreen({
   userProductId,
+  eventId,
   activeTab,
   onTab,
   onBack,
@@ -74,7 +81,7 @@ export function ProtocolScreen({
     try {
       const res = await carePost<InspectionResponse>(
         `/api/care/products/${userProductId}/inspection`,
-        { answers: picked },
+        { answers: picked, event_id: eventId ?? null },
         { user_id: KIOSK_USER_ID }
       );
       setResult(res);

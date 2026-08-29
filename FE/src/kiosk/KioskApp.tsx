@@ -72,6 +72,8 @@ export function KioskApp() {
   // 들어왔는지에 따라 달라야 한다. 고정해 두면 이벤트 → 확인 → 완료에서
   // 엉뚱한 화면으로 가거나, 조건이 어긋나 빈 화면이 뜬다.
   const [protocolBack, setProtocolBack] = useState<ScreenKey>("priority");
+  // 이벤트에서 이어진 확인이면 그 id. 점검 목록에서 바로 들어오면 null.
+  const [protocolEvent, setProtocolEvent] = useState<number | null>(null);
   // 측정할 제품을 고르는 모달. 점검 탭의 "측정하기"가 연다.
   const [pickingMeasure, setPickingMeasure] = useState(false);
 
@@ -196,6 +198,7 @@ export function KioskApp() {
           onEvents={() => setScreen("events")}
           onProtocol={(id) => {
             setProtocolTarget(id);
+            setProtocolEvent(null);
             setProtocolBack("priority");
             setScreen("protocol");
           }}
@@ -231,8 +234,9 @@ export function KioskApp() {
           activeTab={activeTab}
           onTab={setScreen}
           onBack={() => setScreen("priority")}
-          onProduct={(id) => {
+          onProduct={(id, eventId) => {
             setProtocolTarget(id);
+            setProtocolEvent(eventId);
             setProtocolBack("events");
             setScreen("protocol");
           }}
@@ -243,6 +247,7 @@ export function KioskApp() {
           // 없으면 앞 제품에서 고른 항목이 남는다.
           key={protocolTarget}
           userProductId={protocolTarget}
+          eventId={protocolEvent}
           activeTab={activeTab}
           onTab={setScreen}
           onBack={() => {
