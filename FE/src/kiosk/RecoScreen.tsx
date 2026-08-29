@@ -24,9 +24,11 @@ type Props = {
   activeTab: TabKey;
   onTab: (t: TabKey) => void;
   onHome: () => void;
+  /** 대체 추천을 보는 중이면 평소 추천으로 돌아가는 수단. 아니면 undefined. */
+  onClearReplace?: () => void;
 };
 
-export function RecoScreen({ reco, dashboard, activeTab, onTab, onHome }: Props) {
+export function RecoScreen({ reco, dashboard, activeTab, onTab, onHome, onClearReplace }: Props) {
   const { data, error, loading, lastUpdated } = reco;
 
   // 서버가 context를 주면 그것을 쓰고, 없으면 대시보드에서 만든다.
@@ -61,7 +63,26 @@ export function RecoScreen({ reco, dashboard, activeTab, onTab, onHome }: Props)
         ) : error && !data ? (
           <ErrorPanel error={error} onRetry={reco.refetch} />
         ) : data ? (
-          <div className="grid h-full grid-cols-[1fr_200px] gap-[18px]">
+          <div className="flex h-full flex-col">
+            {/* 무엇을 대신하는 추천인지 밝힌다. 밝히지 않으면 평소 추천과
+                구분이 안 되고, 사용자가 왜 이 목록을 보는지 알 수 없다. */}
+            {data.replacing ? (
+              <div className="mb-3 flex flex-none items-center gap-3 rounded-[14px] bg-primary-50 p-[13px_17px]">
+                <span className="text-[17px] leading-[1.5]">
+                  <b>{data.replacing}</b> 대신 쓰실 만한 제품입니다
+                </span>
+                {onClearReplace ? (
+                  <button
+                    onClick={onClearReplace}
+                    className="ml-auto h-[42px] flex-none rounded-[11px] border border-gray-200 bg-white px-3.5 text-[15px] font-semibold text-gray-400"
+                  >
+                    오늘의 추천 보기
+                  </button>
+                ) : null}
+              </div>
+            ) : null}
+
+            <div className="grid min-h-0 flex-1 grid-cols-[1fr_200px] gap-[18px]">
             <div className="grid grid-cols-3 gap-3">
               {data.items.slice(0, 3).map((item) => (
                 <div
@@ -100,7 +121,8 @@ export function RecoScreen({ reco, dashboard, activeTab, onTab, onHome }: Props)
               ) : null}
             </div>
 
-            <QrPanel url={data.qr_url} />
+              <QrPanel url={data.qr_url} />
+            </div>
           </div>
         ) : null}
       </div>

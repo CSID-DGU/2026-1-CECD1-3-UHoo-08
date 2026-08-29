@@ -1,5 +1,5 @@
-import { kioskGet, KioskApiError } from "./kioskApi";
-import { MOCK_ENABLED, mockFor } from "./mock";
+import { kioskGet, kioskPost, KioskApiError } from "./kioskApi";
+import { MOCK_ENABLED, mockFor, mockPostFor } from "./mock";
 
 /**
  * 화면이 쓰는 조회 함수.
@@ -15,7 +15,7 @@ export async function careGet<T>(
   params: Record<string, string | number | boolean | undefined> = {}
 ): Promise<T> {
   if (MOCK_ENABLED) {
-    const data = mockFor(path);
+    const data = mockFor(path, params);
     if (data === null) {
       throw new KioskApiError("목업 데이터가 없는 경로", path, 404);
     }
@@ -28,3 +28,25 @@ export async function careGet<T>(
 }
 
 export { MOCK_ENABLED };
+
+/**
+ * POST 요청.
+ *
+ * 목업 모드에서는 서버에 보내지 않고 그럴듯한 응답을 만들어 돌려준다.
+ * 화면 흐름을 확인하는 것이 목적이라 실제 저장은 필요 없다.
+ */
+export async function carePost<T>(
+  path: string,
+  body: unknown,
+  params: Record<string, string | number | boolean | undefined> = {}
+): Promise<T> {
+  if (MOCK_ENABLED) {
+    const data = mockPostFor(path, body);
+    if (data === null) {
+      throw new KioskApiError("목업 응답이 없는 경로", path, 404);
+    }
+    await new Promise((r) => setTimeout(r, 250));
+    return data as T;
+  }
+  return kioskPost<T>(path, body, params);
+}

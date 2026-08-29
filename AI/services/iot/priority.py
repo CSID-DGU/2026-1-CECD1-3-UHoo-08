@@ -37,6 +37,7 @@ from bisect import bisect_left
 from datetime import datetime, timezone
 from typing import Any, Dict, List, Optional, Sequence
 
+from db.iot.event_reader import get_latest_feedback
 from db.iot.reader import get_care_products, get_latest_optical, get_readings
 from services.iot.risk_score import (
     BAND_HIGH, BAND_MEDIUM, compute_risk_score,
@@ -95,6 +96,26 @@ def _missing_reasons(item: Dict[str, Any]) -> List[Dict[str, str]]:
             ok = v not in (None, "")
         if not ok:
             out.append({"field": field, "title": title, "action": action})
+    return out
+
+
+# user_feedback.answer 코드 → 화면 표기.
+# DB CHECK 제약이 다섯 값만 허용해 화면 항목보다 거칠다.
+FEEDBACK_LABEL = {
+    "color": "색 변화",
+    "odor": "냄새 변화",
+    "separation": "층 분리",
+    "texture": "질감 변화",
+}
+
+
+def _finding_labels(answers: List[Optional[str]]) -> List[str]:
+    """'none'만 있으면 이상 없음이므로 빈 목록."""
+    out = []
+    for a in answers:
+        label = FEEDBACK_LABEL.get(a or "")
+        if label and label not in out:
+            out.append(label)
     return out
 
 
@@ -191,6 +212,17 @@ def build_priority(
 
     cache = _load_node_readings(scorable)
 
+    # 사용자가 직접 확인한 결과. 점수와 별개로 목록에 표시한다.
+    #
+    # 점수는 "확인해 볼 순서"이고, 이 값은 "사람이 실제로 본 것"이다.
+    # 후자가 더 강한 정보라 화면에서 눈에 띄게 보여야 한다. 점수가 낮아도
+    # 냄새가 난다고 확인했다면 그 사실이 먼저다.
+    try:
+        feedback = get_latest_feedback([it["user_product_id"] for it in scorable])
+    except Exception:
+        logger.exception("확인 결과 조회 실패 user_id=%s", user_id)
+        feedback = {}
+
     items: List[Dict[str, Any]] = []
     for it in scorable:
         rows, ts_index = cache.get(it["storage_node_id"], ([], []))
@@ -203,12 +235,17 @@ def build_priority(
         if (it.get("optical_grade") or "").lower() != "unsuitable":
             optical = get_latest_optical(it["user_product_id"])
 
+        fb = feedback.get(it["user_product_id"])
+        findings = _finding_labels(fb["answers"]) if fb else []
+
         rs = compute_risk_score(
             sliced,
             sensitivity=it.get("sensitivity_k"),
             pao_months=it.get("pao_months"),
             opened_at=it.get("opened_at"),
             last_checked_at=it.get("last_checked_at"),
+            # 이상이 발견된 확인은 점수를 낮추지 않는다.
+            last_check_clear=not findings,
             optical_delta_pct=(optical or {}).get("delta_pct"),
             optical_grade=it.get("optical_grade"),
             now=now,
@@ -247,6 +284,12 @@ def build_priority(
             detail["components"] = rs.components
 
         items.append({
+            "inspection": ({
+                "ts": fb["ts"],
+                "findings": findings,
+                # 이상 항목이 하나도 없으면 "이상 없음"으로 확인한 것이다.
+                "clear": not findings,
+            } if fb else None),
             "user_product_id": it["user_product_id"],
             "product_id": it["product_id"],
             "name": it.get("name"),
@@ -265,8 +308,12 @@ def build_priority(
 
     # ── 요약은 전체 기준 ─────────────────────────────────────────
     bands = {"high": 0, "medium": 0, "low": 0}
+    # 확인을 마친 고위험 제품. "확인 필요"에서 빼기 위해 따로 센다.
+    checked_high = 0
     for i in items:
         bands[i["band"]] = bands.get(i["band"], 0) + 1
+        if i["band"] == "high" and i.get("inspection"):
+            checked_high += 1
 
     summary = {
         "total": len(products),
@@ -276,7 +323,17 @@ def build_priority(
         "medium": bands["medium"],
         "low": bands["low"],
         # 키오스크 문구용. "보유 12개 중 확인 필요 2개"
-        "needs_check": bands["high"],
+        #
+        # 밴드가 아니라 "아직 확인하지 않은 고위험 제품" 수다. 사용자가 직접
+        # 확인한 제품은 결과가 어떻든 이 수에서 빠진다. 확인하러 가라는 안내인데
+        # 이미 확인한 제품이 계속 남아 있으면 숫자가 줄지 않는다.
+        #
+        # 이상이 발견된 제품은 점수를 낮추지 않으므로 목록 위쪽에 그대로 남고,
+        # 카드 안에서 "주의가 필요합니다"로 따로 알린다. 확인 여부와 위험도는
+        # 별개라는 원칙을 여기서도 지킨다.
+        "needs_check": bands["high"] - checked_high,
+        # 그중 확인을 마친 것. 화면이 "19개 중 4개 확인함"처럼 쓸 수 있다.
+        "checked_high": checked_high,
         "band_thresholds": {"high": BAND_HIGH, "medium": BAND_MEDIUM},
     }
 

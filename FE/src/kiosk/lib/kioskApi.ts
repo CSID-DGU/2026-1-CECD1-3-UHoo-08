@@ -98,3 +98,56 @@ export async function kioskGet<T>(
     throw new KioskApiError("JSON 파싱 실패", href, res.status, text.slice(0, 500));
   }
 }
+
+/**
+ * POST 요청.
+ *
+ * GET과 오류 처리를 똑같이 한다. 아이패드에는 개발자 도구가 없으므로
+ * 실패한 주소와 응답 본문을 그대로 들고 다닌다.
+ */
+export async function kioskPost<T>(
+  path: string,
+  body: unknown,
+  params: Record<string, string | number | boolean | undefined> = {}
+): Promise<T> {
+  const url = new URL(API_BASE + path);
+  for (const [k, v] of Object.entries(params)) {
+    if (v !== undefined) url.searchParams.set(k, String(v));
+  }
+  const href = url.toString();
+
+  const controller = new AbortController();
+  const timer = window.setTimeout(() => controller.abort(), TIMEOUT_MS);
+
+  let res: Response;
+  try {
+    res = await fetch(href, {
+      method: "POST",
+      headers: { "Content-Type": "application/json", Accept: "application/json" },
+      body: JSON.stringify(body),
+      signal: controller.signal,
+    });
+  } catch (e) {
+    const msg =
+      e instanceof Error
+        ? e.name === "AbortError"
+          ? `응답 없음 (${TIMEOUT_MS / 1000}초 초과)`
+          : `${e.name}: ${e.message}`
+        : String(e);
+    throw new KioskApiError(msg, href, null);
+  } finally {
+    window.clearTimeout(timer);
+  }
+
+  const text = await res.text();
+
+  if (!res.ok) {
+    throw new KioskApiError(res.statusText || "요청 실패", href, res.status, text.slice(0, 500));
+  }
+
+  try {
+    return JSON.parse(text) as T;
+  } catch {
+    throw new KioskApiError("JSON 파싱 실패", href, res.status, text.slice(0, 500));
+  }
+}

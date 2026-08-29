@@ -107,30 +107,5 @@ def get_skin_measurements(
     return out
 
 
-def get_risk_events(
-    node_ids: List[str],
-    *,
-    limit: int = 30,
-    pending_only: bool = False,
-) -> List[Dict[str, Any]]:
-    """
-    이상 이벤트 이력.
-
-    pending_only는 사용자가 아직 답하지 않은 건만 가져온다. 키오스크가
-    "향수나 스프레이 제품을 두셨나요?"를 물어야 하는 건들이다.
-    """
-    if not node_ids:
-        return []
-
-    sb = get_supabase()
-    q = (
-        sb.table("risk_events")
-        .select("id, node_id, ts, event_type, magnitude, user_answer, excluded")
-        .in_("node_id", node_ids)
-        .order("ts", desc=True)
-        .limit(limit)
-    )
-    if pending_only:
-        q = q.eq("user_answer", "pending")
-
-    return (q.execute()).data or []
+# 이상 이벤트 조회는 db/iot/event_reader.py로 옮겼다.
+# 피부 측정과 이상 이벤트는 서로 관계가 없는데 한 파일에 있었다.

@@ -29,6 +29,9 @@ import { WishlistPage } from "./pages/wishlist/WishlistPage";
 import { WishlistCategoryPage } from "./pages/wishlist/WishlistCategoryPage";
 import { PriceTrackingAddPage } from "./pages/priceTracking/PriceTrackingAddPage";
 import { PriceHistoryPage } from "./pages/priceTracking/PriceHistoryPage";
+import { CareRecommendationPage } from "./pages/recommendation/CareRecommendationPage";
+import { MyProductRegisterPage } from "./pages/my/MyProductRegisterPage";
+import { MyProductListPage } from "./pages/my/MyProductListPage";
 import { KioskPage } from "./pages/kiosk/KioskPage";
 
 export const router = createBrowserRouter([
@@ -53,6 +56,9 @@ export const router = createBrowserRouter([
       { path: "/product/recognize", element: <ProductRecognizePage /> },
       { path: "/product/:productId", element: <ProductDetailPage /> },
       { path: "/notifications", element: <NotificationPage /> },
+      { path: "/my/products", element: <MyProductListPage /> },
+      { path: "/my/products/new", element: <MyProductRegisterPage /> },
+      { path: "/recommendation/care", element: <CareRecommendationPage /> },
       { path: "/recommendation/lookup", element: <ProductLookupPage /> },
       { path: "/recommendation/nfc-scan", element: <NfcScanPage /> },
       { path: "/recommendation/nfc-scan/demo", element: <NfcScanPage /> },

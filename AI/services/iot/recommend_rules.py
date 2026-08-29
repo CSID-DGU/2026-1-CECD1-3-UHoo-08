@@ -26,6 +26,7 @@ from dataclasses import dataclass
 from typing import Any, Dict, List, Optional
 
 from db.product_reader import search_products_by_name
+from services.iot.humidity import absolute_humidity
 
 logger = logging.getLogger(__name__)
 
@@ -50,6 +51,176 @@ def _f(v: Any) -> Optional[float]:
         return None if v is None else float(v)
     except (TypeError, ValueError):
         return None
+
+
+# 제형·마무리를 사람 말로 옮긴다. DB 값이 "글로우"라고만 되어 있으면
+# 그게 촉촉하다는 뜻인지 사용자는 모른다.
+_FINISH_WORD = {
+    "매트": "매트하게 마무리되는",
+    "세미매트": "세미매트로 마무리되는",
+    "글로우": "촉촉하게 마무리되는",
+    "촉촉": "촉촉하게 마무리되는",
+    "내추럴": "자연스럽게 마무리되는",
+}
+_TEXTURE_WORD = {
+    "가벼운": "가볍게 발리는",
+    "중간": "무겁지 않은",
+    "진한": "진하고 촘촘한",
+}
+
+
+@dataclass
+class NodeHistory:
+    """노드 한 곳의 누적 환경. 하루치가 아니라 쌓인 기간 전체를 본다."""
+    days: int
+    samples: int
+    mean_temp: Optional[float]
+    max_temp: Optional[float]
+    hot_ratio: float          # TEMP_WATCH_C를 넘긴 측정 비율
+    mean_ah: Optional[float]  # 평균 절대습도
+    dry_ratio: float          # DRY_GM3 아래였던 비율
+    mean_pm25: Optional[float]
+
+
+def summarize_history(readings: List[Dict[str, Any]]) -> Optional[NodeHistory]:
+    """
+    측정 이력을 한 덩어리로 요약한다.
+
+    화장품은 하루 쓰려고 사는 물건이 아니다. 지금 이 순간의 온도가 아니라
+    이 자리에 몇 주 두었을 때 어떤 환경이었는지가 추천의 근거여야 한다.
+    """
+    temps: List[float] = []
+    ahs: List[float] = []
+    pms: List[float] = []
+    hot = dry = 0
+
+    for r in readings:
+        t = _f(r.get("temperature"))
+        h = _f(r.get("humidity"))
+        pm = _f(r.get("pm25"))
+
+        if t is not None:
+            temps.append(t)
+            if t > TEMP_WATCH_C:
+                hot += 1
+        if pm is not None:
+            pms.append(pm)
+
+        ah = absolute_humidity(t, h)
+        if ah is not None:
+            ahs.append(ah)
+            if ah < DRY_GM3:
+                dry += 1
+
+    if not temps and not ahs:
+        return None
+
+    # 10분 간격 수집을 전제로 대략의 일수를 낸다. 정확한 날짜 차이보다
+    # 화면에 "며칠치인가"를 알려주는 것이 목적이다.
+    days = max(1, round(len(readings) * 10 / 60 / 24))
+
+    return NodeHistory(
+        days=days,
+        samples=len(readings),
+        mean_temp=(sum(temps) / len(temps)) if temps else None,
+        max_temp=max(temps) if temps else None,
+        hot_ratio=(hot / len(temps)) if temps else 0.0,
+        mean_ah=(sum(ahs) / len(ahs)) if ahs else None,
+        dry_ratio=(dry / len(ahs)) if ahs else 0.0,
+        mean_pm25=(sum(pms) / len(pms)) if pms else None,
+    )
+
+
+def build_node_candidates(hist: NodeHistory, label: str) -> List[Candidate]:
+    """
+    누적 환경에서 추천 조건을 뽑는다.
+
+    build_candidates가 "지금"을 본다면 이쪽은 "그동안"을 본다. 보관 장소를
+    고정해 두고 쓰는 제품이라 이 기준이 맞다.
+    """
+    out: List[Candidate] = []
+    span = f"{hist.days}일"
+
+    if hist.hot_ratio >= 0.15 and hist.max_temp is not None:
+        pct = round(hist.hot_ratio * 100)
+        out.append(Candidate(
+            "hot-history",
+            ["수분", "젤", "가벼운"],
+            f"{label} 최근 {span} 중 {pct}%가 {TEMP_WATCH_C:.0f}℃를 넘었습니다 "
+            f"(최고 {hist.max_temp:.1f}℃) — 열에 덜 예민한 가벼운 제형",
+            10,
+        ))
+
+    if hist.dry_ratio >= 0.3 and hist.mean_ah is not None:
+        pct = round(hist.dry_ratio * 100)
+        out.append(Candidate(
+            "dry-history",
+            ["수분크림", "보습", "밤"],
+            f"{label} 최근 {span} 중 {pct}%가 건조 기준 아래였습니다 "
+            f"(평균 {hist.mean_ah:.1f} g/m³) — 보습 위주",
+            20,
+        ))
+
+    if hist.mean_pm25 is not None and hist.mean_pm25 > PM25_NORMAL:
+        out.append(Candidate(
+            "pm-history",
+            ["클렌징", "폼", "클렌저"],
+            f"{label} 최근 {span} 평균 초미세먼지 {hist.mean_pm25:.0f} ㎍/m³ — 세정 강화",
+            30,
+        ))
+
+    if not out:
+        # "오늘 이슈 없음"이라고 쓰지 않는다. 하루가 아니라 그동안 어땠는지를
+        # 숫자로 말해 주는 편이 추천의 근거로 읽힌다.
+        bits = []
+        if hist.mean_temp is not None:
+            bits.append(f"평균 {hist.mean_temp:.1f}℃")
+        if hist.mean_ah is not None:
+            bits.append(f"절대습도 {hist.mean_ah:.1f} g/m³")
+        out.append(Candidate(
+            "stable-history",
+            ["수분", "보습", "토너"],
+            f"{label} 최근 {span} {' · '.join(bits)}로 안정적이었습니다 — 꾸준히 쓰기 좋은 제품",
+            90,
+        ))
+
+    out.sort(key=lambda c: c.order)
+    return out
+
+
+def product_blurb(feat: Optional[Dict[str, Any]]) -> Optional[str]:
+    """
+    이 제품이 어떤 제품인지 한 줄.
+
+    "같은 용도 제품입니다"는 고를 근거가 못 된다. 촉촉한지 매트한지, 어떤
+    피부에 맞춘 것인지를 말해야 사용자가 판단할 수 있다.
+
+    feature_json에 있는 값만 쓴다. 없는 항목은 조용히 건너뛴다.
+    """
+    f = feat or {}
+    ptype = (f.get("product_type") or "").strip()
+
+    head = _FINISH_WORD.get((f.get("finish") or "").strip()) \
+        or _TEXTURE_WORD.get((f.get("texture") or "").strip())
+
+    lead = f"{head} {ptype}".strip() if (head and ptype) else (ptype or head)
+    if not lead:
+        return None
+
+    tail: List[str] = []
+    skin = (f.get("skin_type") or "").strip()
+    if skin:
+        tail.append(f"{skin} 피부용")
+
+    concerns = [c for c in (f.get("skin_concern") or []) if c]
+    if concerns:
+        tail.append(" · ".join(concerns[:2]))
+
+    spf = (f.get("spf") or "").strip()
+    if spf and not tail:
+        tail.append(spf)
+
+    return f"{lead} · {' · '.join(tail)}" if tail else lead
 
 
 def build_candidates(
@@ -173,6 +344,8 @@ def pick_products(
             "name": found["name"],
             "brand": found.get("brand"),
             "image_url": found.get("image_url"),
+            # 앱 목록이 가격을 함께 보여준다.
+            "price": found.get("price"),
             "reason": cand.reason,
         })
 

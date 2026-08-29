@@ -67,7 +67,21 @@ export type PriorityDetail = {
   [key: string]: unknown;
 };
 
+/**
+ * 사용자가 직접 확인한 결과.
+ *
+ * 점수는 "확인해 볼 순서"이고 이쪽은 "사람이 실제로 본 것"이다.
+ * 후자가 더 강한 정보라 목록에서 눈에 띄게 보여야 한다.
+ */
+export type InspectionRecord = {
+  ts: string;
+  findings: string[];
+  /** 이상 항목 없이 "이상 없음"으로 확인한 경우 */
+  clear: boolean;
+};
+
 export type PriorityItem = {
+  inspection: InspectionRecord | null;
   user_product_id: string;
   product_id: string | null;
   name: string | null;
@@ -104,8 +118,10 @@ export type PrioritySummary = {
   high: number;
   medium: number;
   low: number;
-  /** 확인이 필요한 제품 수 (high 밴드) */
+  /** 아직 확인하지 않은 고위험 제품 수. high 밴드 개수가 아니다. */
   needs_check: number;
+  /** 고위험 중 이미 확인을 마친 수. needs_check와 합하면 high가 된다. */
+  checked_high: number;
   band_thresholds: Record<string, number>;
 };
 
@@ -243,5 +259,112 @@ export type RecommendationsResponse = {
   context: string | null;
   items: RecommendedProduct[];
   /** QR에 넣을 주소. 휴대폰에서 전체 추천을 보는 곳. */
+  /** 이상이 발견된 제품을 대신하는 추천이면 그 제품 이름. */
+  replacing: string | null;
   qr_url: string;
+};
+
+// ── GET /api/care/events ─────────────────────────────────────
+
+export type EventType = "temp_excursion" | "humid_excursion" | "voc_spike";
+export type EventAnswer = "pending" | "external_source" | "none";
+
+export type CareEvent = {
+  id: number;
+  node_id: string | null;
+  node_label: string | null;
+  ts: string;
+  /** 화면에 그대로 쓰는 짧은 시각 표기. 서버가 만든다. */
+  when: string;
+  event_type: EventType | string;
+  magnitude: number | null;
+  title: string;
+  detail: string;
+  /** 답을 받아야 하면 문구, 아니면 null. 이미 답한 건은 null이다. */
+  question: string | null;
+  user_answer: EventAnswer | string;
+  excluded: boolean;
+  /** 답한 뒤 목록에 표시할 한 줄. 아직 답하지 않았으면 null. */
+  status: string | null;
+};
+
+export type EventsResponse = {
+  generated_at: string;
+  /** 목록 위에 한 번만 두는 설명. 칸마다 반복하지 않는다. */
+  intro: string[];
+  summary: {
+    total: number;
+    pending: number;
+    excluded: number;
+    /** 대기 화면 알림 바 문구. 없으면 null. */
+    alert: string | null;
+  };
+  items: CareEvent[];
+};
+
+// ── POST /api/care/events/{id}/answer ────────────────────────
+
+export type GuidanceProduct = {
+  user_product_id: string;
+  name: string | null;
+  brand: string | null;
+  score: number;
+  band: RiskBand;
+};
+
+export type EventAnswerResponse = {
+  event: CareEvent;
+  headline: string;
+  lines: string[];
+  /** "아니요"로 답했을 때만 온다. 확인 순위 상위 제품이 담긴다. */
+  next: { action: string; products: GuidanceProduct[] } | null;
+};
+
+// ── GET /api/care/products/{id}/protocol ─────────────────────
+//
+// 설계서 §5-6. 식약처 화장품 안정성시험 가이드라인의 시험항목을
+// 소비자가 확인 가능한 형태로 옮긴 표다. 카테고리마다 순서가 다르다.
+
+export type CheckStep = {
+  order: number;
+  /** 가이드라인의 어느 시험항목에서 왔는지 (성상·색, 냄새 등) */
+  basis: string;
+  text: string;
+  /** AS7341 측정으로 도울 수 있는 항목 */
+  optical: boolean;
+};
+
+export type ProtocolResponse = {
+  user_product_id: string;
+  name: string | null;
+  brand: string | null;
+  /** 확인 유형 (오일·세럼 등) */
+  label: string;
+  score: number | null;
+  band: RiskBand | null;
+  reasons: string[];
+  steps: CheckStep[];
+  answers: string[];
+  /** 눈가 제품처럼 따로 덧붙일 말 */
+  caution: string | null;
+  note: string | null;
+};
+
+// ── POST /api/care/products/{id}/inspection ──────────────────
+
+export type GuidanceSection = {
+  label: string;
+  lines: string[];
+};
+
+export type InspectionResponse = {
+  user_product_id: string;
+  answers: string[];
+  headline: string;
+  /** 사용자가 고른 항목마다 하나씩 */
+  sections: GuidanceSection[];
+  lines: string[];
+  recommend_replace: boolean;
+  /** 점검 목록에 표시할 짧은 항목명 */
+  findings: string[];
 };
