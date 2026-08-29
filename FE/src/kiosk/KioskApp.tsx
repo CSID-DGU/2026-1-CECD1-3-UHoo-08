@@ -7,6 +7,7 @@ import { RecoScreen } from "./RecoScreen";
 import { EnvScreen, readSavedRegion } from "./EnvScreen";
 import { EventsScreen } from "./EventsScreen";
 import { ProtocolScreen } from "./ProtocolScreen";
+import { ProductPicker, toPickerProduct } from "./ProductPicker";
 import { TabBar, TopBar, type TabKey } from "./ui";
 import { KIOSK_USER_ID } from "./lib/kioskApi";
 import { careGet } from "./lib/careApi";
@@ -67,6 +68,8 @@ export function KioskApp() {
   const [region, setRegion] = useState<string>(readSavedRegion);
   // 확인 절차 화면이 볼 제품. 점검 목록이나 이벤트 안내에서 넘어온다.
   const [protocolTarget, setProtocolTarget] = useState<string | null>(null);
+  // 측정할 제품을 고르는 모달. 점검 탭의 "측정하기"가 연다.
+  const [pickingMeasure, setPickingMeasure] = useState(false);
 
   const dashboard = useKioskQuery<DashboardResponse>(
     () => careGet<DashboardResponse>("/api/care/dashboard", { user_id: KIOSK_USER_ID }),
@@ -151,6 +154,21 @@ export function KioskApp() {
 
   return (
     <KioskFrame>
+      {pickingMeasure ? (
+        <ProductPicker
+          title="어떤 제품을 측정할까요?"
+          description="확인 순위가 높은 순입니다. 아래로 넘겨 모두 볼 수 있습니다."
+          products={(priority.data?.items ?? []).map(toPickerProduct)}
+          onPick={(id) => {
+            setPickingMeasure(false);
+            const found = priority.data?.items.find((i) => i.user_product_id === id);
+            if (found) setTarget(found);
+            setScreen("measure");
+          }}
+          onClose={() => setPickingMeasure(false)}
+        />
+      ) : null}
+
       {screen === "idle" ? (
         // 대기 화면에는 탭바를 두지 않는다. 멀리서 보는 화면이라
         // 색과 숫자만 남기고, 조작은 화면을 누르는 것 하나로 좁힌다.
@@ -171,15 +189,12 @@ export function KioskApp() {
           activeTab={activeTab}
           onTab={setScreen}
           onHome={goHome}
-          onMeasure={(item) => {
-            // 목업의 "측정하기"는 광학 측정이지만, 지그 정밀도가 정리될
-            // 때까지는 확인 절차로 보낸다. 눈으로 확인하는 쪽이 지금은
-            // 더 정확하고, 절차 화면 안에서 측정으로 이어갈 수 있다.
-            setTarget(item);
-            setProtocolTarget(item.user_product_id);
+          onMeasure={() => setPickingMeasure(true)}
+          onEvents={() => setScreen("events")}
+          onProtocol={(id) => {
+            setProtocolTarget(id);
             setScreen("protocol");
           }}
-          onEvents={() => setScreen("events")}
         />
       ) : screen === "skin" ? (
         <SkinScreen

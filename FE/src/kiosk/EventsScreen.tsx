@@ -1,9 +1,10 @@
 import { useState } from "react";
-import { TopBar, TabBar, ErrorPanel, StaleBanner, Loading, STATUS, BAND_STYLE, type TabKey } from "./ui";
+import { TopBar, TabBar, ErrorPanel, StaleBanner, Loading, STATUS, type TabKey } from "./ui";
+import { ProductPicker } from "./ProductPicker";
 import { careGet, carePost } from "./lib/careApi";
 import { KIOSK_USER_ID, KioskApiError } from "./lib/kioskApi";
 import { useKioskQuery } from "./lib/useKioskQuery";
-import type { CareEvent, EventAnswerResponse, EventsResponse, GuidanceProduct } from "./lib/types";
+import type { CareEvent, EventAnswerResponse, EventsResponse } from "./lib/types";
 
 /**
  * 이벤트 이력과 확인 질문.
@@ -39,6 +40,8 @@ export function EventsScreen({ activeTab, onTab, onBack, onProduct }: Props) {
   // 답변 중인 이벤트와 그 결과. 화면 위에 카드로 띄운다.
   const [answering, setAnswering] = useState<number | null>(null);
   const [result, setResult] = useState<EventAnswerResponse | null>(null);
+  // 안내를 닫으면 제품 목록을 띄운다. 두 카드를 겹쳐 놓으면 화면이 좁다.
+  const [picking, setPicking] = useState<EventAnswerResponse | null>(null);
   const [answerError, setAnswerError] = useState<KioskApiError | null>(null);
 
   const answer = async (id: number, value: "external_source" | "none") => {
@@ -110,11 +113,30 @@ export function EventsScreen({ activeTab, onTab, onBack, onProduct }: Props) {
       {result ? (
         <GuidanceCard
           result={result}
-          onClose={() => setResult(null)}
-          onProduct={(id) => {
+          onClose={() => {
+            // 확인해 볼 제품이 있으면 목록으로 이어진다.
+            if (result.next?.products?.length) setPicking(result);
             setResult(null);
+          }}
+        />
+      ) : null}
+
+      {picking?.next?.products?.length ? (
+        <ProductPicker
+          title="확인할 제품을 골라 주세요"
+          description="같은 보관함의 제품을 확인 순위가 높은 순으로 보여드립니다."
+          products={picking.next.products.map((p) => ({
+            user_product_id: p.user_product_id,
+            name: p.name,
+            brand: p.brand,
+            score: p.score,
+            band: p.band,
+          }))}
+          onPick={(id) => {
+            setPicking(null);
             onProduct(id);
           }}
+          onClose={() => setPicking(null)}
         />
       ) : null}
 
@@ -188,7 +210,7 @@ function EventRow({
               onClick={() => onAnswer("external_source")}
               className="h-[54px] flex-1 rounded-[13px] bg-primary-500 text-[18px] font-semibold text-white disabled:opacity-50"
             >
-              네, 두었어요
+              네
             </button>
             <button
               disabled={busy}
@@ -218,11 +240,9 @@ function EventRow({
 function GuidanceCard({
   result,
   onClose,
-  onProduct,
 }: {
   result: EventAnswerResponse;
   onClose: () => void;
-  onProduct: (userProductId: string) => void;
 }) {
   return (
     <div className="absolute inset-0 z-10 flex items-center justify-center bg-black/35 p-8">
@@ -237,51 +257,14 @@ function GuidanceCard({
           ))}
         </div>
 
-        {result.next?.products?.length ? (
-          <div className="mt-3 space-y-2">
-            {result.next.products.map((p) => (
-              <ProductRow key={p.user_product_id} product={p} onClick={() => onProduct(p.user_product_id)} />
-            ))}
-          </div>
-        ) : null}
-
         <button
           onClick={onClose}
           className="mt-4 h-[58px] w-full rounded-[14px] bg-primary-500 text-[19px] font-semibold text-white"
         >
-          닫기
+          {result.next?.products?.length ? "제품 고르기" : "닫기"}
         </button>
       </div>
     </div>
-  );
-}
-
-function ProductRow({ product, onClick }: { product: GuidanceProduct; onClick: () => void }) {
-  const style = BAND_STYLE[product.band];
-  return (
-    <button
-      onClick={onClick}
-      className="flex w-full items-center gap-3 rounded-[14px] border border-gray-200 p-[13px_16px] text-left"
-    >
-      <span
-        className="grid h-10 w-10 flex-none place-items-center rounded-[11px] text-[19px]"
-        style={{ background: style.pill }}
-      >
-        {style.emoji}
-      </span>
-      <span className="min-w-0">
-        <span className="block truncate text-[18px] font-semibold">
-          {product.name || "이름 없는 제품"}
-        </span>
-        <span className="block text-[15px] text-gray-300">{product.brand}</span>
-      </span>
-      <span className="ml-auto flex-none text-right">
-        <span className="block text-[22px] font-bold tabular-nums" style={{ color: style.text }}>
-          {Math.round(product.score)}
-        </span>
-        <span className="block text-[13px] text-gray-300">확인해 보기 →</span>
-      </span>
-    </button>
   );
 }
 

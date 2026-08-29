@@ -29,7 +29,9 @@ from db.iot.writer import get_latest_reading
 from services.iot.care_rules import build_brief, compare_indoor
 from services.iot.erl import T_REF_C, acceleration_factor
 from services.iot.event_rules import alert_line, describe, guidance, when
-from services.iot.inspection_rules import ANSWERS, answer_guidance, build_protocol
+from services.iot.inspection_rules import (
+    ANSWERS, FEEDBACK_CODE, answer_guidance, build_protocol, summary_label,
+)
 from services.iot.humidity import DRY_THRESHOLD_GM3, absolute_humidity, is_dry
 from services.iot.priority import build_priority
 from services.iot.psri import compute_psri, relation_sentence
@@ -810,8 +812,12 @@ class AnswerResponse(BaseModel):
     next: Optional[GuidanceNext] = None
 
 
-# 답변 후 함께 보여줄 제품 수. 세 개를 넘기면 화면이 넘친다.
-GUIDANCE_PRODUCT_N = 2
+# 답변 후 함께 보여줄 제품 수.
+#
+# 처음에는 2개만 줬는데, 사용자가 그 둘 중에서만 고를 수 있어 답답했다.
+# 화면이 스크롤되는 목록이므로 전부 준다. 정상 범위 제품도 포함한다.
+# 사용자가 "저건 왜 없지"라고 생각할 여지를 남기지 않는다.
+GUIDANCE_PRODUCT_N = 20
 
 
 @router.post(
@@ -868,8 +874,6 @@ def post_event_answer(
                 # 같은 보관함의 제품만 보여준다. 다른 방에 있던 제품을
                 # 이 이벤트의 후보로 내밀면 근거가 어긋난다.
                 if node_id and it.get("storage_node_id") != node_id:
-                    continue
-                if it["band"] == "low":
                     continue
                 top.append({
                     "user_product_id": it["user_product_id"],
@@ -1010,17 +1014,32 @@ def get_protocol(
 
 
 class InspectionRequest(BaseModel):
-    answer: str = Field(..., description="이상 없음 / 색이 다름 / 냄새가 남 등")
+    answers: List[str] = Field(
+        ...,
+        description="확인한 항목들. 여러 개를 고를 수 있다.",
+        min_length=1,
+    )
+
+
+class GuidanceSection(BaseModel):
+    label: str
+    lines: List[str]
 
 
 class InspectionResponse(BaseModel):
     user_product_id: str
-    answer: str
+    answers: List[str]
     headline: str
+    """항목마다 하나씩. 고른 것이 여럿이면 여럿 나온다."""
+    sections: List[GuidanceSection]
     lines: List[str]
     recommend_replace: bool = Field(
         False,
         description="교체를 권할 상황인지. 화면이 조용히 덧붙이는 데 쓴다",
+    )
+    findings: List[str] = Field(
+        [],
+        description="점검 목록에 표시할 짧은 항목명",
     )
 
 
@@ -1029,9 +1048,10 @@ class InspectionResponse(BaseModel):
     response_model=InspectionResponse,
     summary="확인 결과 기록",
     description=(
-        "사용자가 확인한 결과를 받는다. 설계서 §5-7의 피드백 루프 입력이며, "
-        "last_checked_at을 갱신해 점검 점수의 '마지막 확인' 항목에 반영한다. "
-        "여기서도 변질을 판정하지 않는다. 관측된 사실과 일반적인 권장만 전한다."
+        "사용자가 확인한 항목들을 받는다. 여러 개를 고를 수 있다. "
+        "설계서 §5-7의 피드백 루프 입력이며, last_checked_at을 갱신해 "
+        "점검 점수의 '마지막 확인' 항목에 반영한다. "
+        "여기서도 변질을 판정하지 않는다. 사용자가 확인한 사실을 옮길 뿐이다."
     ),
 )
 def post_inspection(
@@ -1039,10 +1059,11 @@ def post_inspection(
     body: InspectionRequest,
     user_id: str = Query(..., description="예선 한정"),
 ) -> InspectionResponse:
-    if body.answer not in ANSWERS:
+    unknown = [a for a in body.answers if a not in ANSWERS]
+    if unknown:
         raise HTTPException(
             status_code=422,
-            detail=f"answer는 다음 중 하나여야 합니다: {', '.join(ANSWERS)}",
+            detail=f"알 수 없는 항목: {', '.join(unknown)}",
         )
 
     try:
@@ -1058,23 +1079,57 @@ def post_inspection(
     proto = build_protocol(item.get("name"), item.get("category"),
                            item.get("optical_grade"))
 
-    # 확인했다는 사실을 남긴다. risk_score의 last_check 항목이 이 값을 본다.
-    # 확인 결과와 무관하게 "봤다"는 것 자체가 점수를 낮춘다.
+    # 이 제품의 항목이 아닌 답은 막는다. 화면은 버튼으로만 고르지만
+    # 서버가 자기 규칙을 지켜야 한다.
+    invalid = [a for a in body.answers if a not in proto["answers"]]
+    if invalid:
+        raise HTTPException(
+            status_code=422,
+            detail=(f"이 제품({proto['label']})의 확인 항목이 아닙니다: "
+                    f"{', '.join(invalid)}. "
+                    f"가능한 답: {', '.join(proto['answers'])}"),
+        )
+
+    g = answer_guidance(body.answers, proto["category"])
+
+    # ── 저장 ─────────────────────────────────────────────────────
+    # 확인했다는 사실과 무엇을 봤는지를 남긴다. 실패해도 안내는 돌려준다.
+    # 사용자는 이미 확인을 마쳤고, 저장 실패는 사용자 문제가 아니다.
+    now_iso = datetime.now(timezone.utc).isoformat()
     try:
         from db.supabase_client import get_supabase
-        (get_supabase().table("user_products")
-         .update({"last_checked_at": datetime.now(timezone.utc).isoformat()})
-         .eq("id", user_product_id).execute())
-    except Exception:
-        # 기록에 실패해도 안내는 돌려준다. 사용자가 이미 확인을 마쳤다.
-        logger.exception("last_checked_at 갱신 실패 %s", user_product_id)
+        sb = get_supabase()
 
-    g = answer_guidance(body.answer, proto["category"])
+        (sb.table("user_products")
+         .update({"last_checked_at": now_iso})
+         .eq("id", user_product_id).execute())
+
+        # 피드백은 항목마다 한 행. 나중에 "변화율 몇 %에서 사람이 알아채는가"를
+        # 집계하려면 항목별로 나뉘어 있어야 한다.
+        rows = []
+        for a in body.answers:
+            code = FEEDBACK_CODE.get(a)
+            if not code:
+                continue
+            rows.append({
+                "user_product_id": user_product_id,
+                "ts": now_iso,
+                "risk_score": None,
+                "delta_pct": (item.get("optical_delta_pct")
+                              if isinstance(item, dict) else None),
+                "answer": code,
+            })
+        if rows:
+            sb.table("user_feedback").insert(rows).execute()
+    except Exception:
+        logger.exception("확인 결과 저장 실패 %s", user_product_id)
 
     return InspectionResponse(
         user_product_id=user_product_id,
-        answer=body.answer,
+        answers=body.answers,
         headline=g["headline"],
+        sections=[GuidanceSection(**sec) for sec in g["sections"]],
         lines=g["lines"],
         recommend_replace=g["recommend_replace"],
+        findings=g["findings"],
     )

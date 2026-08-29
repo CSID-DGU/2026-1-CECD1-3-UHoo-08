@@ -116,3 +116,44 @@ def answer_event(event_id: int, answer: str) -> Optional[Dict[str, Any]]:
     (sb.table("risk_events").update(patch).eq("id", event_id).execute())
 
     return get_event(event_id)
+
+
+# ── 확인 결과 ────────────────────────────────────────────────────
+
+def get_latest_feedback(user_product_ids: List[str]) -> Dict[str, Dict[str, Any]]:
+    """
+    제품별 가장 최근 확인 결과.
+
+    같은 시각에 여러 항목을 고를 수 있으므로, 최신 ts의 행들을 묶어
+    항목 목록으로 만든다. "냄새 변화 · 층 분리"처럼 함께 보여야 한다.
+
+    제품마다 따로 조회하지 않고 한 번에 읽는다. 점검 목록이 열 개 넘는
+    제품을 그리는데 제품당 한 번씩 부르면 그만큼 왕복이 늘어난다.
+    """
+    if not user_product_ids:
+        return {}
+
+    sb = get_supabase()
+    rows = (
+        sb.table("user_feedback")
+        .select("user_product_id, ts, answer")
+        .in_("user_product_id", user_product_ids)
+        .order("ts", desc=True)
+        .limit(200)
+        .execute()
+    ).data or []
+
+    out: Dict[str, Dict[str, Any]] = {}
+    for r in rows:
+        up = r.get("user_product_id")
+        if not up:
+            continue
+        cur = out.get(up)
+        if cur is None:
+            out[up] = {"ts": r.get("ts"), "answers": [r.get("answer")]}
+        elif cur["ts"] == r.get("ts"):
+            # 같은 확인에서 함께 고른 항목
+            cur["answers"].append(r.get("answer"))
+        # 더 오래된 확인은 무시한다. 최신 것만 본다.
+
+    return out

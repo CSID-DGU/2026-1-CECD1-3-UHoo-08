@@ -37,6 +37,7 @@ from bisect import bisect_left
 from datetime import datetime, timezone
 from typing import Any, Dict, List, Optional, Sequence
 
+from db.iot.event_reader import get_latest_feedback
 from db.iot.reader import get_care_products, get_latest_optical, get_readings
 from services.iot.risk_score import (
     BAND_HIGH, BAND_MEDIUM, compute_risk_score,
@@ -95,6 +96,26 @@ def _missing_reasons(item: Dict[str, Any]) -> List[Dict[str, str]]:
             ok = v not in (None, "")
         if not ok:
             out.append({"field": field, "title": title, "action": action})
+    return out
+
+
+# user_feedback.answer 코드 → 화면 표기.
+# DB CHECK 제약이 다섯 값만 허용해 화면 항목보다 거칠다.
+_FEEDBACK_LABEL = {
+    "color": "색 변화",
+    "odor": "냄새 변화",
+    "separation": "층 분리",
+    "texture": "질감 변화",
+}
+
+
+def _finding_labels(answers: List[Optional[str]]) -> List[str]:
+    """'none'만 있으면 이상 없음이므로 빈 목록."""
+    out = []
+    for a in answers:
+        label = _FEEDBACK_LABEL.get(a or "")
+        if label and label not in out:
+            out.append(label)
     return out
 
 
@@ -191,6 +212,17 @@ def build_priority(
 
     cache = _load_node_readings(scorable)
 
+    # 사용자가 직접 확인한 결과. 점수와 별개로 목록에 표시한다.
+    #
+    # 점수는 "확인해 볼 순서"이고, 이 값은 "사람이 실제로 본 것"이다.
+    # 후자가 더 강한 정보라 화면에서 눈에 띄게 보여야 한다. 점수가 낮아도
+    # 냄새가 난다고 확인했다면 그 사실이 먼저다.
+    try:
+        feedback = get_latest_feedback([it["user_product_id"] for it in scorable])
+    except Exception:
+        logger.exception("확인 결과 조회 실패 user_id=%s", user_id)
+        feedback = {}
+
     items: List[Dict[str, Any]] = []
     for it in scorable:
         rows, ts_index = cache.get(it["storage_node_id"], ([], []))
@@ -246,7 +278,16 @@ def build_priority(
         if include_components:
             detail["components"] = rs.components
 
+        fb = feedback.get(it["user_product_id"])
+        findings = _finding_labels(fb["answers"]) if fb else []
+
         items.append({
+            "inspection": ({
+                "ts": fb["ts"],
+                "findings": findings,
+                # 이상 항목이 하나도 없으면 "이상 없음"으로 확인한 것이다.
+                "clear": not findings,
+            } if fb else None),
             "user_product_id": it["user_product_id"],
             "product_id": it["product_id"],
             "name": it.get("name"),

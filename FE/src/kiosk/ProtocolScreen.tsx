@@ -54,13 +54,27 @@ export function ProtocolScreen({
   const [result, setResult] = useState<InspectionResponse | null>(null);
   const [saveError, setSaveError] = useState<KioskApiError | null>(null);
 
-  const submit = async (answer: string) => {
+  // 여러 항목을 고를 수 있다. 냄새도 나고 층도 분리됐다면 둘 다 골라야 한다.
+  const [picked, setPicked] = useState<string[]>([]);
+
+  const toggle = (a: string) => {
+    setPicked((prev) => {
+      const isOk = a === "이상 없음";
+      if (prev.includes(a)) return prev.filter((x) => x !== a);
+      // "이상 없음"과 다른 항목은 함께 고를 수 없다. 서로 모순이다.
+      if (isOk) return [a];
+      return [...prev.filter((x) => x !== "이상 없음"), a];
+    });
+  };
+
+  const submit = async () => {
+    if (picked.length === 0) return;
     setSaving(true);
     setSaveError(null);
     try {
       const res = await carePost<InspectionResponse>(
         `/api/care/products/${userProductId}/inspection`,
-        { answer },
+        { answers: picked },
         { user_id: KIOSK_USER_ID }
       );
       setResult(res);
@@ -147,24 +161,49 @@ export function ProtocolScreen({
             </div>
 
             <div className="mt-2 flex-none">
-              <div className="mb-1.5 text-[16px] text-gray-300">확인하셨나요?</div>
-              <div className="flex gap-2">
-                {data.answers.map((a, i) => (
-                  <button
-                    key={a}
-                    disabled={saving}
-                    onClick={() => void submit(a)}
-                    className={
-                      "h-[58px] flex-1 rounded-[14px] text-[18px] font-semibold disabled:opacity-50 " +
-                      (i === 0
-                        ? "bg-primary-500 text-white"
-                        : "border border-gray-200 bg-white text-gray-400")
-                    }
-                  >
-                    {a}
-                  </button>
-                ))}
+              <div className="mb-1.5 text-[16px] text-gray-300">
+                해당하는 것을 모두 선택해 주세요 (여러 개 선택 가능)
               </div>
+              <div className="flex gap-2">
+                {data.answers.map((a) => {
+                  const on = picked.includes(a);
+                  return (
+                    <button
+                      key={a}
+                      disabled={saving}
+                      onClick={() => toggle(a)}
+                      className={
+                        "flex h-[58px] flex-1 items-center justify-center gap-2 rounded-[14px] text-[18px] font-semibold disabled:opacity-50 " +
+                        (on
+                          ? "bg-primary-500 text-white"
+                          : "border border-gray-200 bg-white text-gray-400")
+                      }
+                    >
+                      <span
+                        className={
+                          "grid h-6 w-6 flex-none place-items-center rounded-md text-[14px] " +
+                          (on ? "bg-white/25" : "border border-gray-200")
+                        }
+                      >
+                        {on ? "✓" : ""}
+                      </span>
+                      {a}
+                    </button>
+                  );
+                })}
+              </div>
+
+              <button
+                disabled={saving || picked.length === 0}
+                onClick={() => void submit()}
+                className="mt-2 h-[58px] w-full rounded-[14px] bg-primary-500 text-[19px] font-semibold text-white disabled:bg-gray-200 disabled:text-gray-300"
+              >
+                {saving
+                  ? "확인하는 중…"
+                  : picked.length === 0
+                    ? "위에서 선택해 주세요"
+                    : `선택 완료 (${picked.length}개)`}
+              </button>
             </div>
           </div>
         ) : null}
@@ -245,29 +284,47 @@ function ResultCard({
 }) {
   return (
     <div className="absolute inset-0 z-10 flex items-center justify-center bg-black/35 p-8">
-      <div className="w-full max-w-[720px] rounded-[18px] bg-white p-[24px]">
-        <div className="text-[24px] font-bold">{result.headline}</div>
+      <div className="flex max-h-full w-full max-w-[760px] flex-col rounded-[18px] bg-white p-[24px]">
+        <div className="flex-none text-[24px] font-bold">{result.headline}</div>
 
-        <div className="mt-2 space-y-1">
+        <div className="my-3 min-h-0 flex-1 overflow-y-auto pr-1">
+          {/* 고른 항목마다 하나씩. 여러 개를 골랐으면 여러 개가 나온다.
+              하나만 보여주면 나머지는 못 본 것이 된다. */}
+          {result.sections.map((sec) => (
+            <div
+              key={sec.label}
+              className="mb-2 rounded-[14px] border-l-4 border-[#E8A93B] bg-[#FDF3E7] p-[14px_17px]"
+            >
+              <div className="text-[18px] font-bold">{sec.label}</div>
+              <div className="mt-1 space-y-0.5">
+                {sec.lines.map((l, i) => (
+                  <p key={i} className="text-[17px] leading-[1.5]">
+                    {l}
+                  </p>
+                ))}
+              </div>
+            </div>
+          ))}
+
           {result.lines.map((l, i) => (
-            <p key={i} className="text-[18px] leading-[1.5] text-gray-400">
+            <p key={i} className="mt-1 text-[17px] leading-[1.5] text-gray-400">
               {l}
             </p>
           ))}
-        </div>
 
-        {/* 교체를 권할 상황이어도 "버리세요"라고 쓰지 않는다.
-            판단은 사용자가 한다. */}
-        {result.recommend_replace ? (
-          <div className="mt-3 rounded-[13px] bg-[#FDF3E7] p-[13px_16px] text-[17px] leading-[1.5]">
-            새 제품으로 바꾸시는 편이 좋겠습니다. 추천 탭에서 비슷한 제품을
-            보실 수 있습니다.
-          </div>
-        ) : null}
+          {/* 교체를 권할 상황이어도 "버리세요"라고 쓰지 않는다.
+              판단은 사용자가 한다. */}
+          {result.recommend_replace ? (
+            <div className="mt-2 rounded-[13px] bg-primary-50 p-[13px_16px] text-[17px] leading-[1.5]">
+              새 제품으로 바꾸시는 편이 좋겠습니다. 추천 탭에서 비슷한 제품을
+              보실 수 있습니다.
+            </div>
+          ) : null}
+        </div>
 
         <button
           onClick={onClose}
-          className="mt-4 h-[58px] w-full rounded-[14px] bg-primary-500 text-[19px] font-semibold text-white"
+          className="h-[58px] flex-none rounded-[14px] bg-primary-500 text-[19px] font-semibold text-white"
         >
           확인
         </button>

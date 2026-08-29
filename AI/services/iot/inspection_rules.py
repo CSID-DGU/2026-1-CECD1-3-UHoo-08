@@ -264,59 +264,126 @@ def build_protocol(
     return out
 
 
-def answer_guidance(answer: str, protocol_category: str) -> Dict[str, Any]:
-    """
-    사용자가 확인 결과를 고른 뒤의 안내.
+# 화면의 답변 → user_feedback.answer 코드.
+#
+# DB CHECK 제약이 다섯 값만 허용한다(none/color/odor/separation/texture).
+# 화면에는 더 세분화된 항목이 있어 가까운 것으로 접는다. 덩어리짐과
+# 혼탁은 성상 변화라 texture로 묶는다.
+FEEDBACK_CODE = {
+    ANSWER_OK: "none",
+    ANSWER_COLOR: "color",
+    ANSWER_SMELL: "odor",
+    ANSWER_SEPARATED: "separation",
+    ANSWER_TEXTURE: "texture",
+    ANSWER_TURBID: "texture",
+    ANSWER_CLUMP: "texture",
+}
 
-    여기서도 "상했습니다"라고 말하지 않는다. 관측된 사실과 일반적인
-    권장을 전할 뿐이며, 최종 판단은 사용자 몫이다.
+# 점검 목록에 붙일 짧은 표시. 카드에 한 줄로 들어가야 해서 길면 안 된다.
+SHORT_LABEL = {
+    ANSWER_COLOR: "색 변화",
+    ANSWER_SMELL: "냄새 변화",
+    ANSWER_SEPARATED: "층 분리",
+    ANSWER_TURBID: "부유물",
+    ANSWER_TEXTURE: "질감 변화",
+    ANSWER_CLUMP: "덩어리",
+}
+
+# 항목별 안내. 사용자가 고른 것마다 하나씩 보여준다.
+#
+# 기록했다는 말은 쓰지 않는다. 저장은 우리 일이고 사용자에게 알릴 이유가
+# 없다. 사용자가 알아야 할 것은 "그래서 어떻게 해야 하는가"뿐이다.
+_ADVICE = {
+    ANSWER_COLOR: [
+        "색 변화만으로 사용 여부를 정하기는 어렵습니다.",
+        "냄새와 질감도 함께 확인해 보세요.",
+    ],
+    ANSWER_SMELL: [
+        "냄새 변화는 되돌아오지 않습니다.",
+        "얼굴에 쓰기 전에 팔 안쪽에 발라 보시고, 붉어지면 사용을 멈추세요.",
+    ],
+    ANSWER_SEPARATED: [
+        "흔들었을 때 다시 섞인다면 일시적인 분리일 수 있습니다.",
+        "섞이지 않는다면 사용을 멈추시는 편이 좋습니다.",
+    ],
+    ANSWER_TURBID: [
+        "부유물이 보이면 눈가나 상처가 있는 부위에는 쓰지 마세요.",
+    ],
+    ANSWER_CLUMP: [
+        "굳은 덩어리는 세균이 자라기 쉬운 자리입니다.",
+        "눈가나 상처가 있는 부위에는 쓰지 마세요.",
+    ],
+    ANSWER_TEXTURE: [
+        "질감이 달라졌다면 성분이 변했을 수 있습니다.",
+        "팔 안쪽에 먼저 발라 보시고 자극이 없는지 확인하세요.",
+    ],
+}
+
+# 이 중 하나라도 고르면 교체를 권한다. 되돌릴 수 없는 변화들이다.
+_REPLACE_TRIGGERS = (ANSWER_SMELL, ANSWER_TURBID, ANSWER_CLUMP)
+
+
+def answer_guidance(
+    answers: List[str],
+    protocol_category: str,
+) -> Dict[str, Any]:
     """
-    if answer == ANSWER_OK:
+    사용자가 고른 항목들에 대한 안내.
+
+    여러 개를 고를 수 있다. 냄새도 나고 층도 분리됐다면 둘 다 말해야 한다.
+    하나만 보여주면 나머지는 못 본 것이 된다.
+
+    여기서도 "상했습니다"라고 말하지 않는다. 관측된 사실에 대해 무엇을
+    하면 되는지 알려줄 뿐이며, 최종 판단은 사용자 몫이다.
+    """
+    picked = [a for a in answers if a in ANSWERS]
+
+    if not picked or picked == [ANSWER_OK]:
         return {
-            "headline": "확인 감사합니다",
-            "lines": [
-                "이상이 없다고 기록했습니다.",
-                "다음 점검 때 이 답변을 기준으로 변화를 봅니다.",
-            ],
+            "headline": "이상이 없다고 확인하셨습니다",
+            "sections": [],
+            "lines": ["다음 점검 때 이 확인을 기준으로 변화를 봅니다."],
             "recommend_replace": False,
+            "findings": [],
         }
 
-    reason = {
-        ANSWER_COLOR: "색 변화",
-        ANSWER_SMELL: "냄새 변화",
-        ANSWER_SEPARATED: "층 분리",
-        ANSWER_TURBID: "부유물·혼탁",
-        ANSWER_TEXTURE: "질감 변화",
-        ANSWER_CLUMP: "덩어리짐",
-    }.get(answer, "변화")
+    issues = [a for a in picked if a != ANSWER_OK]
 
-    lines = [f"{reason}가 있다고 기록했습니다."]
+    sections = []
+    for a in issues:
+        sections.append({
+            "label": SHORT_LABEL.get(a, a),
+            "lines": _ADVICE.get(a, []),
+        })
 
-    # 항목마다 뒤따르는 말이 다르다. 층 분리는 흔들면 되돌아오는 경우가
-    # 있고, 냄새 변화는 그렇지 않다.
-    if answer == ANSWER_SEPARATED:
-        lines.append("흔들었을 때 다시 섞인다면 일시적인 분리일 수 있습니다. "
-                     "섞이지 않는다면 사용을 멈추시는 편이 좋습니다.")
-    elif answer == ANSWER_SMELL:
-        lines.append("냄새 변화는 되돌아오지 않습니다. 얼굴에 쓰기 전에 "
-                     "팔 안쪽에 발라 보시고, 붉어지면 사용을 멈추세요.")
-    elif answer == ANSWER_COLOR:
-        lines.append("색 변화만으로 사용 여부를 정하기는 어렵습니다. "
-                     "냄새와 질감도 함께 확인해 보세요.")
-    elif answer in (ANSWER_TURBID, ANSWER_CLUMP):
-        lines.append("눈가나 상처가 있는 부위에는 사용하지 않는 것이 좋습니다.")
-
+    lines: List[str] = []
     if protocol_category == "eye":
-        lines.append("눈가 제품은 오염이 눈에 보이지 않습니다. 이상이 하나라도 "
-                     "있으면 교체를 권합니다.")
+        lines.append("눈가 제품은 오염이 눈에 보이지 않습니다. "
+                     "이상이 하나라도 있으면 교체를 권합니다.")
 
     return {
-        "headline": "기록했습니다",
+        "headline": ("확인해 주셔서 감사합니다"
+                     if len(issues) == 1 else "확인하신 내용입니다"),
+        "sections": sections,
         "lines": lines,
-        # 사용자에게 "버리세요"라고 말하지 않는다. 화면은 이 값을 보고
-        # 교체 안내를 조용히 덧붙일 수 있다.
-        "recommend_replace": answer in (ANSWER_SMELL, ANSWER_TURBID, ANSWER_CLUMP),
+        "recommend_replace": any(a in _REPLACE_TRIGGERS for a in issues)
+                             or protocol_category == "eye",
+        "findings": [SHORT_LABEL.get(a, a) for a in issues],
     }
+
+
+def summary_label(findings: List[str]) -> Optional[str]:
+    """
+    점검 목록에 붙일 한 줄.
+
+    "상했습니다"가 아니라 사용자가 확인한 사실을 그대로 옮긴다.
+    판단한 것은 시스템이 아니라 사용자다.
+    """
+    if not findings:
+        return None
+    if len(findings) == 1:
+        return f"{findings[0]} 확인됨 · 주의가 필요합니다"
+    return f"{' · '.join(findings)} 확인됨 · 주의가 필요합니다"
 
 
 ANSWERS = [ANSWER_OK, ANSWER_COLOR, ANSWER_SMELL, ANSWER_SEPARATED,

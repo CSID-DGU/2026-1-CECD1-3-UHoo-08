@@ -49,7 +49,13 @@ def describe(event: Dict[str, Any], node_label: Optional[str] = None) -> Dict[st
             "detail": (f"{where} 가스 저항이 평소보다 {mag:.0f}% 낮아졌습니다"
                        if mag is not None else f"{where} 가스 저항 변화"),
             # 이 질문이 Human-in-the-loop의 입구다.
-            "question": "이 시각에 향수나 스프레이 제품을 두셨나요?",
+            #
+            # 처음에는 "향수나 스프레이 제품을 두셨나요"였는데 너무 좁았다.
+            # 매니큐어, 소독용 알코올, 헤어 제품, 방향제, 청소 세제까지
+            # 전부 같은 신호를 낸다. 사용자가 "향수는 안 뒀는데"라고
+            # 생각하고 아니요를 누르면 엉뚱한 곳을 뒤지게 된다.
+            "question": "이 무렵 근처에서 향수·스프레이·소독제처럼 "
+                        "냄새가 강한 것을 쓰신 적이 있나요?",
             "unit": "%",
         }
 
@@ -81,36 +87,36 @@ def guidance(
     kind = event.get("event_type")
 
     if answer == ANSWER_EXTERNAL:
-        lines = ["확인해 주셔서 감사합니다.",
-                 "이 기록은 분석에서 빼겠습니다."]
+        # 저장 이야기는 하지 않는다. 사용자가 알아야 할 것은
+        # "내 화장품 문제가 아니었다"는 사실이다.
+        lines = ["보관 중인 화장품에서 비롯된 변화가 아닙니다.",
+                 "주변에서 일시적으로 들어온 성분으로 보입니다."]
         if kind == "voc_spike":
             lines.append(
-                "향이 강한 제품은 화장품과 조금 떨어뜨려 두시면 "
-                "기록이 더 정확해집니다."
+                "냄새가 강한 제품은 화장품과 조금 떨어뜨려 두시면 "
+                "이런 일이 줄어듭니다."
             )
         return {
-            "headline": "외부 요인으로 기록했습니다",
+            "headline": "일시적인 외부 요인이었습니다",
             "lines": lines,
             "next": None,
             "excluded": True,
         }
 
-    # "아니요" — 이벤트가 유효하다. 다만 여기서도 판정하지 않는다.
-    lines = ["알겠습니다. 이 기록은 그대로 두겠습니다."]
-
+    # "아니요" — 외부 요인이 아니라면 보관 중인 제품 쪽을 볼 차례다.
+    # 여기서도 판정하지 않는다. 확인해 볼 순서를 알려줄 뿐이다.
     if top_products:
-        lines.append("같은 보관함에 있던 제품 중 확인 순위가 높은 것을 보여드릴게요.")
         return {
-            "headline": "확인해 보시겠어요?",
-            "lines": lines,
+            "headline": "어떤 제품을 확인해 볼까요?",
+            "lines": ["같은 보관함에 있던 제품을 확인 순위가 높은 순으로 보여드릴게요.",
+                      "확인할 제품을 골라 주세요."],
             "next": {"action": "priority", "products": top_products},
             "excluded": False,
         }
 
-    lines.append("현재 확인이 필요한 제품은 없습니다. 기록만 남겨두겠습니다.")
     return {
-        "headline": "기록했습니다",
-        "lines": lines,
+        "headline": "지금 확인할 제품은 없습니다",
+        "lines": ["같은 보관함의 제품은 모두 정상 범위입니다."],
         "next": None,
         "excluded": False,
     }

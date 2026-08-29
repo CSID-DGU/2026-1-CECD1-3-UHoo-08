@@ -67,7 +67,21 @@ export type PriorityDetail = {
   [key: string]: unknown;
 };
 
+/**
+ * 사용자가 직접 확인한 결과.
+ *
+ * 점수는 "확인해 볼 순서"이고 이쪽은 "사람이 실제로 본 것"이다.
+ * 후자가 더 강한 정보라 목록에서 눈에 띄게 보여야 한다.
+ */
+export type InspectionRecord = {
+  ts: string;
+  findings: string[];
+  /** 이상 항목 없이 "이상 없음"으로 확인한 경우 */
+  clear: boolean;
+};
+
 export type PriorityItem = {
+  inspection: InspectionRecord | null;
   user_product_id: string;
   product_id: string | null;
   name: string | null;
@@ -330,10 +344,19 @@ export type ProtocolResponse = {
 
 // ── POST /api/care/products/{id}/inspection ──────────────────
 
+export type GuidanceSection = {
+  label: string;
+  lines: string[];
+};
+
 export type InspectionResponse = {
   user_product_id: string;
-  answer: string;
+  answers: string[];
   headline: string;
+  /** 사용자가 고른 항목마다 하나씩 */
+  sections: GuidanceSection[];
   lines: string[];
   recommend_replace: boolean;
+  /** 점검 목록에 표시할 짧은 항목명 */
+  findings: string[];
 };

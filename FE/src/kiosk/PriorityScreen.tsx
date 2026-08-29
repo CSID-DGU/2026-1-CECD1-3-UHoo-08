@@ -29,8 +29,11 @@ type Props = {
   activeTab: TabKey;
   onTab: (t: TabKey) => void;
   onHome: () => void;
-  onMeasure: (item: PriorityItem) => void;
+  /** 측정하기 — 어느 제품을 잴지 사용자가 고른다. */
+  onMeasure: () => void;
   onEvents: () => void;
+  /** 제품을 누르면 확인 절차로. */
+  onProtocol: (userProductId: string) => void;
 };
 
 export function PriorityScreen({
@@ -41,6 +44,7 @@ export function PriorityScreen({
   onHome,
   onMeasure,
   onEvents,
+  onProtocol,
 }: Props) {
   const { data, error, loading, lastUpdated } = priority;
 
@@ -76,7 +80,12 @@ export function PriorityScreen({
         ) : error && !data ? (
           <ErrorPanel error={error} onRetry={priority.refetch} />
         ) : data ? (
-          <PriorityBody data={data} onMeasure={onMeasure} onEvents={onEvents} />
+          <PriorityBody
+            data={data}
+            onMeasure={onMeasure}
+            onEvents={onEvents}
+            onProtocol={onProtocol}
+          />
         ) : null}
       </div>
 
@@ -89,16 +98,18 @@ function PriorityBody({
   data,
   onMeasure,
   onEvents,
+  onProtocol,
 }: {
   data: PriorityResponse;
-  onMeasure: (item: PriorityItem) => void;
+  onMeasure: () => void;
   onEvents: () => void;
+  onProtocol: (userProductId: string) => void;
 }) {
   // 확인이 필요한 것과 지켜볼 것만 목록에 올린다. 정상 범위는 개수만
   // 알려준다. 열두 개를 전부 나열하면 어디부터 봐야 할지 알 수 없다.
   const listed = data.items.filter((i) => i.band !== "low");
   const restCount = data.items.filter((i) => i.band === "low").length;
-  const top = listed[0];
+
 
   return (
     <div className="flex h-full flex-col">
@@ -127,7 +138,13 @@ function PriorityBody({
             </div>
           </div>
         ) : (
-          listed.map((item) => <ItemRow key={item.user_product_id} item={item} />)
+          listed.map((item) => (
+            <ItemRow
+              key={item.user_product_id}
+              item={item}
+              onOpen={() => onProtocol(item.user_product_id)}
+            />
+          ))
         )}
 
         {restCount > 0 ? (
@@ -144,9 +161,11 @@ function PriorityBody({
 
       {/* 버튼 */}
       <div className="mt-[14px] flex flex-none gap-[11px]">
+        {/* 어느 제품을 잴지는 모달에서 고른다. 예전에는 1순위 제품으로
+            고정했는데, 사용자가 다른 제품을 재고 싶어도 방법이 없었다. */}
         <button
-          onClick={() => top && onMeasure(top)}
-          disabled={!top}
+          onClick={onMeasure}
+          disabled={data.items.length === 0}
           className="h-[62px] rounded-[14px] bg-primary-500 px-[34px] text-[20px] font-semibold text-white disabled:opacity-40"
         >
           측정하기
@@ -162,8 +181,9 @@ function PriorityBody({
   );
 }
 
-function ItemRow({ item }: { item: PriorityItem }) {
+function ItemRow({ item, onOpen }: { item: PriorityItem; onOpen: () => void }) {
   const style = BAND_STYLE[item.band];
+  const found = item.inspection?.findings ?? [];
 
   // 근거는 서버가 만든 문장을 그대로 쓴다. 화면에서 다시 조립하면
   // 서버 로직과 어긋나기 시작한다.
@@ -176,7 +196,10 @@ function ItemRow({ item }: { item: PriorityItem }) {
   const measuredPct = total > 0 ? (measured / total) * 100 : 0;
 
   return (
-    <div className="mb-2.5 flex items-center gap-4 rounded-[15px] bg-white p-[15px_19px]">
+    <button
+      onClick={onOpen}
+      className="mb-2.5 flex w-full items-center gap-4 rounded-[15px] bg-white p-[15px_19px] text-left active:bg-primary-50"
+    >
       <div
         className="grid h-12 w-12 flex-none place-items-center rounded-[13px] text-[22px]"
         style={{ background: style.pill }}
@@ -184,10 +207,25 @@ function ItemRow({ item }: { item: PriorityItem }) {
         {style.emoji}
       </div>
 
-      <div className="min-w-0">
+      <div className="min-w-0 flex-1">
         <div className="truncate text-[21px] font-bold">
           {item.name || "이름 없는 제품"}
         </div>
+
+        {/* 사용자가 직접 확인한 결과. 점수보다 강한 정보라 위에 둔다.
+            점수는 "확인해 볼 순서"이고 이쪽은 "사람이 실제로 본 것"이다. */}
+        {found.length > 0 ? (
+          <div
+            className="mt-1 inline-block rounded-full px-2.5 py-0.5 text-[15px] font-semibold"
+            style={{ background: BAND_STYLE.high.pill, color: BAND_STYLE.high.text }}
+          >
+            {found.join(" · ")} 확인됨 · 주의가 필요합니다
+          </div>
+        ) : item.inspection?.clear ? (
+          <div className="mt-1 text-[15px] text-gray-300">
+            직접 확인함 · 이상 없음
+          </div>
+        ) : null}
         <div className="mt-[3px] truncate text-[16px] text-gray-300">{why}</div>
 
         {/* 이 점수가 실측에 얼마나 근거하는지 숨기지 않는다. */}
@@ -204,7 +242,7 @@ function ItemRow({ item }: { item: PriorityItem }) {
         </div>
         <div className="text-[13px] text-gray-300">점검 순위 점수</div>
       </div>
-    </div>
+    </button>
   );
 }
 

@@ -104,6 +104,8 @@ const mockPriority: PriorityResponse = {
   },
   items: [
     {
+      // 사용자가 이미 확인한 제품. 점검 목록에서 배지가 붙는다.
+      inspection: { ts: iso(60 * 24), findings: ["냄새 변화"], clear: false },
       user_product_id: "m1",
       product_id: "p1",
       name: "레티놀 나이트 세럼",
@@ -128,6 +130,7 @@ const mockPriority: PriorityResponse = {
       },
     },
     {
+      inspection: null,
       user_product_id: "m2",
       product_id: "p2",
       name: "비타민C 브라이트닝 앰플",
@@ -152,6 +155,7 @@ const mockPriority: PriorityResponse = {
       },
     },
     ...Array.from({ length: 10 }, (_, i) => ({
+      inspection: null,
       user_product_id: `mlow${i}`,
       product_id: `plow${i}`,
       name: `정상 범위 제품 ${i + 1}`,
@@ -304,7 +308,10 @@ export function mockFor(path: string): unknown | null {
   if (path.startsWith("/api/care/skin")) return mockSkin;
   if (path.startsWith("/api/care/recommendations")) return mockReco;
   if (path.startsWith("/api/care/events")) return mockEvents;
-  if (/\/api\/care\/products\/[^/]+\/protocol/.test(path)) return mockProtocol;
+  const m = /\/api\/care\/products\/([^/]+)\/protocol/.exec(path);
+  // 목업도 제품마다 다른 값을 준다. 하나로 고정하면 다른 제품을 골라도
+  // 같은 화면이 나와 연결이 잘못된 것처럼 보인다.
+  if (m) return mockProtocolFor(decodeURIComponent(m[1]));
   return null;
 }
 
@@ -344,7 +351,7 @@ const mockEvents = {
 
 // ── 확인 절차 ────────────────────────────────────────────────
 
-const mockProtocol = {
+const mockProtocolBase = {
   user_product_id: "m1",
   name: "레티놀 나이트 세럼",
   brand: "이니스프리",
@@ -408,4 +415,36 @@ export function mockPostFor(path: string, body: unknown): unknown | null {
   }
 
   return null;
+}
+
+
+/** 제품 id에 따라 다른 확인 절차. 목업에서도 연결이 맞는지 보이게 한다. */
+function mockProtocolFor(id: string) {
+  const found = mockPriority.items.find((i) => i.user_product_id === id);
+  if (!found) return { ...mockProtocolBase, user_product_id: id };
+
+  const clear = /토너|에센스|스킨/.test(found.name ?? "");
+  return {
+    ...mockProtocolBase,
+    user_product_id: id,
+    name: found.name,
+    brand: found.brand,
+    score: found.score,
+    band: found.band,
+    reasons: found.reasons,
+    label: clear ? "투명 토너·에센스" : mockProtocolBase.label,
+    steps: clear
+      ? [
+          { order: 1, basis: "냄새", text: "향이 평소와 다른가요? 시큼하거나 알코올 냄새가 강해졌나요?", optical: false },
+          { order: 2, basis: "성상", text: "밝은 빛에 비춰 부유물이나 혼탁이 있는지 보세요.", optical: false },
+          { order: 3, basis: "점도", text: "평소보다 묽거나 끈적한가요?", optical: false },
+        ]
+      : mockProtocolBase.steps,
+    answers: clear
+      ? ["이상 없음", "냄새가 남", "혼탁함", "질감 변화"]
+      : mockProtocolBase.answers,
+    note: clear
+      ? "투명 제형은 광학 측정 대상이 아닙니다. 감각으로 확인해 주세요."
+      : mockProtocolBase.note,
+  };
 }
