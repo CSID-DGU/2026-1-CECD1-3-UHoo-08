@@ -245,3 +245,95 @@ export type RecommendationsResponse = {
   /** QR에 넣을 주소. 휴대폰에서 전체 추천을 보는 곳. */
   qr_url: string;
 };
+
+// ── GET /api/care/events ─────────────────────────────────────
+
+export type EventType = "temp_excursion" | "humid_excursion" | "voc_spike";
+export type EventAnswer = "pending" | "external_source" | "none";
+
+export type CareEvent = {
+  id: number;
+  node_id: string | null;
+  node_label: string | null;
+  ts: string;
+  /** 화면에 그대로 쓰는 짧은 시각 표기. 서버가 만든다. */
+  when: string;
+  event_type: EventType | string;
+  magnitude: number | null;
+  title: string;
+  detail: string;
+  /** 답을 받아야 하면 문구, 아니면 null. 이미 답한 건은 null이다. */
+  question: string | null;
+  user_answer: EventAnswer | string;
+  excluded: boolean;
+};
+
+export type EventsResponse = {
+  generated_at: string;
+  summary: {
+    total: number;
+    pending: number;
+    excluded: number;
+    /** 대기 화면 알림 바 문구. 없으면 null. */
+    alert: string | null;
+  };
+  items: CareEvent[];
+};
+
+// ── POST /api/care/events/{id}/answer ────────────────────────
+
+export type GuidanceProduct = {
+  user_product_id: string;
+  name: string | null;
+  brand: string | null;
+  score: number;
+  band: RiskBand;
+};
+
+export type EventAnswerResponse = {
+  event: CareEvent;
+  headline: string;
+  lines: string[];
+  /** "아니요"로 답했을 때만 온다. 확인 순위 상위 제품이 담긴다. */
+  next: { action: string; products: GuidanceProduct[] } | null;
+};
+
+// ── GET /api/care/products/{id}/protocol ─────────────────────
+//
+// 설계서 §5-6. 식약처 화장품 안정성시험 가이드라인의 시험항목을
+// 소비자가 확인 가능한 형태로 옮긴 표다. 카테고리마다 순서가 다르다.
+
+export type CheckStep = {
+  order: number;
+  /** 가이드라인의 어느 시험항목에서 왔는지 (성상·색, 냄새 등) */
+  basis: string;
+  text: string;
+  /** AS7341 측정으로 도울 수 있는 항목 */
+  optical: boolean;
+};
+
+export type ProtocolResponse = {
+  user_product_id: string;
+  name: string | null;
+  brand: string | null;
+  /** 확인 유형 (오일·세럼 등) */
+  label: string;
+  score: number | null;
+  band: RiskBand | null;
+  reasons: string[];
+  steps: CheckStep[];
+  answers: string[];
+  /** 눈가 제품처럼 따로 덧붙일 말 */
+  caution: string | null;
+  note: string | null;
+};
+
+// ── POST /api/care/products/{id}/inspection ──────────────────
+
+export type InspectionResponse = {
+  user_product_id: string;
+  answer: string;
+  headline: string;
+  lines: string[];
+  recommend_replace: boolean;
+};

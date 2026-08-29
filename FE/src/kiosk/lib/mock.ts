@@ -303,5 +303,109 @@ export function mockFor(path: string): unknown | null {
   if (path.startsWith("/api/care/environment")) return mockEnvironment;
   if (path.startsWith("/api/care/skin")) return mockSkin;
   if (path.startsWith("/api/care/recommendations")) return mockReco;
+  if (path.startsWith("/api/care/events")) return mockEvents;
+  if (/\/api\/care\/products\/[^/]+\/protocol/.test(path)) return mockProtocol;
+  return null;
+}
+
+// ── 이벤트 이력 ──────────────────────────────────────────────
+
+const mockEvents = {
+  generated_at: iso(0),
+  summary: { total: 3, pending: 1, excluded: 1, alert: "확인이 필요한 질문이 하나 있습니다" },
+  items: [
+    {
+      id: 1, node_id: "storage-01", node_label: "화장대",
+      ts: iso(60 * 24 * 2), when: "8/26(수) 20:10",
+      event_type: "voc_spike", magnitude: 66.8,
+      title: "공기 성분 변화",
+      detail: "화장대 가스 저항이 평소보다 67% 낮아졌습니다",
+      question: "이 시각에 향수나 스프레이 제품을 두셨나요?",
+      user_answer: "pending", excluded: false,
+    },
+    {
+      id: 2, node_id: "storage-01", node_label: "화장대",
+      ts: iso(60 * 24 * 5), when: "8/23(일) 13:20",
+      event_type: "temp_excursion", magnitude: 34.9,
+      title: "고온 노출",
+      detail: "화장대 최고 34.9℃ · 30분 이상 지속",
+      question: null, user_answer: "none", excluded: false,
+    },
+    {
+      id: 3, node_id: "storage-01", node_label: "화장대",
+      ts: iso(60 * 24 * 9), when: "8/19(수) 18:20",
+      event_type: "voc_spike", magnitude: 64.0,
+      title: "공기 성분 변화",
+      detail: "화장대 가스 저항이 평소보다 64% 낮아졌습니다",
+      question: null, user_answer: "external_source", excluded: true,
+    },
+  ],
+};
+
+// ── 확인 절차 ────────────────────────────────────────────────
+
+const mockProtocol = {
+  user_product_id: "m1",
+  name: "레티놀 나이트 세럼",
+  brand: "이니스프리",
+  label: "오일·세럼",
+  score: 87,
+  band: "high",
+  reasons: ["개봉 8개월", "34℃ 노출 42시간", "열이력 소모 96%", "고민감 성분(k 1.5)"],
+  steps: [
+    { order: 1, basis: "냄새", text: "향이 평소와 다른가요? 시큼하거나 기름 전 냄새가 나나요?", optical: false },
+    { order: 2, basis: "유화상태", text: "용기를 세워 두었을 때 층이 분리돼 있나요?", optical: false },
+    { order: 3, basis: "점도", text: "한 방울 떨어뜨렸을 때 평소보다 묽거나 되직한가요?", optical: false },
+    { order: 4, basis: "사용기간", text: "용기에 표시된 개봉 후 사용기간을 확인하세요. 등록된 정보로는 6개월 기준을 2개월 지났습니다.", optical: false },
+  ],
+  answers: ["이상 없음", "냄새가 남", "분리됨", "질감 변화"],
+  caution: null,
+  note: "식물성 오일은 산패하면 냄새가 먼저 바뀝니다. 색보다 코가 빠릅니다.",
+};
+
+/**
+ * POST 응답. 보낸 값에 따라 다른 안내를 돌려준다.
+ *
+ * 서버 규칙 테이블을 그대로 옮기지 않고 흐름만 흉내 낸다. 목업은 배치를
+ * 확인하는 용도이고, 문구가 서버와 조금 달라도 화면 작업에는 지장이 없다.
+ */
+export function mockPostFor(path: string, body: unknown): unknown | null {
+  const answer = (body as { answer?: string } | null)?.answer;
+
+  if (/\/api\/care\/events\/\d+\/answer$/.test(path)) {
+    const external = answer === "external_source";
+    return {
+      event: { ...mockEvents.items[0], question: null,
+               user_answer: answer, excluded: external },
+      headline: external ? "외부 요인으로 기록했습니다" : "확인해 보시겠어요?",
+      lines: external
+        ? ["확인해 주셔서 감사합니다.", "이 기록은 분석에서 빼겠습니다.",
+           "향이 강한 제품은 화장품과 조금 떨어뜨려 두시면 기록이 더 정확해집니다."]
+        : ["알겠습니다. 이 기록은 그대로 두겠습니다.",
+           "같은 보관함에 있던 제품 중 확인 순위가 높은 것을 보여드릴게요."],
+      next: external ? null : {
+        action: "priority",
+        products: [
+          { user_product_id: "m1", name: "레티놀 나이트 세럼", brand: "이니스프리", score: 87, band: "high" },
+          { user_product_id: "m2", name: "비타민C 브라이트닝 앰플", brand: "코스알엑스", score: 54, band: "medium" },
+        ],
+      },
+    };
+  }
+
+  if (/\/api\/care\/products\/[^/]+\/inspection$/.test(path)) {
+    const ok = answer === "이상 없음";
+    return {
+      user_product_id: "m1",
+      answer,
+      headline: ok ? "확인 감사합니다" : "기록했습니다",
+      lines: ok
+        ? ["이상이 없다고 기록했습니다.", "다음 점검 때 이 답변을 기준으로 변화를 봅니다."]
+        : [`${answer}이(가) 있다고 기록했습니다.`,
+           "냄새 변화는 되돌아오지 않습니다. 얼굴에 쓰기 전에 팔 안쪽에 발라 보시고, 붉어지면 사용을 멈추세요."],
+      recommend_replace: answer === "냄새가 남",
+    };
+  }
+
   return null;
 }

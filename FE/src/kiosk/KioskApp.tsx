@@ -5,12 +5,15 @@ import { PriorityScreen } from "./PriorityScreen";
 import { SkinScreen } from "./SkinScreen";
 import { RecoScreen } from "./RecoScreen";
 import { EnvScreen, readSavedRegion } from "./EnvScreen";
+import { EventsScreen } from "./EventsScreen";
+import { ProtocolScreen } from "./ProtocolScreen";
 import { TabBar, TopBar, type TabKey } from "./ui";
 import { KIOSK_USER_ID } from "./lib/kioskApi";
 import { careGet } from "./lib/careApi";
 import { useKioskQuery } from "./lib/useKioskQuery";
 import type {
   DashboardResponse,
+  EventsResponse,
   EnvironmentResponse,
   PriorityItem,
   PriorityResponse,
@@ -44,19 +47,26 @@ const IDLE_RETURN_MS = 3 * 60_000;
 const ACTIVITY_EVENTS = ["pointerdown", "keydown", "wheel"] as const;
 
 /** 대기 화면 + 탭 4개 + 탭 아래로 들어가는 하위 화면들. */
-export type ScreenKey = "idle" | TabKey | "measure" | "events" | "skinRun";
+export type ScreenKey =
+  | "idle" | TabKey | "measure" | "events" | "skinRun" | "protocol";
 
 /** 하위 화면에 있을 때 어느 탭이 켜져 보여야 하는지. */
-const OWNER_TAB: Record<"measure" | "events" | "skinRun", TabKey> = {
+const OWNER_TAB: Record<"measure" | "events" | "skinRun" | "protocol", TabKey> = {
   measure: "priority",
   events: "priority",
   skinRun: "skin",
+  protocol: "priority",
 };
+
+/** 알림 바에 쓸 pending 수. 대기 화면에 있을 때만 필요하다. */
+const EVENTS_INTERVAL_MS = 5 * 60_000;
 
 export function KioskApp() {
   const [screen, setScreen] = useState<ScreenKey>("idle");
   const [target, setTarget] = useState<PriorityItem | null>(null);
   const [region, setRegion] = useState<string>(readSavedRegion);
+  // 확인 절차 화면이 볼 제품. 점검 목록이나 이벤트 안내에서 넘어온다.
+  const [protocolTarget, setProtocolTarget] = useState<string | null>(null);
 
   const dashboard = useKioskQuery<DashboardResponse>(
     () => careGet<DashboardResponse>("/api/care/dashboard", { user_id: KIOSK_USER_ID }),
@@ -84,6 +94,12 @@ export function KioskApp() {
     SKIN_INTERVAL_MS
   );
 
+  // 대기 화면 알림 바가 쓴다. 목록 자체는 이벤트 화면이 따로 부른다.
+  const events = useKioskQuery<EventsResponse>(
+    () => careGet<EventsResponse>("/api/care/events", { user_id: KIOSK_USER_ID }),
+    EVENTS_INTERVAL_MS
+  );
+
   const reco = useKioskQuery<RecommendationsResponse>(
     () => careGet<RecommendationsResponse>("/api/care/recommendations", { user_id: KIOSK_USER_ID }),
     RECO_INTERVAL_MS
@@ -92,7 +108,8 @@ export function KioskApp() {
   const activeTab: TabKey =
     screen === "idle"
       ? "priority"
-      : screen === "measure" || screen === "events" || screen === "skinRun"
+      : screen === "measure" || screen === "events" ||
+        screen === "skinRun" || screen === "protocol"
         ? OWNER_TAB[screen]
         : screen;
 
@@ -142,6 +159,8 @@ export function KioskApp() {
             dashboard={dashboard.data}
             priority={priority.data}
             error={dashboard.error}
+            alert={events.data?.summary.alert ?? null}
+            onAlert={() => setScreen("events")}
             onEnter={() => setScreen("priority")}
           />
         </div>
@@ -153,8 +172,12 @@ export function KioskApp() {
           onTab={setScreen}
           onHome={goHome}
           onMeasure={(item) => {
+            // 목업의 "측정하기"는 광학 측정이지만, 지그 정밀도가 정리될
+            // 때까지는 확인 절차로 보낸다. 눈으로 확인하는 쪽이 지금은
+            // 더 정확하고, 절차 화면 안에서 측정으로 이어갈 수 있다.
             setTarget(item);
-            setScreen("measure");
+            setProtocolTarget(item.user_product_id);
+            setScreen("protocol");
           }}
           onEvents={() => setScreen("events")}
         />
@@ -183,6 +206,24 @@ export function KioskApp() {
           activeTab={activeTab}
           onTab={setScreen}
           onHome={goHome}
+        />
+      ) : screen === "events" ? (
+        <EventsScreen
+          activeTab={activeTab}
+          onTab={setScreen}
+          onBack={() => setScreen("priority")}
+          onProduct={(id) => {
+            setProtocolTarget(id);
+            setScreen("protocol");
+          }}
+        />
+      ) : screen === "protocol" && protocolTarget ? (
+        <ProtocolScreen
+          userProductId={protocolTarget}
+          activeTab={activeTab}
+          onTab={setScreen}
+          onBack={() => setScreen("priority")}
+          onMeasure={() => setScreen("measure")}
         />
       ) : screen === "measure" ? (
         <Pending

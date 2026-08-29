@@ -22,13 +22,17 @@ const SWAP_MS = 5000;
 const FADE_MS = 900;
 
 type Props = {
+  /** 답을 기다리는 확인 질문이 있으면 문구. 없으면 null. */
+  alert?: string | null;
+  /** 알림 바를 눌렀을 때 이벤트 이력으로 보낸다. */
+  onAlert?: () => void;
   dashboard: DashboardResponse | null;
   priority: PriorityResponse | null;
   error: KioskApiError | null;
   onEnter: () => void;
 };
 
-export function IdleScreen({ dashboard, priority, error, onEnter }: Props) {
+export function IdleScreen({ dashboard, priority, error, onEnter, alert, onAlert }: Props) {
   const aura = computeAura(dashboard, priority);
   const readings = pickReadings(dashboard);
 
@@ -69,6 +73,25 @@ export function IdleScreen({ dashboard, priority, error, onEnter }: Props) {
       tabIndex={0}
     >
       <KioskAura color={aura.color} fallback={aura.fallback} paused={hidden} />
+
+      {/* 확인이 필요한 질문이 있으면 아래쪽에 띄운다.
+          경고가 아니라 질문이므로 붉은색을 쓰지 않고, 배경을 가리지도 않는다.
+          누르면 대기 화면 진입이 아니라 이벤트 이력으로 바로 간다. */}
+      {alert ? (
+        <button
+          onPointerDown={(e) => {
+            e.stopPropagation();
+            onAlert?.();
+          }}
+          className="absolute inset-x-0 bottom-0 z-10 flex items-center gap-3 bg-black/45 px-[26px] py-[13px] text-left backdrop-blur-sm"
+        >
+          <span className="grid h-8 w-8 flex-none place-items-center rounded-full bg-white/90 text-[17px]">
+            ?
+          </span>
+          <span className="text-[19px] font-semibold text-white">{alert}</span>
+          <span className="ml-auto text-[17px] text-white/70">확인하기 →</span>
+        </button>
+      ) : null}
 
       {/* 배경이 밝은 쪽으로 흐를 때 글자가 묻히지 않도록 위아래를 눌러준다 */}
       <div
