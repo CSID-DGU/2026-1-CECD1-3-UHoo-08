@@ -19,15 +19,19 @@ from fastapi import APIRouter, HTTPException, Query
 from pydantic import BaseModel, Field
 
 from db.iot.reader import (
-    get_care_products, get_readings, get_reading_span, list_nodes,
+    get_care_products, get_readings, get_reading_span,
+    get_thermal_profiles, list_nodes,
 )
 from db.iot.event_reader import (
     VALID_ANSWERS, answer_event, close_event_by_inspection, count_pending,
-    get_event, get_event_findings, get_risk_events,
+    get_event, get_event_findings, get_latest_feedback, get_risk_events,
+)
+from db.product_reader import (
+    get_product_features, get_product_meta, search_products_by_category,
 )
 from db.iot.skin_reader import get_skin_measurements
 from db.iot.writer import get_latest_reading
-from services.iot.care_rules import build_brief, compare_indoor
+from services.iot.care_rules import _josa, build_brief, compare_indoor
 from services.iot.erl import T_REF_C, acceleration_factor
 from services.iot.event_rules import (
     alert_line, describe, guidance, intro_lines, status_line, when,
@@ -36,9 +40,12 @@ from services.iot.inspection_rules import (
     ANSWERS, FEEDBACK_CODE, answer_guidance, build_protocol,
 )
 from services.iot.humidity import DRY_THRESHOLD_GM3, absolute_humidity, is_dry
-from services.iot.priority import FEEDBACK_LABEL, build_priority
+from services.iot.priority import FEEDBACK_LABEL, _finding_labels, build_priority
 from services.iot.psri import compute_psri, relation_sentence
-from services.iot.recommend_rules import build_candidates, context_line, pick_products
+from services.iot.recommend_rules import (
+    build_candidates, build_node_candidates, context_line, pick_products,
+    product_blurb, summarize_history,
+)
 from services.iot.weather import DEFAULT_REGION, fetch_outdoor
 
 logger = logging.getLogger(__name__)
@@ -653,13 +660,33 @@ class RecommendedProduct(BaseModel):
     name: str
     brand: Optional[str] = None
     image_url: Optional[str] = None
+    # 앱 목록이 가격을 함께 보여준다. 없으면 그 자리를 비운다.
+    price: Optional[int] = None
     reason: str
+
+
+class RecoGroup(BaseModel):
+    """추천 한 묶음. 앱의 '더보기'가 이 단위로 나눠 보여준다."""
+    key: str
+    title: str = Field(..., description="묶음 제목. 그대로 화면에 쓴다")
+    note: Optional[str] = Field(None, description="왜 이 묶음인지 한 줄")
+    items: List["RecommendedProduct"]
+
+
+class FullRecommendationsResponse(BaseModel):
+    generated_at: str
+    context: Optional[str] = None
+    # 섞지 않고 나눠 준다. 섞으면 왜 추천됐는지가 흐려진다.
+    groups: List[RecoGroup]
 
 
 class RecommendationsResponse(BaseModel):
     generated_at: str
     context: Optional[str] = None
     items: List[RecommendedProduct]
+    # 이상이 발견된 제품을 대신할 후보를 보여주는 중이면 그 제품 이름.
+    # 화면이 "무엇을 대신하는 추천인지" 밝히기 위해 쓴다.
+    replacing: Optional[str] = None
     qr_url: str
 
 
@@ -667,6 +694,116 @@ class RecommendationsResponse(BaseModel):
 # 각자 폰에서 본다. 환경변수로 빼지 않은 이유는 배포 도메인이 하나뿐이고,
 # 바뀌면 이 상수만 고치면 되기 때문이다.
 APP_URL = "https://2026-1-cecd-1-3-u-hoo-08.vercel.app"
+
+
+def _replacement_reason(
+    meta: Dict[str, Any],
+    prof: Optional[Dict[str, Any]],
+    feat: Optional[Dict[str, Any]],
+    target: Dict[str, Any],
+    target_price: Optional[int],
+) -> str:
+    """
+    대체 후보 한 칸에 붙일 이유.
+
+    셋이 같은 문장이면 "왜 하필 이것인가"에 답하지 못한다. 지어내지 않고
+    DB에 있는 값만 쓴다.
+
+    순서는 지금 상황에서 중요한 것부터다. 열 때문에 상한 제품을 바꾸는
+    자리이므로 열에 덜 민감한지가 먼저고, 그다음이 개봉 후 기한이다.
+    그 둘이 없으면 이 제품이 어떤 제품인지(촉촉한지 매트한지)를 말한다.
+    브랜드만 말하는 것은 근거가 아니라서 맨 뒤로 뺐다.
+    """
+    k = (prof or {}).get("sensitivity_k")
+    pao = (prof or {}).get("pao_months")
+    tk = target.get("sensitivity_k")
+    tpao = target.get("pao_months")
+    brand = (meta.get("brand") or "").strip()
+    price = meta.get("price")
+    blurb = product_blurb(feat)
+
+    if k is not None and tk is not None and k < tk:
+        head = f"열에 덜 민감한 제형입니다 (민감도 {k} · 쓰시던 것 {tk})"
+        return f"{head} · {blurb}" if blurb else head
+
+    if pao is not None and tpao is not None and pao > tpao:
+        head = f"개봉 후 {pao}개월까지 쓸 수 있습니다 (쓰시던 것 {tpao}개월)"
+        return f"{head} · {blurb}" if blurb else head
+
+    if blurb:
+        return blurb
+
+    if price is not None and target_price is not None and price < target_price:
+        return f"쓰시던 것보다 {target_price - price:,}원 저렴합니다"
+
+    if brand:
+        return f"{brand} 제품입니다"
+
+    return "같은 용도로 쓰실 수 있습니다"
+
+
+def _replacement_picks(
+    user_id: str,
+    user_product_id: str,
+    limit: int,
+) -> tuple[Optional[str], List[Dict[str, Any]]]:
+    """
+    이상이 발견된 제품을 대신할 후보.
+
+    같은 카테고리에서 고른다. 이름이 아니라 카테고리로 찾는 이유는, "선크림"
+    처럼 카테고리 단어가 상품명에 안 들어간 제품을 이름 검색으로는 놓치기
+    때문이다.
+
+    확인 결과가 없거나 이상이 없었으면 대체를 권하지 않는다. 사용자가
+    "이상 없음"으로 답한 제품을 바꾸라고 할 근거가 없다.
+    """
+    target = next(
+        (p for p in get_care_products(user_id)
+         if str(p.get("user_product_id")) == str(user_product_id)),
+        None,
+    )
+    if not target:
+        return None, []
+
+    # 이상이 발견된 제품만 대상으로 한다.
+    fb = get_latest_feedback([str(user_product_id)]).get(str(user_product_id))
+    findings = _finding_labels(fb["answers"]) if fb else []
+    if not findings:
+        return None, []
+
+    name = target.get("name") or "확인한 제품"
+    metas = search_products_by_category(
+        target.get("category") or "",
+        limit=limit + 3,
+        exclude_product_id=target.get("product_id"),
+    )
+    if not metas:
+        return name, []
+
+    found_text = " · ".join(findings)
+    # 조사는 앞 글자의 받침에 따라 달라진다. 고정하면 "질감 변화이"처럼 어긋난다.
+    # 카드마다 다른 이유를 붙인다. 셋 다 같은 문장이면 고를 근거가 못 된다.
+    # 공통 사유(무엇이 확인됐는지)는 목록 위 한 줄이 이미 말하고 있다.
+    chosen = metas[:limit]
+    ids = [m["id"] for m in chosen]
+    profs = get_thermal_profiles(ids)
+    feats = get_product_features(ids)
+    tmeta = get_product_meta(target.get("product_id") or "") or {}
+    target_price = tmeta.get("price")
+
+    picks = [
+        {
+            "product_id": m["id"],
+            "name": m["name"],
+            "brand": m.get("brand"),
+            "image_url": m.get("image_url"),
+            "price": m.get("price"),
+            "reason": _replacement_reason(
+                m, profs.get(m["id"]), feats.get(m["id"]), target, target_price),
+        }
+        for m in chosen
+    ]
+    return name, picks
 
 
 @router.get(
@@ -683,8 +820,27 @@ def get_recommendations(
     user_id: Optional[str] = Query(None, description="지정하면 해당 사용자의 노드만"),
     region: str = Query(DEFAULT_REGION, description="외출 지역"),
     limit: int = Query(3, ge=1, le=6),
+    replace_for: Optional[str] = Query(
+        None,
+        description=(
+            "확인 결과 이상이 발견된 user_product_id. 주면 그 제품과 같은 "
+            "카테고리의 대체 후보를 먼저 보여준다."
+        ),
+    ),
 ) -> RecommendationsResponse:
     now = datetime.now(timezone.utc)
+
+    # ── 대체 후보 ────────────────────────────────────────────────
+    # 점검 화면이 "새 제품으로 바꾸시는 편이 좋겠습니다"라고 안내한 뒤
+    # 넘어오는 흐름이다. 그 안내가 빈말이 되지 않으려면 여기서 실제로
+    # 그 제품을 대신할 것을 보여줘야 한다.
+    replacing: Optional[str] = None
+    replacements: List[Dict[str, Any]] = []
+    if replace_for and user_id:
+        try:
+            replacing, replacements = _replacement_picks(user_id, replace_for, limit)
+        except Exception:
+            logger.exception("대체 제품 조회 실패 user_product_id=%s", replace_for)
 
     try:
         indoor = _indoor_nodes(user_id)
@@ -695,8 +851,14 @@ def get_recommendations(
     outdoor = fetch_outdoor(region)
     candidates = build_candidates(outdoor, indoor)
 
+    remaining = max(limit - len(replacements), 0)
     try:
-        items = pick_products(candidates, limit=limit)
+        # 대체 후보로 이미 고른 제품은 환경 추천에서 다시 뽑지 않는다.
+        items = pick_products(
+            candidates,
+            limit=remaining,
+            exclude_ids={r["product_id"] for r in replacements},
+        ) if remaining else []
     except Exception:
         logger.exception("추천 제품 선정 실패")
         items = []
@@ -704,9 +866,129 @@ def get_recommendations(
     return RecommendationsResponse(
         generated_at=now.isoformat(),
         context=context_line(outdoor, indoor),
-        items=[RecommendedProduct(**i) for i in items],
+        items=[RecommendedProduct(**i) for i in replacements + items],
+        replacing=replacing,
         qr_url=APP_URL,
     )
+
+@router.get(
+    "/recommendations/full",
+    response_model=FullRecommendationsResponse,
+    summary="추천 전체 (묶음별)",
+    description=(
+        "키오스크 QR로 넘어온 앱이 쓰는 목록. 왜 추천됐는지가 흐려지지 않도록 "
+        "섞지 않고 근거별로 나눠 준다. 확인 결과 이상이 있던 제품의 대체 후보가 "
+        "먼저 오고, 그다음이 보관 장소별 환경 추천이다."
+    ),
+)
+def get_recommendations_full(
+    user_id: str = Query(..., description="예선 한정. 본선에서는 토큰에서 추출한다."),
+    region: str = Query(DEFAULT_REGION, description="외출 지역"),
+    per_group: int = Query(3, ge=1, le=6, description="묶음당 제품 수"),
+) -> FullRecommendationsResponse:
+    now = datetime.now(timezone.utc)
+    groups: List[RecoGroup] = []
+
+    # ── 1. 확인 결과 이상이 있던 제품 대신 ───────────────────────
+    try:
+        pr = build_priority(user_id, include_components=False)
+        flagged = [
+            i for i in pr["items"]
+            if (i.get("inspection") or {}).get("findings")
+        ]
+    except Exception:
+        logger.exception("점검 목록 조회 실패 user_id=%s", user_id)
+        flagged = []
+
+    for it in flagged:
+        try:
+            name, picks = _replacement_picks(
+                user_id, it["user_product_id"], per_group)
+        except Exception:
+            logger.exception("대체 제품 조회 실패 %s", it.get("user_product_id"))
+            continue
+        if not picks:
+            continue
+        found = " · ".join(it["inspection"]["findings"])
+        groups.append(RecoGroup(
+            key=f"replace:{it['user_product_id']}",
+            title=f"{name} 대신 쓰실 만한 제품",
+            note=f"직접 확인에서 {found}{_josa(found, '이', '가')} 확인됐습니다",
+            items=[RecommendedProduct(**p) for p in picks],
+        ))
+
+    # ── 2. 보관 장소별 환경 추천 ─────────────────────────────────
+    # 노드를 하나씩 따로 넣는다. 한꺼번에 넣으면 어느 장소 때문에 골랐는지
+    # 알 수 없어, 사용자가 납득할 근거가 사라진다.
+    outdoor = fetch_outdoor(region)
+    try:
+        indoor = _indoor_nodes(user_id)
+    except Exception:
+        logger.exception("실내 노드 조회 실패 user_id=%s", user_id)
+        indoor = []
+
+    used = {p.product_id for g in groups for p in g.items}
+    for node in indoor:
+        # 지금 값이 아니라 쌓인 이력으로 고른다. 보관 장소는 몇 주씩 고정해
+        # 두고 쓰는 자리라, 오늘 하루가 그 자리를 대표하지 못한다.
+        label = node.get("label") or node.get("node_id")
+        try:
+            hist = summarize_history(get_readings(node["node_id"]))
+        except Exception:
+            logger.exception("측정 이력 조회 실패 node=%s", node.get("node_id"))
+            hist = None
+
+        cands = (build_node_candidates(hist, label) if hist
+                 else build_candidates(outdoor, [node]))
+        try:
+            picks = pick_products(cands, limit=per_group, exclude_ids=set(used))
+        except Exception:
+            logger.exception("환경 추천 실패 node=%s", node.get("node_id"))
+            continue
+        if not picks:
+            continue
+        used |= {p["product_id"] for p in picks}
+
+        groups.append(RecoGroup(
+            key=f"node:{node.get('node_id')}",
+            title=f"{label} 환경에 맞춘 제품",
+            note=_node_note(node, hist),
+            items=[RecommendedProduct(**p) for p in picks],
+        ))
+
+    return FullRecommendationsResponse(
+        generated_at=now.isoformat(),
+        context=context_line(outdoor, indoor),
+        groups=groups,
+    )
+
+
+def _node_note(node: Dict[str, Any], hist: Optional[Any]) -> Optional[str]:
+    """
+    묶음 아래 한 줄.
+
+    이력이 있으면 그 요약을 쓴다. 추천 근거가 누적값인데 부제만 지금 온도를
+    보여주면 둘이 어긋나 보인다. 이력이 없을 때만 현재값으로 대체한다.
+    """
+    if hist is not None:
+        parts: List[str] = [f"최근 {hist.days}일"]
+        if hist.mean_temp is not None:
+            parts.append(f"평균 {hist.mean_temp:.1f}℃")
+        if hist.max_temp is not None:
+            parts.append(f"최고 {hist.max_temp:.1f}℃")
+        if hist.mean_ah is not None:
+            parts.append(f"절대습도 {hist.mean_ah:.1f} g/m³")
+        return " · ".join(parts)
+
+    parts = []
+    t = node.get("temperature")
+    if t is not None:
+        parts.append(f"지금 {t:.1f}℃")
+    ah = node.get("absolute_humidity")
+    if ah is not None:
+        parts.append(f"절대습도 {ah:.1f} g/m³")
+    return " · ".join(parts) or None
+
 
 # ── 이벤트 이력 ───────────────────────────────────────────────────
 

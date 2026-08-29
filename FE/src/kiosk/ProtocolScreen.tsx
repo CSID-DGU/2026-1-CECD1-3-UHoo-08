@@ -38,6 +38,8 @@ type Props = {
   onBack: () => void;
   /** 색 항목에서 AS7341 측정으로 넘어갈 때 */
   onMeasure?: (userProductId: string) => void;
+  /** 이상이 발견됐을 때 대체품을 보러 추천 탭으로 넘긴다. */
+  onSeeAlternatives?: (userProductId: string) => void;
 };
 
 export function ProtocolScreen({
@@ -49,6 +51,7 @@ export function ProtocolScreen({
   onTab,
   onBack,
   onMeasure,
+  onSeeAlternatives,
 }: Props) {
   // 한 번 받으면 바뀌지 않는 값이라 폴링하지 않는다.
   const protocol = useKioskQuery<ProtocolResponse>(
@@ -231,6 +234,9 @@ export function ProtocolScreen({
       {result ? (
         <ResultCard
           result={result}
+          onSeeAlternatives={
+            onSeeAlternatives ? () => onSeeAlternatives(userProductId) : undefined
+          }
           hasNext={Boolean(onNext) && Boolean(step) && step!.index < step!.total}
           onClose={() => {
             if (onNext) onNext(result.findings);
@@ -305,10 +311,12 @@ function ResultCard({
   result,
   onClose,
   hasNext,
+  onSeeAlternatives,
 }: {
   result: InspectionResponse;
   onClose: () => void;
   hasNext: boolean;
+  onSeeAlternatives?: () => void;
 }) {
   return (
     <div className="absolute inset-0 z-10 flex items-center justify-center bg-black/35 p-8">
@@ -343,9 +351,21 @@ function ResultCard({
           {/* 교체를 권할 상황이어도 "버리세요"라고 쓰지 않는다.
               판단은 사용자가 한다. */}
           {result.recommend_replace ? (
-            <div className="mt-2 rounded-[13px] bg-primary-50 p-[13px_16px] text-[17px] leading-[1.5]">
-              새 제품으로 바꾸시는 편이 좋겠습니다. 추천 탭에서 비슷한 제품을
-              보실 수 있습니다.
+            <div className="mt-2 rounded-[13px] bg-primary-50 p-[13px_16px]">
+              <div className="text-[17px] leading-[1.5]">
+                새 제품으로 바꾸시는 편이 좋겠습니다.
+              </div>
+              {/* 예전에는 "추천 탭에서 보실 수 있습니다"라고 안내만 했는데,
+                  정작 추천 탭은 환경 기반이라 이 제품과 무관한 목록을 보여줬다.
+                  이제 이 버튼이 같은 카테고리의 대체 후보로 데려간다. */}
+              {onSeeAlternatives ? (
+                <button
+                  onClick={onSeeAlternatives}
+                  className="mt-2 h-[48px] rounded-[12px] bg-primary-500 px-[22px] text-[17px] font-semibold text-white"
+                >
+                  비슷한 제품 보기 →
+                </button>
+              ) : null}
             </div>
           ) : null}
         </div>

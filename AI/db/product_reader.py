@@ -5,6 +5,8 @@ products 테이블에서 추천 결과·후보 필터링에 필요한 메타 정
 쓰기(insert/update)는 product_agent 담당의 product_repository.py가 수행하며,
 본 모듈은 읽기만 담당해 역할이 겹치지 않는다.
 """
+import json
+
 from typing import Dict, List, Optional, TypedDict
 
 from db.supabase_client import get_supabase
@@ -109,6 +111,71 @@ def get_products_meta(product_ids: List[str]) -> Dict[str, ProductMeta]:
         .execute()
     )
     return {row["product_id"]: _row_to_meta(row) for row in (res.data or [])}
+
+
+def get_product_features(product_ids: List[str]) -> Dict[str, Dict]:
+    """
+    product_id → feature_json(파싱된 dict).
+
+    제품을 왜 추천했는지 설명할 때 쓴다. "같은 용도 제품입니다"로는 고를
+    근거가 되지 않는다. 제형·용도·고민을 그대로 말해 줘야 한다.
+
+    feature_json은 컬럼 타입이 text라 문자열로 오는 경우가 있어 둘 다 받는다.
+    """
+    if not product_ids:
+        return {}
+
+    sb = get_supabase()
+    rows = (
+        sb.table("products")
+        .select("product_id, feature_json")
+        .in_("product_id", product_ids)
+        .execute()
+    ).data or []
+
+    out: Dict[str, Dict] = {}
+    for r in rows:
+        f = r.get("feature_json")
+        if isinstance(f, str):
+            try:
+                f = json.loads(f)
+            except (ValueError, TypeError):
+                f = None
+        if isinstance(f, dict):
+            out[r["product_id"]] = f
+    return out
+
+
+def search_products_by_category(
+    category: str,
+    limit: int = 20,
+    *,
+    exclude_product_id: Optional[str] = None,
+) -> List[ProductMeta]:
+    """
+    같은 카테고리의 제품. 벡터 연산 없음.
+
+    확인 결과 이상이 발견된 제품을 대신할 후보를 찾을 때 쓴다. 이름 검색으로는
+    "선크림"처럼 카테고리 단어가 상품명에 안 들어간 제품을 놓친다.
+
+    자기 자신은 제외한다. 바꾸라고 권해 놓고 같은 제품을 다시 보여줄 수 없다.
+    """
+    cat = (category or "").strip()
+    if not cat:
+        return []
+
+    sb = get_supabase()
+    q = (
+        sb.table("products")
+        .select(_COLUMNS)
+        .eq("category", cat)
+        .limit(limit)
+    )
+    if exclude_product_id:
+        q = q.neq("product_id", exclude_product_id)
+
+    rows = q.execute().data or []
+    return [_row_to_meta(r) for r in rows]
 
 
 def search_products_by_name(keyword: str, limit: int = 20) -> List[ProductMeta]:

@@ -259,6 +259,8 @@ export type RecommendationsResponse = {
   context: string | null;
   items: RecommendedProduct[];
   /** QR에 넣을 주소. 휴대폰에서 전체 추천을 보는 곳. */
+  /** 이상이 발견된 제품을 대신하는 추천이면 그 제품 이름. */
+  replacing: string | null;
   qr_url: string;
 };
 

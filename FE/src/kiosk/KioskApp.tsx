@@ -65,6 +65,14 @@ const EVENTS_INTERVAL_MS = 5 * 60_000;
 export function KioskApp() {
   const [screen, setScreen] = useState<ScreenKey>("idle");
   const [target, setTarget] = useState<PriorityItem | null>(null);
+  /**
+   * 확인 결과 이상이 발견되어 대체품을 보러 넘어온 제품.
+   *
+   * 점검 화면이 "새 제품으로 바꾸시는 편이 좋겠습니다"라고 안내한 뒤
+   * 추천 탭으로 넘긴다. 그 안내가 빈말이 되지 않으려면 추천 탭이 그
+   * 제품을 알아야 한다.
+   */
+  const [replaceFor, setReplaceFor] = useState<string | null>(null);
   const [region, setRegion] = useState<string>(readSavedRegion);
   // 확인 절차 화면이 볼 제품. 점검 목록이나 이벤트 안내에서 넘어온다.
   const [protocolTarget, setProtocolTarget] = useState<string | null>(null);
@@ -113,8 +121,14 @@ export function KioskApp() {
   );
 
   const reco = useKioskQuery<RecommendationsResponse>(
-    () => careGet<RecommendationsResponse>("/api/care/recommendations", { user_id: KIOSK_USER_ID }),
-    RECO_INTERVAL_MS
+    () =>
+      careGet<RecommendationsResponse>("/api/care/recommendations", {
+        user_id: KIOSK_USER_ID,
+        replace_for: replaceFor ?? undefined,
+      }),
+    RECO_INTERVAL_MS,
+    // 대상이 바뀌면 곧바로 다시 부른다. 폴링을 기다리면 빈 화면을 본다.
+    [replaceFor]
   );
 
   const activeTab: TabKey =
@@ -226,6 +240,8 @@ export function KioskApp() {
           activeTab={activeTab}
           onTab={setScreen}
           onHome={goHome}
+          // 대체 추천을 보다가 평소 추천으로 돌아갈 수단.
+          onClearReplace={replaceFor ? () => setReplaceFor(null) : undefined}
         />
       ) : screen === "env" ? (
         <EnvScreen
@@ -257,6 +273,11 @@ export function KioskApp() {
           // 없으면 앞 제품에서 고른 항목이 남는다.
           key={protocolTarget}
           userProductId={protocolTarget}
+          // 이상이 발견됐을 때 "비슷한 제품 보기"로 추천 탭에 넘긴다.
+          onSeeAlternatives={(id) => {
+            setReplaceFor(id);
+            setScreen("reco");
+          }}
           // 이벤트는 마지막 제품에서만 닫는다. 중간에 닫으면 남은 제품을
           // 확인하는 동안 질문이 이미 사라진 상태가 된다.
           eventId={queueIndex === queue.length - 1 ? protocolEvent : null}

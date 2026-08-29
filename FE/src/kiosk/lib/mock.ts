@@ -100,6 +100,7 @@ const mockPriority: PriorityResponse = {
     medium: 1,
     low: 10,
     needs_check: 1,
+    checked_high: 0,
     band_thresholds: { high: 70, medium: 40 },
   },
   items: [
@@ -297,16 +298,34 @@ const mockReco: RecommendationsResponse = {
       reason: "사무실 PM2.5 24 — 세정 강화 권장",
     },
   ],
+  replacing: null,
   qr_url: "https://2026-1-cecd-1-3-u-hoo-08.vercel.app",
 };
 
 /** 경로별 시드 응답. 없는 경로는 null. */
-export function mockFor(path: string): unknown | null {
+export function mockFor(
+  path: string,
+  params: Record<string, string | number | boolean | undefined> = {},
+): unknown | null {
   if (path.startsWith("/api/care/dashboard")) return mockDashboard;
   if (path.startsWith("/api/care/priority")) return mockPriority;
   if (path.startsWith("/api/care/environment")) return mockEnvironment;
   if (path.startsWith("/api/care/skin")) return mockSkin;
-  if (path.startsWith("/api/care/recommendations")) return mockReco;
+  if (path.startsWith("/api/care/recommendations")) {
+    // 대체품 추천도 목업에서 확인할 수 있어야 한다. 실제 API는 replace_for를
+    // 받으면 그 제품 이름을 replacing으로 돌려준다.
+    const target = params.replace_for;
+    if (!target) return mockReco;
+    const item = mockPriority.items.find((i) => i.user_product_id === target);
+    return {
+      ...mockReco,
+      replacing: item?.name ?? "확인한 제품",
+      items: mockReco.items.map((p) => ({
+        ...p,
+        reason: `${item?.name ?? "확인한 제품"}를 대신할 수 있습니다`,
+      })),
+    };
+  }
   if (path.startsWith("/api/care/events")) return mockEvents;
   const m = /\/api\/care\/products\/([^/]+)\/protocol/.exec(path);
   // 목업도 제품마다 다른 값을 준다. 하나로 고정하면 다른 제품을 골라도

@@ -5,8 +5,10 @@ import {
   getSimilarUserProducts,
 } from "../../api/productApi";
 import { getUnreadCount } from "../../api/notificationApi";
+import { type CareRecoFull, getCareRecommendations } from "../../api/careRecoApi";
+import { getMyProfile } from "../../api/userApi";
 import { getTrackings } from "../../api/priceTrackingApi";
-import { Bell, TrendingUp, Users } from "lucide-react";
+import { Bell, Thermometer, TrendingUp, Users } from "lucide-react";
 import { BottomNav } from "../../components/common/BottomNav";
 import { SearchField } from "../../components/common/SearchField";
 import { WishlistButton } from "../../components/common/WishlistButton";
@@ -22,6 +24,20 @@ export function HomePage() {
     SimilarUserProduct[]
   >([]);
   const [trackingCount, setTrackingCount] = useState<number | null>(null);
+  /**
+   * 키오스크가 읽은 환경으로 만든 추천.
+   *
+   * QR로 넘어온 사용자가 "전체 추천"을 기대하는 자리다. 실패해도 화면을
+   * 비우지 않고 이 섹션만 빠진다.
+   */
+  const [careReco, setCareReco] = useState<CareRecoFull | null>(null);
+
+  useEffect(() => {
+    getMyProfile()
+      .then((res) => getCareRecommendations(res.data.id))
+      .then(setCareReco)
+      .catch(() => setCareReco(null));
+  }, []);
 
   useEffect(() => {
     getUnreadCount()
@@ -302,6 +318,84 @@ export function HomePage() {
                   </div>
                 )}
               </section>
+
+              {/* 화담 CARE 추천.
+                  키오스크 QR로 넘어온 사용자가 "전체 추천"을 기대하는 자리다.
+                  다른 추천과 달리 근거가 센서 측정값이라, 제목 아래에 그
+                  숫자를 그대로 둔다. 근거를 감추면 그냥 또 하나의 추천 목록이
+                  되어 버린다. */}
+              {careReco && careReco.groups.length > 0 && (
+                <section className="mt-4">
+                  <div className="mb-2 flex items-center justify-between">
+                    <div className="flex items-center gap-2">
+                      <span
+                        className="grid h-7 w-7 place-items-center rounded-full"
+                        style={{
+                          background: "linear-gradient(135deg, #DBE6F8, #9DBFEE)",
+                        }}
+                      >
+                        <Thermometer
+                          className="h-4 w-4 text-primary-600"
+                          strokeWidth={1.8}
+                        />
+                      </span>
+                      <div>
+                        <h2 className="text-body1 text-gray-500">
+                          오늘의 환경 맞춤 추천
+                        </h2>
+                        {careReco.context && (
+                          <p className="text-caption text-gray-300">
+                            {careReco.context}
+                          </p>
+                        )}
+                      </div>
+                    </div>
+                    <button
+                      className="shrink-0 text-body2 text-primary-500"
+                      onClick={() => navigate("/recommendation/care")}
+                      type="button"
+                    >
+                      더보기
+                    </button>
+                  </div>
+
+                  <div className="flex gap-3 overflow-x-auto pb-1 scrollbar-none">
+                    {careReco.groups
+                      .flatMap((g) => g.items)
+                      .slice(0, 6)
+                      .map((item) => (
+                        <button
+                          className="min-w-[154px] rounded-2xl border border-gray-100 bg-white p-3 text-left"
+                          key={item.product_id}
+                          onClick={() => navigate(`/product/${item.product_id}`)}
+                          type="button"
+                        >
+                          <div className="h-[94px] overflow-hidden rounded-xl bg-primary-50">
+                            {item.image_url && (
+                              <img
+                                src={item.image_url}
+                                alt={item.name}
+                                className="h-full w-full object-cover"
+                              />
+                            )}
+                          </div>
+                          <p className="mt-3 truncate text-body2 text-gray-500">
+                            {item.name}
+                          </p>
+                          {/* 왜 골랐는지. 가로 카드라 두 줄까지만 보인다. */}
+                          <p className="mt-1 line-clamp-2 text-caption leading-[1.4] text-primary-600">
+                            {item.reason}
+                          </p>
+                          {item.price != null && (
+                            <p className="mt-2 text-caption text-gray-300">
+                              {item.price.toLocaleString()}원
+                            </p>
+                          )}
+                        </button>
+                      ))}
+                  </div>
+                </section>
+              )}
             </div>
           </div>
         </div>

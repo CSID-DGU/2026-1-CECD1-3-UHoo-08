@@ -15,7 +15,7 @@ export async function careGet<T>(
   params: Record<string, string | number | boolean | undefined> = {}
 ): Promise<T> {
   if (MOCK_ENABLED) {
-    const data = mockFor(path);
+    const data = mockFor(path, params);
     if (data === null) {
       throw new KioskApiError("목업 데이터가 없는 경로", path, 404);
     }

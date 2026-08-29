@@ -131,6 +131,26 @@ def list_nodes() -> List[Dict[str, Any]]:
 _OWNED_USAGE = ("USING", "USED")
 
 
+def get_thermal_profiles(product_ids: List[str]) -> Dict[str, Dict[str, Any]]:
+    """
+    product_id → 열 프로파일. 추천 후보를 고를 때 "왜 이 제품인가"의 근거로 쓴다.
+
+    get_care_products가 같은 테이블을 읽지만 그쪽은 사용자 보유 제품 전용이다.
+    보유하지 않은 후보 제품도 봐야 해서 따로 둔다.
+    """
+    if not product_ids:
+        return {}
+
+    sb = get_supabase()
+    rows = (
+        sb.table("product_thermal_profile")
+        .select("product_id, sensitivity_k, pao_months, optical_grade")
+        .in_("product_id", product_ids)
+        .execute()
+    ).data or []
+    return {r["product_id"]: r for r in rows}
+
+
 def get_care_products(
     user_id: str,
     *,
