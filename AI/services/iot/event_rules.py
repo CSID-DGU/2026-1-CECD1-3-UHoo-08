@@ -88,17 +88,14 @@ def guidance(
 
     if answer == ANSWER_EXTERNAL:
         # 저장 이야기는 하지 않는다. 사용자가 알아야 할 것은
-        # "내 화장품 문제가 아니었다"는 사실이다.
-        lines = ["보관 중인 화장품에서 비롯된 변화가 아닙니다.",
-                 "주변에서 일시적으로 들어온 성분으로 보입니다."]
-        if kind == "voc_spike":
-            lines.append(
-                "냄새가 강한 제품은 화장품과 조금 떨어뜨려 두시면 "
-                "이런 일이 줄어듭니다."
-            )
+        # "내 화장품 문제가 아니었다"는 사실 하나다.
+        #
+        # "향수를 멀리 두세요" 같은 말도 넣지 않는다. 화장대 앞에서 향수를
+        # 쓰는 것은 당연한 일이고, 센서가 그것을 감지하는 것은 우리 사정이다.
+        # 사용자에게 생활을 바꾸라고 할 이유가 없다.
         return {
             "headline": "일시적인 외부 요인이었습니다",
-            "lines": lines,
+            "lines": ["보관 중인 화장품에서 비롯된 변화가 아닙니다."],
             "next": None,
             "excluded": True,
         }
@@ -108,8 +105,7 @@ def guidance(
     if top_products:
         return {
             "headline": "어떤 제품을 확인해 볼까요?",
-            "lines": ["같은 보관함에 있던 제품을 확인 순위가 높은 순으로 보여드릴게요.",
-                      "확인할 제품을 골라 주세요."],
+            "lines": ["같은 보관함에 있던 제품 중 확인 순위가 높은 것부터 보여드릴게요."],
             "next": {"action": "priority", "products": top_products},
             "excluded": False,
         }
@@ -120,6 +116,27 @@ def guidance(
         "next": None,
         "excluded": False,
     }
+
+
+def status_line(event: Dict[str, Any], findings: Optional[List[str]] = None) -> Optional[str]:
+    """
+    답한 이벤트의 상태 한 줄. 목록에 그대로 표시된다.
+
+    답변만으로는 부족하다. "아니요"라고 답한 뒤 제품을 확인해 무엇을
+    발견했는지까지 이어져야 시연에서 흐름이 보인다. findings를 주면
+    그것을 함께 쓴다.
+    """
+    answer = event.get("user_answer")
+
+    if answer == ANSWER_EXTERNAL:
+        return "확인함 · 일시적 외부 요인의 영향"
+
+    if answer == ANSWER_NONE:
+        if findings:
+            return f"확인함 · {' · '.join(findings)}"
+        return "확인함 · 짚이는 외부 요인 없음"
+
+    return None
 
 
 # ── 알림 바 ──────────────────────────────────────────────────────

@@ -28,7 +28,9 @@ from db.iot.skin_reader import get_skin_measurements
 from db.iot.writer import get_latest_reading
 from services.iot.care_rules import build_brief, compare_indoor
 from services.iot.erl import T_REF_C, acceleration_factor
-from services.iot.event_rules import alert_line, describe, guidance, when
+from services.iot.event_rules import (
+    alert_line, describe, guidance, status_line, when,
+)
 from services.iot.inspection_rules import (
     ANSWERS, FEEDBACK_CODE, answer_guidance, build_protocol, summary_label,
 )
@@ -702,6 +704,9 @@ class EventItem(BaseModel):
     question: Optional[str] = Field(None, description="답을 받아야 하면 문구, 아니면 null")
     user_answer: str
     excluded: bool
+    status: Optional[str] = Field(
+        None, description="답한 뒤 목록에 표시할 한 줄. 아직이면 null"
+    )
 
 
 class EventsSummary(BaseModel):
@@ -760,6 +765,7 @@ def get_events(
         # 이미 답한 건은 질문을 다시 띄우지 않는다.
         question = d["question"] if r.get("user_answer") == "pending" else None
         items.append(EventItem(
+            status=status_line(r),
             id=r["id"],
             node_id=r.get("node_id"),
             node_label=label,
@@ -893,6 +899,7 @@ def post_event_answer(
 
     return AnswerResponse(
         event=EventItem(
+            status=status_line(updated),
             id=updated["id"],
             node_id=updated.get("node_id"),
             node_label=label,
