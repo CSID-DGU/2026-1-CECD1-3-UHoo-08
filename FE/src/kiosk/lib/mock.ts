@@ -327,8 +327,8 @@ const mockEvents = {
       event_type: "voc_spike", magnitude: 66.8,
       title: "공기 성분 변화",
       detail: "화장대 가스 저항이 평소보다 67% 낮아졌습니다",
-      question: "이 시각에 향수나 스프레이 제품을 두셨나요?",
-      user_answer: "pending", excluded: false,
+      question: "이 무렵 근처에서 향수·스프레이·소독제처럼 냄새가 강한 것을 쓰신 적이 있나요?",
+      user_answer: "pending", excluded: false, status: null,
     },
     {
       id: 2, node_id: "storage-01", node_label: "화장대",
@@ -337,6 +337,7 @@ const mockEvents = {
       title: "고온 노출",
       detail: "화장대 최고 34.9℃ · 30분 이상 지속",
       question: null, user_answer: "none", excluded: false,
+      status: "확인함 · 짚이는 외부 요인 없음",
     },
     {
       id: 3, node_id: "storage-01", node_label: "화장대",
@@ -345,6 +346,7 @@ const mockEvents = {
       title: "공기 성분 변화",
       detail: "화장대 가스 저항이 평소보다 64% 낮아졌습니다",
       question: null, user_answer: "external_source", excluded: true,
+      status: "확인함 · 일시적 외부 요인의 영향",
     },
   ],
 };
@@ -382,35 +384,60 @@ export function mockPostFor(path: string, body: unknown): unknown | null {
   if (/\/api\/care\/events\/\d+\/answer$/.test(path)) {
     const external = answer === "external_source";
     return {
-      event: { ...mockEvents.items[0], question: null,
-               user_answer: answer, excluded: external },
-      headline: external ? "외부 요인으로 기록했습니다" : "확인해 보시겠어요?",
+      event: {
+        ...mockEvents.items[0], question: null,
+        user_answer: answer, excluded: external,
+        status: external
+          ? "확인함 · 일시적 외부 요인의 영향"
+          : "확인함 · 짚이는 외부 요인 없음",
+      },
+      headline: external ? "일시적인 외부 요인이었습니다" : "어떤 제품을 확인해 볼까요?",
       lines: external
-        ? ["확인해 주셔서 감사합니다.", "이 기록은 분석에서 빼겠습니다.",
-           "향이 강한 제품은 화장품과 조금 떨어뜨려 두시면 기록이 더 정확해집니다."]
-        : ["알겠습니다. 이 기록은 그대로 두겠습니다.",
-           "같은 보관함에 있던 제품 중 확인 순위가 높은 것을 보여드릴게요."],
+        ? ["보관 중인 화장품에서 비롯된 변화가 아닙니다."]
+        : ["같은 보관함에 있던 제품 중 확인 순위가 높은 것부터 보여드릴게요."],
+      // 목록은 자르지 않는다. 점검 탭의 측정하기 모달과 같은 범위다.
       next: external ? null : {
         action: "priority",
-        products: [
-          { user_product_id: "m1", name: "레티놀 나이트 세럼", brand: "이니스프리", score: 87, band: "high" },
-          { user_product_id: "m2", name: "비타민C 브라이트닝 앰플", brand: "코스알엑스", score: 54, band: "medium" },
-        ],
+        products: mockPriority.items.map((i) => ({
+          user_product_id: i.user_product_id,
+          name: i.name, brand: i.brand, score: i.score, band: i.band,
+        })),
       },
     };
   }
 
   if (/\/api\/care\/products\/[^/]+\/inspection$/.test(path)) {
-    const ok = answer === "이상 없음";
+    const answers = (body as { answers?: string[] } | null)?.answers ?? [];
+    const issues = answers.filter((a) => a !== "이상 없음");
+
+    const advice: Record<string, string[]> = {
+      "냄새가 남": ["냄새 변화는 되돌아오지 않습니다.",
+                  "얼굴에 쓰기 전에 팔 안쪽에 발라 보시고, 붉어지면 사용을 멈추세요."],
+      "색이 다름": ["색 변화만으로 사용 여부를 정하기는 어렵습니다.",
+                  "냄새와 질감도 함께 확인해 보세요."],
+      "분리됨": ["흔들었을 때 다시 섞인다면 일시적인 분리일 수 있습니다.",
+               "섞이지 않는다면 사용을 멈추시는 편이 좋습니다."],
+      "혼탁함": ["부유물이 보이면 눈가나 상처가 있는 부위에는 쓰지 마세요."],
+      "덩어리짐": ["굳은 덩어리는 세균이 자라기 쉬운 자리입니다.",
+                "눈가나 상처가 있는 부위에는 쓰지 마세요."],
+      "질감 변화": ["질감이 달라졌다면 성분이 변했을 수 있습니다.",
+                 "팔 안쪽에 먼저 발라 보시고 자극이 없는지 확인하세요."],
+    };
+    const short: Record<string, string> = {
+      "색이 다름": "색 변화", "냄새가 남": "냄새 변화", "분리됨": "층 분리",
+      "혼탁함": "부유물", "질감 변화": "질감 변화", "덩어리짐": "덩어리",
+    };
+
     return {
       user_product_id: "m1",
-      answer,
-      headline: ok ? "확인 감사합니다" : "기록했습니다",
-      lines: ok
-        ? ["이상이 없다고 기록했습니다.", "다음 점검 때 이 답변을 기준으로 변화를 봅니다."]
-        : [`${answer}이(가) 있다고 기록했습니다.`,
-           "냄새 변화는 되돌아오지 않습니다. 얼굴에 쓰기 전에 팔 안쪽에 발라 보시고, 붉어지면 사용을 멈추세요."],
-      recommend_replace: answer === "냄새가 남",
+      answers,
+      headline: issues.length === 0
+        ? "이상이 없다고 확인하셨습니다"
+        : issues.length === 1 ? "확인해 주셔서 감사합니다" : "확인하신 내용입니다",
+      sections: issues.map((a) => ({ label: short[a] ?? a, lines: advice[a] ?? [] })),
+      lines: issues.length === 0 ? ["다음 점검 때 이 확인을 기준으로 변화를 봅니다."] : [],
+      recommend_replace: issues.some((a) => ["냄새가 남", "혼탁함", "덩어리짐"].includes(a)),
+      findings: issues.map((a) => short[a] ?? a),
     };
   }
 

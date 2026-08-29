@@ -1,3 +1,4 @@
+import { useState } from "react";
 import { TopBar, TabBar, BAND_STYLE, ErrorPanel, StaleBanner, Loading, type TabKey } from "./ui";
 import type { PriorityItem, PriorityResponse, DashboardResponse } from "./lib/types";
 import type { QueryState } from "./lib/useKioskQuery";
@@ -108,7 +109,9 @@ function PriorityBody({
   // 확인이 필요한 것과 지켜볼 것만 목록에 올린다. 정상 범위는 개수만
   // 알려준다. 열두 개를 전부 나열하면 어디부터 봐야 할지 알 수 없다.
   const listed = data.items.filter((i) => i.band !== "low");
-  const restCount = data.items.filter((i) => i.band === "low").length;
+  const rest = data.items.filter((i) => i.band === "low");
+  const restCount = rest.length;
+  const [showRest, setShowRest] = useState(false);
 
 
   return (
@@ -147,12 +150,36 @@ function PriorityBody({
           ))
         )}
 
+        {/* 정상 범위 제품도 열어볼 수 있어야 한다. 사용자가 그중 하나를
+            직접 확인하거나 측정하고 싶을 수 있는데, 접어두기만 하면
+            그 방법이 없다. */}
         {restCount > 0 ? (
-          <div className="mt-2.5 rounded-[15px] border border-primary-100 bg-primary-50 p-[15px_19px]">
-            <div className="text-[16px] text-gray-300">나머지 {restCount}개</div>
-            <div className="mt-1 text-[16px]">
-              🟢 정상 범위입니다. 지금 확인하지 않으셔도 됩니다.
+          <div className="mt-2.5 overflow-hidden rounded-[15px] border border-primary-100 bg-primary-50">
+            <button
+              onClick={() => setShowRest((v) => !v)}
+              className="flex w-full items-center gap-2 p-[15px_19px] text-left"
+            >
+              <span className="text-[16px] text-gray-300">나머지 {restCount}개</span>
+              <span className="ml-auto text-[16px] font-medium text-primary-500">
+                {showRest ? "접기 ▲" : "열어보기 ▼"}
+              </span>
+            </button>
+
+            <div className="px-[19px] pb-[15px] text-[16px]">
+              🟢 정상 범위입니다. 확인이나 측정을 원하시면 열어보세요.
             </div>
+
+            {showRest ? (
+              <div className="px-[13px] pb-[13px]">
+                {rest.map((item) => (
+                  <ItemRow
+                    key={item.user_product_id}
+                    item={item}
+                    onOpen={() => onProtocol(item.user_product_id)}
+                  />
+                ))}
+              </div>
+            ) : null}
           </div>
         ) : null}
 

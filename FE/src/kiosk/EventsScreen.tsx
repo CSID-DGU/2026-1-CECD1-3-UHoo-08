@@ -42,6 +42,13 @@ export function EventsScreen({ activeTab, onTab, onBack, onProduct }: Props) {
   const [result, setResult] = useState<EventAnswerResponse | null>(null);
   // 안내를 닫으면 제품 목록을 띄운다. 두 카드를 겹쳐 놓으면 화면이 좁다.
   const [picking, setPicking] = useState<EventAnswerResponse | null>(null);
+
+  // 답한 직후의 상태를 화면에 바로 반영한다.
+  //
+  // refetch를 걸어도 서버 왕복이 끝날 때까지 목록이 그대로다. 시연에서
+  // 버튼을 눌렀는데 아무 변화가 없으면 고장처럼 보인다. 응답으로 받은
+  // 이벤트를 즉시 덮어쓰고, 뒤이어 도착하는 서버 값이 이것을 대체한다.
+  const [patched, setPatched] = useState<Record<number, CareEvent>>({});
   const [answerError, setAnswerError] = useState<KioskApiError | null>(null);
 
   const answer = async (id: number, value: "external_source" | "none") => {
@@ -54,7 +61,8 @@ export function EventsScreen({ activeTab, onTab, onBack, onProduct }: Props) {
         { user_id: KIOSK_USER_ID }
       );
       setResult(res);
-      // 목록의 답변 상태를 갱신한다. 다시 부르지 않으면 질문이 그대로 남는다.
+      setPatched((p) => ({ ...p, [id]: res.event }));
+      // 서버 값으로도 맞춘다. 위 덮어쓰기는 그때까지의 임시 표시다.
       events.refetch();
     } catch (e) {
       setAnswerError(e instanceof KioskApiError ? e : new KioskApiError(String(e), "-", null));
@@ -96,14 +104,17 @@ export function EventsScreen({ activeTab, onTab, onBack, onProduct }: Props) {
                   기록된 이벤트가 없습니다.
                 </div>
               ) : (
-                data.items.map((e) => (
+                data.items.map((raw) => {
+                  const e = patched[raw.id] ?? raw;
+                  return (
                   <EventRow
                     key={e.id}
                     event={e}
                     busy={answering === e.id}
                     onAnswer={(v) => void answer(e.id, v)}
                   />
-                ))
+                  );
+                })
               )}
             </div>
           </div>
@@ -123,8 +134,7 @@ export function EventsScreen({ activeTab, onTab, onBack, onProduct }: Props) {
 
       {picking?.next?.products?.length ? (
         <ProductPicker
-          title="확인할 제품을 골라 주세요"
-          description="같은 보관함의 제품을 확인 순위가 높은 순으로 보여드립니다."
+          title="어떤 제품을 확인할까요?"
           products={picking.next.products.map((p) => ({
             user_product_id: p.user_product_id,
             name: p.name,
@@ -224,11 +234,10 @@ function EventRow({
             <div className="mt-1.5 text-[15px] text-gray-300">저장하는 중…</div>
           ) : null}
         </div>
-      ) : event.user_answer !== "pending" ? (
-        <div className="mt-1 text-[15px] text-gray-300">
-          {event.user_answer === "external_source"
-            ? "외부 요인으로 확인됨"
-            : "확인함 · 짚이는 원인 없음"}
+      ) : event.status ? (
+        // 문구는 서버가 만든다. 화면에서 조립하면 규칙이 두 곳에 흩어진다.
+        <div className="mt-1 text-[15px] font-medium text-primary-500">
+          {event.status}
         </div>
       ) : null}
     </div>

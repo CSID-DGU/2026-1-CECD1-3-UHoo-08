@@ -280,6 +280,8 @@ export type CareEvent = {
   question: string | null;
   user_answer: EventAnswer | string;
   excluded: boolean;
+  /** 답한 뒤 목록에 표시할 한 줄. 아직 답하지 않았으면 null. */
+  status: string | null;
 };
 
 export type EventsResponse = {
