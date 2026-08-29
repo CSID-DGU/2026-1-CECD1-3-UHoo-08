@@ -22,7 +22,8 @@ from db.iot.reader import (
     get_care_products, get_readings, get_reading_span, list_nodes,
 )
 from db.iot.event_reader import (
-    VALID_ANSWERS, answer_event, count_pending, get_event, get_risk_events,
+    VALID_ANSWERS, answer_event, count_pending, get_event,
+    get_feedback_since, get_risk_events,
 )
 from db.iot.skin_reader import get_skin_measurements
 from db.iot.writer import get_latest_reading
@@ -35,7 +36,7 @@ from services.iot.inspection_rules import (
     ANSWERS, FEEDBACK_CODE, answer_guidance, build_protocol, summary_label,
 )
 from services.iot.humidity import DRY_THRESHOLD_GM3, absolute_humidity, is_dry
-from services.iot.priority import build_priority
+from services.iot.priority import FEEDBACK_LABEL, build_priority
 from services.iot.psri import compute_psri, relation_sentence
 from services.iot.recommend_rules import build_candidates, context_line, pick_products
 from services.iot.weather import DEFAULT_REGION, fetch_outdoor
@@ -758,6 +759,30 @@ def get_events(
         logger.exception("이벤트 조회 실패 user_id=%s", user_id)
         raise HTTPException(status_code=500, detail="이벤트 이력을 불러오지 못했습니다")
 
+    # "아니요"라고 답한 뒤 제품을 확인했다면 그 결과를 함께 보여준다.
+    #
+    # 이벤트와 확인 결과는 테이블이 달라 직접 연결되어 있지 않다. 시각으로
+    # 잇는다. 답변 이후에 생긴 확인만 본다.
+    findings_map: Dict[int, List[str]] = {}
+    answered = [r for r in rows if r.get("user_answer") == "none"]
+    if answered:
+        oldest = min(str(r.get("ts")) for r in answered)
+        try:
+            fb = get_feedback_since(node_ids, oldest)
+        except Exception:
+            logger.exception("확인 결과 조회 실패")
+            fb = []
+
+        for r in answered:
+            after = [f for f in fb if str(f.get("ts")) >= str(r.get("ts"))]
+            labels_found: List[str] = []
+            for f in after:
+                lab = FEEDBACK_LABEL.get(f.get("answer") or "")
+                if lab and lab not in labels_found:
+                    labels_found.append(lab)
+            if labels_found:
+                findings_map[r["id"]] = labels_found
+
     items: List[EventItem] = []
     for r in rows:
         label = labels.get(r.get("node_id"))
@@ -765,7 +790,7 @@ def get_events(
         # 이미 답한 건은 질문을 다시 띄우지 않는다.
         question = d["question"] if r.get("user_answer") == "pending" else None
         items.append(EventItem(
-            status=status_line(r),
+            status=status_line(r, findings_map.get(r["id"])),
             id=r["id"],
             node_id=r.get("node_id"),
             node_label=label,

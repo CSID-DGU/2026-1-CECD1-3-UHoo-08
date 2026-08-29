@@ -101,7 +101,7 @@ def _missing_reasons(item: Dict[str, Any]) -> List[Dict[str, str]]:
 
 # user_feedback.answer 코드 → 화면 표기.
 # DB CHECK 제약이 다섯 값만 허용해 화면 항목보다 거칠다.
-_FEEDBACK_LABEL = {
+FEEDBACK_LABEL = {
     "color": "색 변화",
     "odor": "냄새 변화",
     "separation": "층 분리",
@@ -113,7 +113,7 @@ def _finding_labels(answers: List[Optional[str]]) -> List[str]:
     """'none'만 있으면 이상 없음이므로 빈 목록."""
     out = []
     for a in answers:
-        label = _FEEDBACK_LABEL.get(a or "")
+        label = FEEDBACK_LABEL.get(a or "")
         if label and label not in out:
             out.append(label)
     return out

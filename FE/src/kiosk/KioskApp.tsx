@@ -245,7 +245,13 @@ export function KioskApp() {
           userProductId={protocolTarget}
           activeTab={activeTab}
           onTab={setScreen}
-          onBack={() => setScreen(protocolBack)}
+          onBack={() => {
+            // 확인 결과가 이벤트 상태에도 반영되므로 다시 부른다.
+            // 그러지 않으면 방금 고른 항목이 목록에 나타나지 않는다.
+            events.refetch();
+            priority.refetch();
+            setScreen(protocolBack);
+          }}
           onMeasure={() => setScreen("measure")}
         />
       ) : screen === "protocol" ? (

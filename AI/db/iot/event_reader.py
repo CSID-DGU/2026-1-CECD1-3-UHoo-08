@@ -120,6 +120,30 @@ def answer_event(event_id: int, answer: str) -> Optional[Dict[str, Any]]:
 
 # ── 확인 결과 ────────────────────────────────────────────────────
 
+def get_feedback_since(node_ids: List[str], since: str) -> List[Dict[str, Any]]:
+    """
+    특정 시각 이후의 확인 결과. 이벤트 목록이 쓴다.
+
+    이벤트와 확인 결과는 서로 다른 테이블이라 연결 고리가 없다. 대신
+    시각으로 잇는다. 이벤트에 "아니요"라고 답한 뒤 제품을 확인했다면,
+    그 확인은 답변 시각 이후에 생긴다.
+
+    완벽한 연결은 아니다. 사용자가 이벤트와 무관하게 제품을 확인해도
+    같은 창에 들어온다. 다만 시연 흐름에서는 그 둘이 사실상 같은 행동이고,
+    이벤트마다 확인 이력을 따로 묶으려면 컬럼을 하나 늘려야 한다.
+    """
+    sb = get_supabase()
+    rows = (
+        sb.table("user_feedback")
+        .select("user_product_id, ts, answer")
+        .gte("ts", since)
+        .order("ts", desc=True)
+        .limit(100)
+        .execute()
+    ).data or []
+    return rows
+
+
 def get_latest_feedback(user_product_ids: List[str]) -> Dict[str, Dict[str, Any]]:
     """
     제품별 가장 최근 확인 결과.

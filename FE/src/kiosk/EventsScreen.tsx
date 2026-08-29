@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { TopBar, TabBar, ErrorPanel, StaleBanner, Loading, STATUS, type TabKey } from "./ui";
 import { ProductPicker } from "./ProductPicker";
 import { careGet, carePost } from "./lib/careApi";
@@ -47,8 +47,17 @@ export function EventsScreen({ activeTab, onTab, onBack, onProduct }: Props) {
   //
   // refetch를 걸어도 서버 왕복이 끝날 때까지 목록이 그대로다. 시연에서
   // 버튼을 눌렀는데 아무 변화가 없으면 고장처럼 보인다. 응답으로 받은
-  // 이벤트를 즉시 덮어쓰고, 뒤이어 도착하는 서버 값이 이것을 대체한다.
+  // 이벤트를 즉시 덮어쓴다.
   const [patched, setPatched] = useState<Record<number, CareEvent>>({});
+
+  // 서버 값이 새로 도착하면 임시 덮어쓰기를 버린다.
+  //
+  // 버리지 않으면 문제가 생긴다. "아니요"로 답한 뒤 제품을 확인해
+  // "냄새 변화"를 골라도, 화면은 답변 직후의 "짚이는 외부 요인 없음"에
+  // 머문다. 확인 결과가 반영된 서버 값이 임시 값에 가려지기 때문이다.
+  useEffect(() => {
+    if (lastUpdated) setPatched({});
+  }, [lastUpdated]);
   const [answerError, setAnswerError] = useState<KioskApiError | null>(null);
 
   const answer = async (id: number, value: "external_source" | "none") => {
