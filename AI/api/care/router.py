@@ -30,7 +30,7 @@ from db.iot.writer import get_latest_reading
 from services.iot.care_rules import build_brief, compare_indoor
 from services.iot.erl import T_REF_C, acceleration_factor
 from services.iot.event_rules import (
-    alert_line, describe, guidance, status_line, when,
+    alert_line, describe, guidance, intro_lines, status_line, when,
 )
 from services.iot.inspection_rules import (
     ANSWERS, FEEDBACK_CODE, answer_guidance, build_protocol,
@@ -720,6 +720,8 @@ class EventsSummary(BaseModel):
 class EventsResponse(BaseModel):
     generated_at: str
     summary: EventsSummary
+    """목록 위에 한 번만 두는 설명. 칸마다 반복하지 않는다."""
+    intro: List[str]
     items: List[EventItem]
 
 
@@ -791,6 +793,7 @@ def get_events(
 
     return EventsResponse(
         generated_at=now.isoformat(),
+        intro=intro_lines(),
         summary=EventsSummary(
             total=len(items),
             pending=pending,

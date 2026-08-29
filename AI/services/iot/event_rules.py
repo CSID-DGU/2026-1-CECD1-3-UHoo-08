@@ -26,10 +26,12 @@ def describe(event: Dict[str, Any], node_label: Optional[str] = None) -> Dict[st
     where = node_label or event.get("node_id") or "보관함"
 
     if kind == "temp_excursion":
+        # 칸 안에는 관측된 사실만 쓴다. "이 시간만큼 더 빨리 나이 듭니다"
+        # 같은 설명은 모든 칸에 반복되면 글만 늘고 읽기 나빠진다.
+        # 목록 위에 한 번만 두는 편이 낫다(intro 참고).
         return {
             "title": "고온 노출",
-            "detail": (f"{where} 최고 {mag:.1f}℃ · 30분 이상 지속. "
-                       "이 시간만큼 화장품이 더 빨리 나이 듭니다."
+            "detail": (f"{where} 최고 {mag:.1f}℃ · 30분 이상 지속"
                        if mag is not None else f"{where} 고온 지속"),
             # 되물을 것이 없다. 서랍이 더웠다는 사실 자체가 기록이다.
             "question": None,
@@ -46,15 +48,10 @@ def describe(event: Dict[str, Any], node_label: Optional[str] = None) -> Dict[st
         }
 
     if kind == "voc_spike":
-        # "가스 저항이 64% 낮아졌습니다"만 보면 그게 좋은 일인지 나쁜 일인지
-        # 알 수 없다. 센서 원리를 아는 사람만 이해하는 문장이다.
-        # 무엇을 뜻하는지 한 마디로 덧붙인다.
         return {
             "title": "공기 성분 변화",
-            "detail": (f"{where} 가스 저항이 평소보다 {mag:.0f}% 낮아졌습니다. "
-                       "공기 중에 냄새 성분이 늘었다는 뜻입니다."
-                       if mag is not None
-                       else f"{where} 공기 중 냄새 성분이 늘었습니다"),
+            "detail": (f"{where} 가스 저항이 평소보다 {mag:.0f}% 낮아졌습니다"
+                       if mag is not None else f"{where} 가스 저항 변화"),
             # 이 질문이 Human-in-the-loop의 입구다.
             #
             # 처음에는 "향수나 스프레이 제품을 두셨나요"였는데 너무 좁았다.
@@ -167,6 +164,23 @@ def status_line(
         return "확인함 · 이상 없음"
 
     return None
+
+
+# ── 목록 상단 설명 ───────────────────────────────────────────────
+
+def intro_lines() -> List[str]:
+    """
+    이벤트 이력 위에 한 번만 두는 설명.
+
+    화장품이 어떻게 되는지까지 말한다. 온도가 높으면 성분이 빨리 변하고,
+    냄새 성분이 많으면 화장품이 그것을 머금는다. 그 두 가지가 우리가
+    이 기록을 남기는 이유다.
+    """
+    return [
+        "온도가 높을수록 화장품 성분이 빨리 변합니다.",
+        "공기 중 냄새 성분이 많아지면 화장품이 그 냄새를 머금기도 합니다.",
+        "이벤트 이력은 그런 순간을 기록해 둡니다.",
+    ]
 
 
 # ── 알림 바 ──────────────────────────────────────────────────────

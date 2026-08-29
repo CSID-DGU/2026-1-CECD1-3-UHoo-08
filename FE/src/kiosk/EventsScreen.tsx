@@ -65,7 +65,8 @@ export function EventsScreen({ activeTab, onTab, onBack, onProduct }: Props) {
   const answer = async (
     id: number,
     value: "external_source" | "none",
-    inspect = true
+    inspect = true,
+    opts: { silent?: boolean } = {}
   ) => {
     setAnswering(id);
     setAnswerError(null);
@@ -75,7 +76,9 @@ export function EventsScreen({ activeTab, onTab, onBack, onProduct }: Props) {
         { answer: value, inspect },
         { user_id: KIOSK_USER_ID }
       );
-      setResult(res);
+      // silent면 안내 카드를 띄우지 않는다. 사용자가 이미 "괜찮다"고
+      // 했는데 또 무언가를 읽게 하지 않는다.
+      if (!opts.silent) setResult(res);
       setPatched((p) => ({ ...p, [id]: res.event }));
       // 서버 값으로도 맞춘다. 위 덮어쓰기는 그때까지의 임시 표시다.
       events.refetch();
@@ -106,6 +109,15 @@ export function EventsScreen({ activeTab, onTab, onBack, onProduct }: Props) {
           <ErrorPanel error={error} onRetry={events.refetch} />
         ) : data ? (
           <div className="flex h-full flex-col">
+            {/* 설명은 여기 한 번만. 칸마다 반복하면 기록이 안 보인다. */}
+            {data.intro?.length ? (
+              <div className="mb-2.5 flex-none rounded-[14px] bg-white px-[19px] py-[13px] text-[16px] leading-[1.5] text-gray-400">
+                {data.intro.map((l, i) => (
+                  <div key={i}>{l}</div>
+                ))}
+              </div>
+            ) : null}
+
             {data.summary.pending > 0 ? (
               <div className="mb-2.5 flex-none rounded-[14px] border-l-4 border-primary-500 bg-primary-50 px-[19px] py-[11px] text-[17px]">
                 답을 기다리는 질문이 {data.summary.pending}개 있습니다.
@@ -145,12 +157,9 @@ export function EventsScreen({ activeTab, onTab, onBack, onProduct }: Props) {
             setResult(null);
           }}
           onSkip={() => {
-            // 확인하지 않겠다고 하면 그 자리에서 답변을 확정한다.
-            // 냄새의 원인이 늘 화장품인 것도 아니고, 지금 확인할
-            // 상황이 아닐 수도 있다. 강요하지 않는다.
             const id = result.event.id;
             setResult(null);
-            void answer(id, "none", false);
+            void answer(id, "none", false, { silent: true });
           }}
         />
       ) : null}

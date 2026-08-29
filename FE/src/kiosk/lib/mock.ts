@@ -319,6 +319,11 @@ export function mockFor(path: string): unknown | null {
 
 const mockEvents = {
   generated_at: iso(0),
+  intro: [
+    "온도가 높을수록 화장품 성분이 빨리 변합니다.",
+    "공기 중 냄새 성분이 많아지면 화장품이 그 냄새를 머금기도 합니다.",
+    "이벤트 이력은 그런 순간을 기록해 둡니다.",
+  ],
   // 고온 노출은 되물을 것이 없어 pending에 세지 않는다.
   summary: { total: 3, pending: 1, excluded: 1, alert: "확인이 필요한 질문이 하나 있습니다" },
   items: [
@@ -327,7 +332,7 @@ const mockEvents = {
       ts: iso(60 * 24 * 2), when: "8/26(수) 20:10",
       event_type: "voc_spike", magnitude: 66.8,
       title: "공기 성분 변화",
-      detail: "화장대 가스 저항이 평소보다 67% 낮아졌습니다. 공기 중에 냄새 성분이 늘었다는 뜻입니다.",
+      detail: "화장대 가스 저항이 평소보다 67% 낮아졌습니다",
       question: "이 무렵 근처에서 향수·스프레이·소독제처럼 냄새가 강한 것을 쓰신 적이 있나요?",
       user_answer: "pending", excluded: false, status: null,
     },
@@ -336,7 +341,7 @@ const mockEvents = {
       ts: iso(60 * 24 * 5), when: "8/23(일) 13:20",
       event_type: "temp_excursion", magnitude: 34.9,
       title: "고온 노출",
-      detail: "화장대 최고 34.9℃ · 30분 이상 지속. 이 시간만큼 화장품이 더 빨리 나이 듭니다.",
+      detail: "화장대 최고 34.9℃ · 30분 이상 지속",
       question: null, user_answer: "none", excluded: false,
       status: "확인함 · 짚이는 외부 요인 없음",
     },
@@ -345,7 +350,7 @@ const mockEvents = {
       ts: iso(60 * 24 * 9), when: "8/19(수) 18:20",
       event_type: "voc_spike", magnitude: 64.0,
       title: "공기 성분 변화",
-      detail: "화장대 가스 저항이 평소보다 64% 낮아졌습니다. 공기 중에 냄새 성분이 늘었다는 뜻입니다.",
+      detail: "화장대 가스 저항이 평소보다 64% 낮아졌습니다",
       question: null, user_answer: "external_source", excluded: true,
       status: "확인함 · 일시적 외부 요인의 영향",
     },
@@ -436,7 +441,7 @@ export function mockPostFor(path: string, body: unknown): unknown | null {
         ? "이상이 없다고 확인하셨습니다"
         : issues.length === 1 ? "확인해 주셔서 감사합니다" : "확인하신 내용입니다",
       sections: issues.map((a) => ({ label: short[a] ?? a, lines: advice[a] ?? [] })),
-      lines: issues.length === 0 ? ["다음 점검 때 이 확인을 기준으로 변화를 봅니다."] : [],
+      lines: [],
       recommend_replace: issues.some((a) => ["냄새가 남", "혼탁함", "덩어리짐"].includes(a)),
       findings: issues.map((a) => short[a] ?? a),
     };

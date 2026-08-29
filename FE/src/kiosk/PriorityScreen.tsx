@@ -108,8 +108,18 @@ function PriorityBody({
 }) {
   // 확인이 필요한 것과 지켜볼 것만 목록에 올린다. 정상 범위는 개수만
   // 알려준다. 열두 개를 전부 나열하면 어디부터 봐야 할지 알 수 없다.
-  const listed = data.items.filter((i) => i.band !== "low");
-  const rest = data.items.filter((i) => i.band === "low");
+  // 확인 결과가 있는 제품은 밴드와 무관하게 목록에 남긴다.
+  //
+  // 확인하고 나면 last_checked_at이 갱신되어 점수가 떨어지고, 그러면
+  // 정상 범위로 내려가 목록에서 사라진다. 사용자 입장에서는 "냄새가
+  // 난다"고 방금 답했는데 그 제품이 없어지는 셈이다.
+  //
+  // 점수는 "확인해 볼 순서"이고 확인 결과는 "사람이 실제로 본 것"이다.
+  // 후자가 있으면 그것이 먼저다.
+  const hasFinding = (i: PriorityItem) => (i.inspection?.findings.length ?? 0) > 0;
+
+  const listed = data.items.filter((i) => i.band !== "low" || hasFinding(i));
+  const rest = data.items.filter((i) => i.band === "low" && !hasFinding(i));
   const restCount = rest.length;
   const [showRest, setShowRest] = useState(false);
 

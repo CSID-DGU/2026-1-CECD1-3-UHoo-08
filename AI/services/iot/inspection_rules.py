@@ -342,7 +342,7 @@ def answer_guidance(
         return {
             "headline": "이상이 없다고 확인하셨습니다",
             "sections": [],
-            "lines": ["다음 점검 때 이 확인을 기준으로 변화를 봅니다."],
+            "lines": [],
             "recommend_replace": False,
             "findings": [],
         }

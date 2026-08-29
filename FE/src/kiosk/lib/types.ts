@@ -286,6 +286,8 @@ export type CareEvent = {
 
 export type EventsResponse = {
   generated_at: string;
+  /** 목록 위에 한 번만 두는 설명. 칸마다 반복하지 않는다. */
+  intro: string[];
   summary: {
     total: number;
     pending: number;
