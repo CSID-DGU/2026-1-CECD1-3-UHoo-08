@@ -1,4 +1,4 @@
-import { api } from "../lib/api";
+import { care } from "../lib/careBase";
 
 /**
  * 키오스크(화담 CARE)가 읽은 환경으로 만든 추천.
@@ -36,6 +36,6 @@ export interface CareRecoFull {
 }
 
 export const getCareRecommendations = (userId: string) =>
-  api.get<CareRecoFull>(
-    `/ai/api/care/recommendations/full?user_id=${encodeURIComponent(userId)}`,
+  care.get<CareRecoFull>(
+    `/api/care/recommendations/full?user_id=${encodeURIComponent(userId)}`,
   );

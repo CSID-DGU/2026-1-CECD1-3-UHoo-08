@@ -1,4 +1,4 @@
-import { api } from "../lib/api";
+import { care } from "../lib/careBase";
 
 /**
  * 보유 화장품 등록.
@@ -60,13 +60,13 @@ export interface MyProduct {
 }
 
 export const searchProductsForRegister = (q: string) =>
-  api.get<ProductSearchItem[]>(
-    `/ai/api/care/products/search?q=${encodeURIComponent(q)}&limit=20`,
+  care.get<ProductSearchItem[]>(
+    `/api/care/products/search?q=${encodeURIComponent(q)}&limit=20`,
   );
 
 export const getRegisterOptions = (userId: string) =>
-  api.get<{ storages: StorageOption[] }>(
-    `/ai/api/care/products/register-options?user_id=${encodeURIComponent(userId)}`,
+  care.get<{ storages: StorageOption[] }>(
+    `/api/care/products/register-options?user_id=${encodeURIComponent(userId)}`,
   );
 
 export const registerMyProduct = (
@@ -78,14 +78,14 @@ export const registerMyProduct = (
     storage_node_id?: string | null;
   },
 ) =>
-  api.post<RegisterResult>(
-    `/ai/api/care/products?user_id=${encodeURIComponent(userId)}`,
+  care.post<RegisterResult>(
+    `/api/care/products?user_id=${encodeURIComponent(userId)}`,
     body,
   );
 
 export const getMyProducts = (userId: string) =>
-  api.get<MyProduct[]>(
-    `/ai/api/care/products/mine?user_id=${encodeURIComponent(userId)}`,
+  care.get<MyProduct[]>(
+    `/api/care/products/mine?user_id=${encodeURIComponent(userId)}`,
   );
 
 export const updateMyProduct = (
@@ -93,12 +93,12 @@ export const updateMyProduct = (
   userProductId: string,
   body: { opened_at?: string; storage_node_id?: string },
 ) =>
-  api.patch<MyProduct>(
-    `/ai/api/care/products/${userProductId}?user_id=${encodeURIComponent(userId)}`,
+  care.patch<MyProduct>(
+    `/api/care/products/${userProductId}?user_id=${encodeURIComponent(userId)}`,
     body,
   );
 
 export const deleteMyProduct = (userId: string, userProductId: string) =>
-  api.delete<void>(
-    `/ai/api/care/products/${userProductId}?user_id=${encodeURIComponent(userId)}`,
+  care.delete<void>(
+    `/api/care/products/${userProductId}?user_id=${encodeURIComponent(userId)}`,
   );
