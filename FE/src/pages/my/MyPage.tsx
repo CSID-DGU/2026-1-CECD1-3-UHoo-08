@@ -1,6 +1,6 @@
 ﻿import { useEffect, useState } from "react";
 import { useNavigate } from "react-router-dom";
-import { Droplets, Heart, Settings, Bell } from "lucide-react";
+import { Bell, Droplets, Heart, PackagePlus, Settings } from "lucide-react";
 import type { LucideIcon } from "lucide-react";
 import {
   type UserMeResponse,
@@ -37,6 +37,12 @@ const MENU_ITEMS: {
     desc: "모니터링 중인 상품",
     path: "/favorites",
     Icon: Heart,
+  },
+  {
+    title: "보유 화장품",
+    desc: "등록·수정, 개봉일과 보관 위치 관리",
+    path: "/my/products",
+    Icon: PackagePlus,
   },
   {
     title: "앱 설정 및 고객센터",

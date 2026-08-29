@@ -12,7 +12,7 @@ from __future__ import annotations
 
 import logging
 
-from datetime import datetime, timedelta, timezone
+from datetime import date, datetime, timedelta, timezone
 from typing import Any, Dict, List, Optional
 
 from fastapi import APIRouter, HTTPException, Query
@@ -28,9 +28,14 @@ from db.iot.event_reader import (
 )
 from db.product_reader import (
     get_product_features, get_product_meta, search_products_by_category,
+    search_products_by_name,
 )
 from db.iot.skin_reader import get_skin_measurements
-from db.iot.writer import get_latest_reading
+from db.iot.writer import (
+    discard_user_product, get_latest_reading, get_optical_baseline,
+    insert_optical, insert_user_product, update_user_product,
+    upsert_thermal_profile,
+)
 from services.iot.care_rules import _josa, build_brief, compare_indoor
 from services.iot.erl import T_REF_C, acceleration_factor
 from services.iot.event_rules import (
@@ -40,8 +45,12 @@ from services.iot.inspection_rules import (
     ANSWERS, FEEDBACK_CODE, answer_guidance, build_protocol,
 )
 from services.iot.humidity import DRY_THRESHOLD_GM3, absolute_humidity, is_dry
-from services.iot.priority import FEEDBACK_LABEL, _finding_labels, build_priority
+from services.iot.optical import delta_pct, should_measure
+from services.iot.priority import (
+    FEEDBACK_LABEL, _finding_labels, _missing_reasons, build_priority,
+)
 from services.iot.psri import compute_psri, relation_sentence
+from services.iot.thermal_profile import resolve_row
 from services.iot.recommend_rules import (
     build_candidates, build_node_candidates, context_line, pick_products,
     product_blurb, summarize_history,
@@ -988,6 +997,429 @@ def _node_note(node: Dict[str, Any], hist: Optional[Any]) -> Optional[str]:
     if ah is not None:
         parts.append(f"절대습도 {ah:.1f} g/m³")
     return " · ".join(parts) or None
+
+
+# ── 보유 제품 등록 ────────────────────────────────────────────────
+
+class ProductSearchItem(BaseModel):
+    product_id: str
+    name: str
+    brand: Optional[str] = None
+    category: Optional[str] = None
+    image_url: Optional[str] = None
+    price: Optional[int] = None
+
+
+class StorageOption(BaseModel):
+    node_id: str
+    label: str
+    # 화장품은 대개 화장대에 둔다. 매번 고르게 하지 않고 기본으로 잡아두고
+    # 다른 곳이면 바꾸게 한다.
+    default: bool = False
+
+
+class RegisterOptions(BaseModel):
+    """등록 화면이 고르게 할 선택지."""
+    storages: List[StorageOption]
+
+
+class RegisterProductRequest(BaseModel):
+    product_id: str
+    # 개봉일은 필수다. 이 값이 없으면 열이력 소모를 계산할 시작점이 없어
+    # 점검 순위 자체가 나오지 않는다.
+    #
+    # 일(day)은 모를 수 있어 "YYYY-MM"도 받는다. 그 경우 월 중간(15일)으로
+    # 잡는다. 1일로 잡으면 실제보다 최대 30일 오래된 것으로 계산되고,
+    # 말일로 잡으면 그 반대다. 중간이 오차가 가장 작다.
+    opened_at: str = Field(..., description="개봉일 YYYY-MM 또는 YYYY-MM-DD")
+    storage_node_id: Optional[str] = Field(None, description="보관 위치 노드")
+
+    # 구매일은 받지 않는다. 위험도 계산에 쓰이는 곳이 없어, 물어봐야
+    # 사용자 손만 더 가고 화면만 길어진다.
+
+
+class OpticalGuide(BaseModel):
+    """이 제품을 색으로 재는 게 의미 있는지."""
+    recommended: bool
+    note: str
+    has_baseline: bool = False
+
+
+class RegisterProductResponse(BaseModel):
+    user_product_id: Optional[str] = None
+    name: Optional[str] = None
+    opened_at: Optional[str] = None
+    # 일을 모른다고 해서 서버가 월 중간으로 잡았는지. 화면이 이 사실을 밝힌다.
+    opened_estimated: bool = False
+    # 색 기준값을 재두면 좋은 제품인지. 키오스크에서 안내한다.
+    optical: Optional[OpticalGuide] = None
+    # 점검 순위에 들어가려면 아직 무엇이 더 필요한지. 등록 직후 바로 알려준다.
+    missing: List[MissingInfo]
+    message: str
+
+
+def _normalize_opened(value: str) -> tuple[str, bool]:
+    """
+    "YYYY-MM" 또는 "YYYY-MM-DD"를 날짜 문자열로 맞춘다.
+
+    일을 모르면 월 중간(15일)으로 잡고 estimated=True를 함께 돌려준다.
+    추정했다는 사실을 화면이 숨기지 않도록 하기 위해서다.
+    """
+    v = (value or "").strip()
+    try:
+        if len(v) == 7:  # YYYY-MM
+            y, m = v.split("-")
+            date(int(y), int(m), 15)  # 유효성만 확인
+            return f"{int(y):04d}-{int(m):02d}-15", True
+        date.fromisoformat(v)
+        return v, False
+    except (ValueError, TypeError):
+        raise HTTPException(
+            status_code=400,
+            detail="개봉일 형식이 올바르지 않습니다 (YYYY-MM 또는 YYYY-MM-DD)",
+        )
+
+
+@router.get(
+    "/products/search",
+    response_model=List[ProductSearchItem],
+    summary="제품 검색 (등록용)",
+    description="보유 제품을 등록할 때 쓰는 이름·브랜드 부분일치 검색.",
+)
+def search_products_for_register(
+    q: str = Query(..., min_length=1, description="제품명 또는 브랜드"),
+    limit: int = Query(20, ge=1, le=50),
+) -> List[ProductSearchItem]:
+    try:
+        metas = search_products_by_name(q, limit=limit)
+    except Exception:
+        logger.exception("제품 검색 실패 q=%s", q)
+        raise HTTPException(status_code=500, detail="제품을 찾지 못했습니다")
+
+    return [
+        ProductSearchItem(
+            product_id=m["id"], name=m["name"], brand=m.get("brand"),
+            category=m.get("category"), image_url=m.get("image_url"),
+            price=m.get("price"),
+        )
+        for m in metas
+    ]
+
+
+@router.get(
+    "/products/register-options",
+    response_model=RegisterOptions,
+    summary="등록 화면 선택지",
+    description="보관 위치로 고를 수 있는 노드 목록.",
+)
+def get_register_options(
+    user_id: str = Query(..., description="예선 한정. 본선에서는 토큰에서 추출한다."),
+) -> RegisterOptions:
+    try:
+        nodes = _indoor_nodes(user_id)
+    except Exception:
+        logger.exception("노드 조회 실패 user_id=%s", user_id)
+        nodes = []
+    # storage 타입 노드(보관함)를 기본으로 잡는다. 없으면 첫 번째.
+    default_id = next((n["node_id"] for n in nodes
+                       if n.get("node_type") == "storage"), None)
+    if default_id is None and nodes:
+        default_id = nodes[0]["node_id"]
+
+    return RegisterOptions(storages=[
+        StorageOption(
+            node_id=n["node_id"],
+            label=n.get("label") or n["node_id"],
+            default=(n["node_id"] == default_id),
+        )
+        for n in nodes
+    ])
+
+
+@router.post(
+    "/products",
+    response_model=RegisterProductResponse,
+    summary="보유 제품 등록",
+    description=(
+        "사용자가 가진 제품을 점검 대상으로 등록한다. 개봉일과 보관 위치는 "
+        "선택이지만, 둘이 없으면 점검 순위를 낼 수 없어 응답의 missing으로 "
+        "무엇이 더 필요한지 함께 알려준다."
+    ),
+)
+def register_product(
+    body: RegisterProductRequest,
+    user_id: str = Query(..., description="예선 한정. 본선에서는 토큰에서 추출한다."),
+) -> RegisterProductResponse:
+    meta = get_product_meta(body.product_id)
+    if not meta:
+        raise HTTPException(status_code=404, detail="제품을 찾지 못했습니다")
+
+    opened_at, estimated = _normalize_opened(body.opened_at)
+
+    try:
+        row = insert_user_product(
+            user_id,
+            body.product_id,
+            opened_at=opened_at,
+            storage_node_id=body.storage_node_id,
+        )
+    except Exception:
+        logger.exception("보유 제품 등록 실패 user=%s product=%s",
+                         user_id, body.product_id)
+        raise HTTPException(status_code=500, detail="등록하지 못했습니다")
+
+    # 열 프로파일이 없으면 여기서 만든다.
+    #
+    # 이 값(성분 민감도·PAO·광학 등급)은 제품 자체의 성질이라 사용자가 넣을
+    # 수 있는 것이 아니다. 그런데 없으면 "제품 정보 미등록"이라고만 뜨고,
+    # 사용자는 어디서 넣어야 할지 모른 채 점검 목록에서도 빠진다.
+    # 규칙(services/iot/thermal_profile)으로 만들 수 있으므로 등록하는 김에
+    # 채운다. 사람이 검수해 넣은 값이 이미 있으면 건드리지 않는다.
+    prof = get_thermal_profiles([body.product_id]).get(body.product_id) or {}
+    if not prof:
+        try:
+            upsert_thermal_profile(resolve_row(dict(meta, product_id=body.product_id)))
+            prof = get_thermal_profiles([body.product_id]).get(body.product_id) or {}
+        except Exception:
+            logger.exception("열 프로파일 생성 실패 product=%s", body.product_id)
+    missing = _missing_reasons({
+        "opened_at": opened_at,
+        "storage_node_id": body.storage_node_id,
+        "has_profile": bool(prof),
+        "pao_months": prof.get("pao_months"),
+    })
+
+    if missing:
+        message = "등록했습니다. 아래 정보를 더 넣으면 점검 순서에 포함됩니다."
+        # missing에는 사용자가 못 채우는 항목이 섞이지 않는다. 등록 시점에
+        # 열 프로파일을 만들어 두기 때문이다.
+    elif estimated:
+        # 추정했다는 사실을 숨기지 않는다. 나중에 정확한 날짜를 알게 되면
+        # 보유 화장품 목록에서 고칠 수 있다.
+        message = (f"등록했습니다.")
+    else:
+        message = "등록했습니다. 점검 목록에서 확인하실 수 있습니다."
+
+    upid = str(row.get("id")) if row.get("id") else None
+    rec, note = should_measure(prof.get("optical_grade"))
+    has_base = bool(get_optical_baseline(upid)) if upid else False
+
+    return RegisterProductResponse(
+        user_product_id=upid,
+        name=meta.get("name"),
+        opened_at=opened_at,
+        opened_estimated=estimated,
+        optical=OpticalGuide(recommended=rec, note=note, has_baseline=has_base),
+        missing=[MissingInfo(**m) for m in missing],
+        message=message,
+    )
+
+
+class MyProduct(BaseModel):
+    user_product_id: str
+    product_id: Optional[str] = None
+    name: Optional[str] = None
+    brand: Optional[str] = None
+    opened_at: Optional[str] = None
+    storage_node_id: Optional[str] = None
+    storage_label: Optional[str] = None
+    # 점검 순위에 들어가려면 아직 무엇이 빠졌는지. 목록에서 바로 보인다.
+    missing: List[MissingInfo]
+
+
+class UpdateProductRequest(BaseModel):
+    """수정. 보낸 항목만 바꾼다."""
+    opened_at: Optional[str] = Field(None, description="YYYY-MM 또는 YYYY-MM-DD")
+    storage_node_id: Optional[str] = Field(None, description="보관 위치 노드")
+
+
+@router.get(
+    "/products/mine",
+    response_model=List[MyProduct],
+    summary="등록한 보유 제품 목록",
+    description=(
+        "사용자가 등록한 제품과 그 정보. 무엇이 빠졌는지도 함께 준다. "
+        "등록만 해두고 개봉일을 안 넣으면 점검 목록에 안 뜨는데, 그 이유를 "
+        "여기서 볼 수 있어야 한다."
+    ),
+)
+def get_my_products(
+    user_id: str = Query(..., description="예선 한정. 본선에서는 토큰에서 추출한다."),
+) -> List[MyProduct]:
+    try:
+        products = get_care_products(user_id)
+        labels = {n["node_id"]: n.get("label") or n["node_id"]
+                  for n in _indoor_nodes(user_id)}
+    except Exception:
+        logger.exception("보유 제품 조회 실패 user_id=%s", user_id)
+        raise HTTPException(status_code=500, detail="목록을 불러오지 못했습니다")
+
+    out: List[MyProduct] = []
+    for p in products:
+        node_id = p.get("storage_node_id")
+        out.append(MyProduct(
+            user_product_id=str(p["user_product_id"]),
+            product_id=p.get("product_id"),
+            name=p.get("name"),
+            brand=p.get("brand"),
+            opened_at=str(p["opened_at"]) if p.get("opened_at") else None,
+            storage_node_id=node_id,
+            storage_label=labels.get(node_id) if node_id else None,
+            missing=[MissingInfo(**m) for m in _missing_reasons(p)],
+        ))
+    return out
+
+
+@router.patch(
+    "/products/{user_product_id}",
+    response_model=MyProduct,
+    summary="등록한 제품 정보 수정",
+    description="개봉일과 보관 위치를 고친다. 보낸 항목만 바뀐다.",
+)
+def update_my_product(
+    user_product_id: str,
+    body: UpdateProductRequest,
+    user_id: str = Query(..., description="예선 한정. 본선에서는 토큰에서 추출한다."),
+) -> MyProduct:
+    # 남의 제품을 고치지 못하도록 소유부터 확인한다.
+    try:
+        products = get_care_products(user_id)
+    except Exception:
+        logger.exception("보유 제품 조회 실패 user_id=%s", user_id)
+        raise HTTPException(status_code=500, detail="수정하지 못했습니다")
+
+    target = next((p for p in products
+                   if str(p.get("user_product_id")) == str(user_product_id)), None)
+    if not target:
+        raise HTTPException(status_code=404, detail="등록한 제품이 아닙니다")
+
+    patch: Dict[str, Any] = {}
+    if body.opened_at is not None:
+        patch["opened_at"], _ = _normalize_opened(body.opened_at)
+    if body.storage_node_id is not None:
+        # 빈 문자열은 "지정 해제"로 본다.
+        patch["storage_node_id"] = body.storage_node_id or None
+
+    if not patch:
+        raise HTTPException(status_code=400, detail="바꿀 내용이 없습니다")
+
+    try:
+        update_user_product(user_product_id, patch)
+        products = get_care_products(user_id)
+        labels = {n["node_id"]: n.get("label") or n["node_id"]
+                  for n in _indoor_nodes(user_id)}
+    except Exception:
+        logger.exception("제품 수정 실패 %s", user_product_id)
+        raise HTTPException(status_code=500, detail="수정하지 못했습니다")
+
+    p = next((x for x in products
+              if str(x.get("user_product_id")) == str(user_product_id)), target)
+    node_id = p.get("storage_node_id")
+    return MyProduct(
+        user_product_id=str(p["user_product_id"]),
+        product_id=p.get("product_id"),
+        name=p.get("name"),
+        brand=p.get("brand"),
+        opened_at=str(p["opened_at"]) if p.get("opened_at") else None,
+        storage_node_id=node_id,
+        storage_label=labels.get(node_id) if node_id else None,
+        missing=[MissingInfo(**m) for m in _missing_reasons(p)],
+    )
+
+
+class OpticalRequest(BaseModel):
+    channels: Dict[str, float] = Field(..., description="AS7341 F1~F8 등 채널값")
+    white_ref: Optional[Dict[str, float]] = Field(
+        None, description="흰 기준판 측정값. 조명 차이를 없애는 데 쓴다")
+
+
+class OpticalResponse(BaseModel):
+    baseline: bool = Field(..., description="이번이 기준값 측정이었는지")
+    delta_pct: Optional[float] = Field(None, description="기준값 대비 색 변화율")
+    message: str
+
+
+@router.post(
+    "/products/{user_product_id}/optical",
+    response_model=OpticalResponse,
+    summary="색 측정 기록 (AS7341)",
+    description=(
+        "첫 측정은 기준값이 되고, 이후 측정은 그 기준과 비교한 변화율을 낸다. "
+        "변화율만 돌려주며 상했는지 여부는 판정하지 않는다."
+    ),
+)
+def post_optical(
+    user_product_id: str,
+    body: OpticalRequest,
+    user_id: str = Query(..., description="예선 한정. 본선에서는 토큰에서 추출한다."),
+) -> OpticalResponse:
+    try:
+        products = get_care_products(user_id)
+    except Exception:
+        logger.exception("보유 제품 조회 실패 user_id=%s", user_id)
+        raise HTTPException(status_code=500, detail="기록하지 못했습니다")
+
+    if not any(str(p.get("user_product_id")) == str(user_product_id)
+               for p in products):
+        raise HTTPException(status_code=404, detail="등록한 제품이 아닙니다")
+
+    now = datetime.now(timezone.utc).isoformat()
+
+    try:
+        base = get_optical_baseline(user_product_id)
+        delta = None
+        if base:
+            delta = delta_pct(base.get("channels") or {}, base.get("white_ref"),
+                              body.channels, body.white_ref)
+        insert_optical(user_product_id, body.channels, body.white_ref, delta, now)
+    except Exception:
+        logger.exception("색 측정 기록 실패 %s", user_product_id)
+        raise HTTPException(status_code=500, detail="기록하지 못했습니다")
+
+    if not base:
+        return OpticalResponse(
+            baseline=True, delta_pct=None,
+            message="첫 색을 기록했습니다. 다음 측정부터 이 값과 비교합니다.",
+        )
+    if delta is None:
+        return OpticalResponse(
+            baseline=False, delta_pct=None,
+            message="비교할 채널이 부족해 변화율을 내지 못했습니다.",
+        )
+    return OpticalResponse(
+        baseline=False, delta_pct=delta,
+        message=f"처음 잰 색과 {delta:.1f}% 다릅니다.",
+    )
+
+
+@router.delete(
+    "/products/{user_product_id}",
+    status_code=204,
+    summary="보유 제품 빼기",
+    description=(
+        "다 썼거나 잘못 등록한 제품을 목록에서 뺀다. 지난 측정·확인 이력은 "
+        "남겨 두고 목록에서만 제외한다."
+    ),
+)
+def delete_my_product(
+    user_product_id: str,
+    user_id: str = Query(..., description="예선 한정. 본선에서는 토큰에서 추출한다."),
+) -> None:
+    try:
+        products = get_care_products(user_id)
+    except Exception:
+        logger.exception("보유 제품 조회 실패 user_id=%s", user_id)
+        raise HTTPException(status_code=500, detail="빼지 못했습니다")
+
+    if not any(str(p.get("user_product_id")) == str(user_product_id)
+               for p in products):
+        raise HTTPException(status_code=404, detail="등록한 제품이 아닙니다")
+
+    try:
+        discard_user_product(user_product_id)
+    except Exception:
+        logger.exception("보유 제품 제외 실패 %s", user_product_id)
+        raise HTTPException(status_code=500, detail="빼지 못했습니다")
 
 
 # ── 이벤트 이력 ───────────────────────────────────────────────────
