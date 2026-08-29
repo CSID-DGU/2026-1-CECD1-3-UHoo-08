@@ -251,6 +251,7 @@ def compute_risk_score(
     pao_months: Optional[float] = None,
     opened_at: Any = None,
     last_checked_at: Any = None,
+    last_check_clear: bool = True,
     optical_delta_pct: Optional[float] = None,
     optical_grade: Optional[str] = None,
     now: Optional[datetime] = None,
@@ -291,7 +292,16 @@ def compute_risk_score(
     s_excursion = (_clamp01(exc.total_events / EXCURSION_FULL)
                    if excursion_counted else None)
 
-    ref = _as_utc(last_checked_at) or _as_utc(opened_at)
+    # ── 확인했는데 이상이 있었다면 점수를 낮추지 않는다 ──────────
+    #
+    # 이 항목의 뜻은 "오래 안 본 제품을 위로 올린다"이다. 그런데 확인만
+    # 하면 무조건 낮아지도록 두었더니, 사용자가 "냄새가 난다"고 답한
+    # 제품의 순위가 떨어졌다. 확인 결과가 나빴는데 덜 급해지는 셈이라
+    # 앞뒤가 맞지 않는다.
+    #
+    # 점수를 낮추는 근거는 "봤다"가 아니라 "보고 괜찮았다"여야 한다.
+    # 이상이 발견되면 확인하지 않은 것과 같게 둔다.
+    ref = (_as_utc(last_checked_at) if last_check_clear else None) or _as_utc(opened_at)
     days_since = (now - ref).total_seconds() / 86400.0 if ref else None
     s_last_check = (_clamp01(days_since / LAST_CHECK_FULL)
                     if days_since is not None else None)
@@ -366,7 +376,8 @@ def rank_products(items: Sequence[dict]) -> list:
     # now를 포함시키는 이유: 넣지 않으면 각 항목이 실제 현재 시각을 쓰게 되어
     # 고정 시나리오의 결과가 실행일마다 달라진다. (자체 테스트 대조값이 흔들렸다)
     kw = {"readings", "sensitivity", "pao_months", "opened_at",
-          "last_checked_at", "optical_delta_pct", "optical_grade", "now"}
+          "last_checked_at", "last_check_clear",
+          "optical_delta_pct", "optical_grade", "now"}
 
     out = []
     for item in items:

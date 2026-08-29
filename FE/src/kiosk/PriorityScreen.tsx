@@ -1,5 +1,5 @@
 import { useState } from "react";
-import { TopBar, TabBar, BAND_STYLE, ErrorPanel, StaleBanner, Loading, type TabKey } from "./ui";
+import { TopBar, TabBar, BAND_STYLE, STATUS, ErrorPanel, StaleBanner, Loading, type TabKey } from "./ui";
 import type { PriorityItem, PriorityResponse, DashboardResponse } from "./lib/types";
 import type { QueryState } from "./lib/useKioskQuery";
 
@@ -116,10 +116,12 @@ function PriorityBody({
   //
   // 점수는 "확인해 볼 순서"이고 확인 결과는 "사람이 실제로 본 것"이다.
   // 후자가 있으면 그것이 먼저다.
-  const hasFinding = (i: PriorityItem) => (i.inspection?.findings.length ?? 0) > 0;
+  // 확인한 제품은 결과와 무관하게 위쪽 목록에 남긴다. 방금 확인했는데
+  // 접힌 곳으로 내려가면 결과를 다시 보기 어렵다.
+  const inspected = (i: PriorityItem) => i.inspection != null;
 
-  const listed = data.items.filter((i) => i.band !== "low" || hasFinding(i));
-  const rest = data.items.filter((i) => i.band === "low" && !hasFinding(i));
+  const listed = data.items.filter((i) => i.band !== "low" || inspected(i));
+  const rest = data.items.filter((i) => i.band === "low" && !inspected(i));
   const restCount = rest.length;
   const [showRest, setShowRest] = useState(false);
 
@@ -249,17 +251,30 @@ function ItemRow({ item, onOpen }: { item: PriorityItem; onOpen: () => void }) {
           {item.name || "이름 없는 제품"}
         </div>
 
-        {/* 사용자가 직접 확인한 결과. 점수보다 강한 정보라 위에 둔다.
-            점수는 "확인해 볼 순서"이고 이쪽은 "사람이 실제로 본 것"이다. */}
+        {/* 사용자가 직접 확인한 결과.
+            점수는 "확인해 볼 순서"이고 이쪽은 "사람이 실제로 본 것"이다.
+            둘은 별개이므로 밴드 색을 쓰지 않는다. 이상이 없으면 초록,
+            있으면 붉은 틀이다. 위험도 점수는 오른쪽에 그대로 남는다. */}
         {found.length > 0 ? (
           <div
-            className="mt-1 inline-block rounded-full px-2.5 py-0.5 text-[15px] font-semibold"
-            style={{ background: BAND_STYLE.high.pill, color: BAND_STYLE.high.text }}
+            className="mt-1.5 inline-block rounded-[10px] border px-2.5 py-1 text-[15px] font-semibold"
+            style={{
+              borderColor: STATUS.red,
+              background: BAND_STYLE.high.pill,
+              color: STATUS.red,
+            }}
           >
             {found.join(" · ")} 확인됨 · 주의가 필요합니다
           </div>
         ) : item.inspection?.clear ? (
-          <div className="mt-1 text-[15px] text-gray-300">
+          <div
+            className="mt-1.5 inline-block rounded-[10px] border px-2.5 py-1 text-[15px] font-semibold"
+            style={{
+              borderColor: STATUS.green,
+              background: BAND_STYLE.low.pill,
+              color: STATUS.green,
+            }}
+          >
             직접 확인함 · 이상 없음
           </div>
         ) : null}

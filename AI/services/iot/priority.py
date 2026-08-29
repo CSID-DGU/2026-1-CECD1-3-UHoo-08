@@ -235,12 +235,17 @@ def build_priority(
         if (it.get("optical_grade") or "").lower() != "unsuitable":
             optical = get_latest_optical(it["user_product_id"])
 
+        fb = feedback.get(it["user_product_id"])
+        findings = _finding_labels(fb["answers"]) if fb else []
+
         rs = compute_risk_score(
             sliced,
             sensitivity=it.get("sensitivity_k"),
             pao_months=it.get("pao_months"),
             opened_at=it.get("opened_at"),
             last_checked_at=it.get("last_checked_at"),
+            # 이상이 발견된 확인은 점수를 낮추지 않는다.
+            last_check_clear=not findings,
             optical_delta_pct=(optical or {}).get("delta_pct"),
             optical_grade=it.get("optical_grade"),
             now=now,
@@ -278,9 +283,6 @@ def build_priority(
         if include_components:
             detail["components"] = rs.components
 
-        fb = feedback.get(it["user_product_id"])
-        findings = _finding_labels(fb["answers"]) if fb else []
-
         items.append({
             "inspection": ({
                 "ts": fb["ts"],
@@ -306,8 +308,12 @@ def build_priority(
 
     # ── 요약은 전체 기준 ─────────────────────────────────────────
     bands = {"high": 0, "medium": 0, "low": 0}
+    # 확인을 마친 고위험 제품. "확인 필요"에서 빼기 위해 따로 센다.
+    checked_high = 0
     for i in items:
         bands[i["band"]] = bands.get(i["band"], 0) + 1
+        if i["band"] == "high" and i.get("inspection"):
+            checked_high += 1
 
     summary = {
         "total": len(products),
@@ -317,7 +323,17 @@ def build_priority(
         "medium": bands["medium"],
         "low": bands["low"],
         # 키오스크 문구용. "보유 12개 중 확인 필요 2개"
-        "needs_check": bands["high"],
+        #
+        # 밴드가 아니라 "아직 확인하지 않은 고위험 제품" 수다. 사용자가 직접
+        # 확인한 제품은 결과가 어떻든 이 수에서 빠진다. 확인하러 가라는 안내인데
+        # 이미 확인한 제품이 계속 남아 있으면 숫자가 줄지 않는다.
+        #
+        # 이상이 발견된 제품은 점수를 낮추지 않으므로 목록 위쪽에 그대로 남고,
+        # 카드 안에서 "주의가 필요합니다"로 따로 알린다. 확인 여부와 위험도는
+        # 별개라는 원칙을 여기서도 지킨다.
+        "needs_check": bands["high"] - checked_high,
+        # 그중 확인을 마친 것. 화면이 "19개 중 4개 확인함"처럼 쓸 수 있다.
+        "checked_high": checked_high,
         "band_thresholds": {"high": BAND_HIGH, "medium": BAND_MEDIUM},
     }
 

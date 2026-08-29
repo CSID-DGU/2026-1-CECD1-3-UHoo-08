@@ -73,6 +73,18 @@ class SkippedProduct(BaseModel):
     missing: List[MissingInfo]
 
 
+class InspectionRecord(BaseModel):
+    """
+    사용자가 직접 확인한 결과.
+
+    점수(band)와는 별개다. 점수는 "확인해 볼 순서"이고 이쪽은 "사람이 실제로
+    본 것"이다. 화면은 둘을 다른 색으로 그린다.
+    """
+    ts: Optional[str] = None
+    findings: List[str] = Field(default_factory=list, description="발견된 이상 항목")
+    clear: bool = Field(False, description="이상 항목 없이 확인을 마쳤는가")
+
+
 class PriorityItem(BaseModel):
     user_product_id: str
     product_id: Optional[str] = None
@@ -85,6 +97,9 @@ class PriorityItem(BaseModel):
     score: float
     band: str = Field(..., description="high | medium | low")
     reasons: List[str]
+    # 확인한 적이 없으면 None. 선언하지 않으면 response_model이 잘라내서
+    # 화면까지 도달하지 않는다.
+    inspection: Optional[InspectionRecord] = None
     # 근거 수치. 항목이 늘어날 수 있어 자유 dict로 둔다.
     detail: Dict[str, Any]
 
@@ -96,7 +111,10 @@ class PrioritySummary(BaseModel):
     high: int
     medium: int
     low: int
+    # 아직 확인하지 않은 고위험 제품 수. high 밴드 개수가 아니다.
     needs_check: int
+    # 고위험 중 이미 확인을 마친 수. needs_check와 합하면 high가 된다.
+    checked_high: int = 0
     band_thresholds: Dict[str, float]
 
 

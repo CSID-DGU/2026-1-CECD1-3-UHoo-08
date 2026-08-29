@@ -1,5 +1,5 @@
 import { useState } from "react";
-import { BAND_STYLE } from "./ui";
+import { BAND_STYLE, STATUS } from "./ui";
 import type { PriorityItem, RiskBand } from "./lib/types";
 
 /**
@@ -185,7 +185,7 @@ function Row({
         <span className="block truncate text-[15px] text-gray-300">
           {product.brand}
           {product.findings?.length ? (
-            <span style={{ color: BAND_STYLE.high.text }}>
+            <span style={{ color: STATUS.red }}>
               {product.brand ? " · " : ""}
               {product.findings.join(" · ")} 확인됨
             </span>

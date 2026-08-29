@@ -118,8 +118,10 @@ export type PrioritySummary = {
   high: number;
   medium: number;
   low: number;
-  /** 확인이 필요한 제품 수 (high 밴드) */
+  /** 아직 확인하지 않은 고위험 제품 수. high 밴드 개수가 아니다. */
   needs_check: number;
+  /** 고위험 중 이미 확인을 마친 수. needs_check와 합하면 high가 된다. */
+  checked_high: number;
   band_thresholds: Record<string, number>;
 };
 
