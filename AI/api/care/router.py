@@ -18,11 +18,18 @@ from typing import Any, Dict, List, Optional
 from fastapi import APIRouter, HTTPException, Query
 from pydantic import BaseModel, Field
 
-from db.iot.reader import get_readings, get_reading_span, list_nodes
+from db.iot.reader import (
+    get_care_products, get_readings, get_reading_span, list_nodes,
+)
+from db.iot.event_reader import (
+    VALID_ANSWERS, answer_event, count_pending, get_event, get_risk_events,
+)
 from db.iot.skin_reader import get_skin_measurements
 from db.iot.writer import get_latest_reading
 from services.iot.care_rules import build_brief, compare_indoor
 from services.iot.erl import T_REF_C, acceleration_factor
+from services.iot.event_rules import alert_line, describe, guidance, when
+from services.iot.inspection_rules import ANSWERS, answer_guidance, build_protocol
 from services.iot.humidity import DRY_THRESHOLD_GM3, absolute_humidity, is_dry
 from services.iot.priority import build_priority
 from services.iot.psri import compute_psri, relation_sentence
@@ -676,4 +683,398 @@ def get_recommendations(
         context=context_line(outdoor, indoor),
         items=[RecommendedProduct(**i) for i in items],
         qr_url=APP_URL,
+    )
+
+# ── 이벤트 이력 ───────────────────────────────────────────────────
+
+class EventItem(BaseModel):
+    id: int
+    node_id: Optional[str] = None
+    node_label: Optional[str] = None
+    ts: str
+    when: str = Field(..., description="화면에 그대로 쓰는 짧은 시각 표기")
+    event_type: str
+    magnitude: Optional[float] = None
+    title: str
+    detail: str
+    question: Optional[str] = Field(None, description="답을 받아야 하면 문구, 아니면 null")
+    user_answer: str
+    excluded: bool
+
+
+class EventsSummary(BaseModel):
+    total: int
+    pending: int
+    excluded: int
+    alert: Optional[str] = Field(None, description="대기 화면 알림 바 문구")
+
+
+class EventsResponse(BaseModel):
+    generated_at: str
+    summary: EventsSummary
+    items: List[EventItem]
+
+
+def _node_labels(user_id: Optional[str]) -> Dict[str, str]:
+    """node_id → 표시 이름. 없으면 node_id를 그대로 쓴다."""
+    out: Dict[str, str] = {}
+    for n in list_nodes():
+        if user_id and n.get("user_id") != user_id:
+            continue
+        out[n["node_id"]] = n.get("location_label") or n["node_id"]
+    return out
+
+
+@router.get(
+    "/events",
+    response_model=EventsResponse,
+    summary="이상 이벤트 이력",
+    description=(
+        "고온 노출과 공기 성분 변화 기록. VOC 급락은 원인을 알고리즘으로 "
+        "가릴 수 없어 사용자에게 되묻는다. 아직 답하지 않은 건은 question이 "
+        "채워져 오며, 화면은 그것을 질문으로 표시한다. 경고가 아니다."
+    ),
+)
+def get_events(
+    user_id: str = Query(..., description="예선 한정. 본선에서는 토큰에서 추출한다."),
+    limit: int = Query(30, ge=1, le=100),
+    pending_only: bool = Query(False, description="답을 기다리는 건만"),
+) -> EventsResponse:
+    now = datetime.now(timezone.utc)
+
+    try:
+        labels = _node_labels(user_id)
+        node_ids = list(labels)
+        rows = get_risk_events(node_ids, limit=limit, pending_only=pending_only)
+        pending = count_pending(node_ids)
+    except Exception:
+        logger.exception("이벤트 조회 실패 user_id=%s", user_id)
+        raise HTTPException(status_code=500, detail="이벤트 이력을 불러오지 못했습니다")
+
+    items: List[EventItem] = []
+    for r in rows:
+        label = labels.get(r.get("node_id"))
+        d = describe(r, label)
+        # 이미 답한 건은 질문을 다시 띄우지 않는다.
+        question = d["question"] if r.get("user_answer") == "pending" else None
+        items.append(EventItem(
+            id=r["id"],
+            node_id=r.get("node_id"),
+            node_label=label,
+            ts=str(r.get("ts")),
+            when=when(r.get("ts")),
+            event_type=r.get("event_type") or "unknown",
+            magnitude=r.get("magnitude"),
+            title=d["title"],
+            detail=d["detail"],
+            question=question,
+            user_answer=r.get("user_answer") or "pending",
+            excluded=bool(r.get("excluded")),
+        ))
+
+    return EventsResponse(
+        generated_at=now.isoformat(),
+        summary=EventsSummary(
+            total=len(items),
+            pending=pending,
+            excluded=sum(1 for i in items if i.excluded),
+            alert=alert_line(pending),
+        ),
+        items=items,
+    )
+
+
+# ── 확인 질문에 답하기 ────────────────────────────────────────────
+
+class AnswerRequest(BaseModel):
+    answer: str = Field(..., description="external_source | none")
+
+
+class GuidanceProduct(BaseModel):
+    user_product_id: str
+    name: Optional[str] = None
+    brand: Optional[str] = None
+    score: float
+    band: str
+
+
+class GuidanceNext(BaseModel):
+    action: str
+    products: List[GuidanceProduct]
+
+
+class AnswerResponse(BaseModel):
+    event: EventItem
+    headline: str
+    lines: List[str]
+    next: Optional[GuidanceNext] = None
+
+
+# 답변 후 함께 보여줄 제품 수. 세 개를 넘기면 화면이 넘친다.
+GUIDANCE_PRODUCT_N = 2
+
+
+@router.post(
+    "/events/{event_id}/answer",
+    response_model=AnswerResponse,
+    summary="확인 질문에 답하기",
+    description=(
+        "external_source면 그 기록을 분석에서 제외하고, none이면 유효한 "
+        "이벤트로 남긴다. none일 때는 같은 보관함의 확인 순위 상위 제품을 "
+        "함께 돌려주어 다음 행동으로 이어지게 한다. "
+        "이미 답한 건에 다시 답할 수 있다. 잘못 눌렀을 때 되돌릴 방법이 필요하다."
+    ),
+)
+def post_event_answer(
+    event_id: int,
+    body: AnswerRequest,
+    user_id: str = Query(..., description="예선 한정"),
+) -> AnswerResponse:
+    if body.answer not in VALID_ANSWERS:
+        raise HTTPException(
+            status_code=422,
+            detail=f"answer는 {' 또는 '.join(VALID_ANSWERS)} 여야 합니다",
+        )
+
+    labels = _node_labels(user_id)
+
+    before = get_event(event_id)
+    if not before:
+        raise HTTPException(status_code=404, detail="이벤트를 찾을 수 없습니다")
+
+    # 남의 이벤트에 답하지 못하게 한다. 예선에는 사용자가 하나뿐이지만,
+    # user_id를 쿼리로 받는 구조라 넘겨보면 그대로 통한다.
+    if before.get("node_id") not in labels:
+        raise HTTPException(status_code=404, detail="이벤트를 찾을 수 없습니다")
+
+    try:
+        updated = answer_event(event_id, body.answer)
+    except ValueError as e:
+        raise HTTPException(status_code=422, detail=str(e))
+    except Exception:
+        logger.exception("이벤트 답변 저장 실패 id=%s", event_id)
+        raise HTTPException(status_code=500, detail="답변을 저장하지 못했습니다")
+
+    if not updated:
+        raise HTTPException(status_code=500, detail="답변 후 이벤트를 읽지 못했습니다")
+
+    # "아니요"일 때만 제품을 붙인다. 외부 요인이면 제품 이야기가 필요 없다.
+    top: List[Dict[str, Any]] = []
+    if body.answer == "none":
+        try:
+            pri = build_priority(user_id, limit=GUIDANCE_PRODUCT_N)
+            node_id = updated.get("node_id")
+            for it in pri["items"]:
+                # 같은 보관함의 제품만 보여준다. 다른 방에 있던 제품을
+                # 이 이벤트의 후보로 내밀면 근거가 어긋난다.
+                if node_id and it.get("storage_node_id") != node_id:
+                    continue
+                if it["band"] == "low":
+                    continue
+                top.append({
+                    "user_product_id": it["user_product_id"],
+                    "name": it.get("name"),
+                    "brand": it.get("brand"),
+                    "score": it["score"],
+                    "band": it["band"],
+                })
+        except Exception:
+            # 안내에 제품을 못 붙여도 답변 저장은 이미 끝났다.
+            logger.exception("안내용 제품 조회 실패 user_id=%s", user_id)
+
+    g = guidance(updated, body.answer, top or None)
+
+    label = labels.get(updated.get("node_id"))
+    d = describe(updated, label)
+
+    return AnswerResponse(
+        event=EventItem(
+            id=updated["id"],
+            node_id=updated.get("node_id"),
+            node_label=label,
+            ts=str(updated.get("ts")),
+            when=when(updated.get("ts")),
+            event_type=updated.get("event_type") or "unknown",
+            magnitude=updated.get("magnitude"),
+            title=d["title"],
+            detail=d["detail"],
+            question=None,
+            user_answer=updated.get("user_answer") or "pending",
+            excluded=bool(updated.get("excluded")),
+        ),
+        headline=g["headline"],
+        lines=g["lines"],
+        next=(GuidanceNext(action=g["next"]["action"],
+                           products=[GuidanceProduct(**p) for p in g["next"]["products"]])
+              if g.get("next") else None),
+    )
+
+
+# ── 확인 절차 ─────────────────────────────────────────────────────
+#
+# "확인해 보세요"만으로는 사용자가 무엇을 봐야 할지 모른다. 설계서 §5-6은
+# 식약처 화장품 안정성시험 가이드라인의 시험항목을 소비자가 확인 가능한
+# 형태로 옮긴 표를 정의한다. 그 표를 규칙 테이블로 구현한 것이 여기다.
+
+class CheckStepModel(BaseModel):
+    order: int
+    basis: str = Field(..., description="가이드라인 시험항목 (성상·색, 냄새 등)")
+    text: str
+    optical: bool = Field(False, description="AS7341 측정으로 도울 수 있는 항목")
+
+
+class ProtocolResponse(BaseModel):
+    user_product_id: str
+    name: Optional[str] = None
+    brand: Optional[str] = None
+    label: str = Field(..., description="확인 유형 (오일·세럼 등)")
+    score: Optional[float] = None
+    band: Optional[str] = None
+    reasons: List[str] = []
+    steps: List[CheckStepModel]
+    answers: List[str]
+    caution: Optional[str] = None
+    note: Optional[str] = None
+
+
+@router.get(
+    "/products/{user_product_id}/protocol",
+    response_model=ProtocolResponse,
+    summary="제품별 확인 절차",
+    description=(
+        "무엇을 어떻게 볼지 순서대로 알려준다. 항목은 식약처 화장품 "
+        "안정성시험 가이드라인의 시험항목을 소비자가 확인 가능한 형태로 "
+        "옮긴 것이며, 카테고리마다 순서가 다르다. "
+        "판정하지 않는다. 확인은 사용자가 한다."
+    ),
+)
+def get_protocol(
+    user_product_id: str,
+    user_id: str = Query(..., description="예선 한정"),
+) -> ProtocolResponse:
+    try:
+        products = get_care_products(user_id)
+    except Exception:
+        logger.exception("보유 제품 조회 실패 user_id=%s", user_id)
+        raise HTTPException(status_code=500, detail="제품 정보를 불러오지 못했습니다")
+
+    item = next((p for p in products if p["user_product_id"] == user_product_id), None)
+    if not item:
+        raise HTTPException(status_code=404, detail="제품을 찾을 수 없습니다")
+
+    # 개봉 후 몇 달이 지났는지. PAO 초과 여부를 문구에 넣는 데 쓴다.
+    opened_months = None
+    if item.get("opened_at"):
+        try:
+            d = datetime.fromisoformat(str(item["opened_at"])[:10]).replace(tzinfo=timezone.utc)
+            opened_months = (datetime.now(timezone.utc) - d).days / 30.0
+        except ValueError:
+            logger.warning("개봉일 파싱 실패 %r", item.get("opened_at"))
+
+    proto = build_protocol(
+        item.get("name"),
+        item.get("category"),
+        item.get("optical_grade"),
+        pao_months=item.get("pao_months"),
+        opened_months=opened_months,
+    )
+
+    # 점수와 근거를 함께 준다. 왜 이 제품을 확인하라는지 화면에 남아야 한다.
+    score = band = None
+    reasons: List[str] = []
+    try:
+        pri = build_priority(user_id)
+        hit = next((i for i in pri["items"]
+                    if i["user_product_id"] == user_product_id), None)
+        if hit:
+            # 키 하나가 빠졌다고 점수 전체를 잃지 않는다.
+            score = hit.get("score")
+            band = hit.get("band")
+            reasons = hit.get("reasons") or []
+    except Exception:
+        logger.exception("점검 점수 조회 실패 user_product_id=%s", user_product_id)
+
+    return ProtocolResponse(
+        user_product_id=user_product_id,
+        name=item.get("name"),
+        brand=item.get("brand"),
+        label=proto["label"],
+        score=score,
+        band=band,
+        reasons=reasons,
+        steps=[CheckStepModel(**s) for s in proto["steps"]],
+        answers=proto["answers"],
+        caution=proto["caution"],
+        note=proto["note"],
+    )
+
+
+class InspectionRequest(BaseModel):
+    answer: str = Field(..., description="이상 없음 / 색이 다름 / 냄새가 남 등")
+
+
+class InspectionResponse(BaseModel):
+    user_product_id: str
+    answer: str
+    headline: str
+    lines: List[str]
+    recommend_replace: bool = Field(
+        False,
+        description="교체를 권할 상황인지. 화면이 조용히 덧붙이는 데 쓴다",
+    )
+
+
+@router.post(
+    "/products/{user_product_id}/inspection",
+    response_model=InspectionResponse,
+    summary="확인 결과 기록",
+    description=(
+        "사용자가 확인한 결과를 받는다. 설계서 §5-7의 피드백 루프 입력이며, "
+        "last_checked_at을 갱신해 점검 점수의 '마지막 확인' 항목에 반영한다. "
+        "여기서도 변질을 판정하지 않는다. 관측된 사실과 일반적인 권장만 전한다."
+    ),
+)
+def post_inspection(
+    user_product_id: str,
+    body: InspectionRequest,
+    user_id: str = Query(..., description="예선 한정"),
+) -> InspectionResponse:
+    if body.answer not in ANSWERS:
+        raise HTTPException(
+            status_code=422,
+            detail=f"answer는 다음 중 하나여야 합니다: {', '.join(ANSWERS)}",
+        )
+
+    try:
+        products = get_care_products(user_id)
+    except Exception:
+        logger.exception("보유 제품 조회 실패 user_id=%s", user_id)
+        raise HTTPException(status_code=500, detail="제품 정보를 불러오지 못했습니다")
+
+    item = next((p for p in products if p["user_product_id"] == user_product_id), None)
+    if not item:
+        raise HTTPException(status_code=404, detail="제품을 찾을 수 없습니다")
+
+    proto = build_protocol(item.get("name"), item.get("category"),
+                           item.get("optical_grade"))
+
+    # 확인했다는 사실을 남긴다. risk_score의 last_check 항목이 이 값을 본다.
+    # 확인 결과와 무관하게 "봤다"는 것 자체가 점수를 낮춘다.
+    try:
+        from db.supabase_client import get_supabase
+        (get_supabase().table("user_products")
+         .update({"last_checked_at": datetime.now(timezone.utc).isoformat()})
+         .eq("id", user_product_id).execute())
+    except Exception:
+        # 기록에 실패해도 안내는 돌려준다. 사용자가 이미 확인을 마쳤다.
+        logger.exception("last_checked_at 갱신 실패 %s", user_product_id)
+
+    g = answer_guidance(body.answer, proto["category"])
+
+    return InspectionResponse(
+        user_product_id=user_product_id,
+        answer=body.answer,
+        headline=g["headline"],
+        lines=g["lines"],
+        recommend_replace=g["recommend_replace"],
     )
