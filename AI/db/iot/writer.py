@@ -12,6 +12,7 @@ ESP32 노드가 보낸 측정값을 sensor_readings에 적재하고, 노드 메�
 """
 from __future__ import annotations
 
+from datetime import datetime, timedelta, timezone
 from typing import Any, Dict, List, Optional, TypedDict
 
 from db.supabase_client import get_supabase
@@ -205,3 +206,151 @@ def upsert_thermal_profile(row: Dict[str, Any]) -> None:
     if exists:
         return
     sb.table("product_thermal_profile").insert(row).execute()
+
+
+# ── 측정 세션 ──────────────────────────────────────────────────
+#
+# 세션은 한 번의 광학 측정을 가리키는 실체다(015_create_measure_sessions).
+# 키오스크가 열고, 노드가 두 번에 나눠 채우고, 키오스크가 읽어 간다.
+
+# 아직 채워지는 중인 상태. 노드는 이 상태의 세션만 자기 일감으로 본다.
+OPEN_SESSION_STATUS = ("waiting_white", "waiting_sample")
+
+_SESSION_COLS = (
+    "id, node_id, user_id, target, user_product_id, site, status, "
+    "white_ref, channels, meta, saturated, baseline, delta_pct, message, "
+    "created_at, updated_at, expires_at"
+)
+
+
+def _parse_ts(value: Any) -> Optional[datetime]:
+    """PostgREST가 준 timestamptz 문자열을 aware datetime으로."""
+    if not value:
+        return None
+    try:
+        dt = datetime.fromisoformat(str(value).replace("Z", "+00:00"))
+    except (TypeError, ValueError):
+        return None
+    return dt if dt.tzinfo else dt.replace(tzinfo=timezone.utc)
+
+
+def _expire_if_stale(row: Optional[Dict[str, Any]]) -> Optional[Dict[str, Any]]:
+    """
+    시한이 지난 열린 세션을 만료로 바꾼다.
+
+    별도의 정리 작업을 두지 않고 읽을 때 처리한다. 세션을 읽는 쪽은
+    노드 폴링과 키오스크 조회 둘뿐이고, 둘 중 하나는 반드시 지나가기
+    때문이다. 만료를 미뤄 두면 사용자가 자리를 뜬 세션이 노드를 계속
+    붙잡아 다음 측정을 시작할 수 없게 된다.
+    """
+    if not row or row.get("status") not in OPEN_SESSION_STATUS:
+        return row
+
+    expires = _parse_ts(row.get("expires_at"))
+    if expires is None or datetime.now(timezone.utc) <= expires:
+        return row
+
+    return update_measure_session(row["id"], {
+        "status": "expired",
+        "message": "측정 시간이 지났습니다. 다시 시작해 주세요.",
+    })
+
+
+def create_measure_session(
+    node_id: str,
+    *,
+    user_id: Optional[str],
+    target: str = "product",
+    user_product_id: Optional[str] = None,
+    site: Optional[str] = None,
+    ttl_sec: int = 300,
+) -> Dict[str, Any]:
+    """
+    측정 세션을 연다. 백색 표준판을 기다리는 상태로 시작한다.
+
+    같은 노드에 열린 세션이 남아 있으면 먼저 취소한다. 노드는 세션을
+    하나만 들고 갈 수 있어서, 남은 세션이 있으면 방금 누른 "측정하기"가
+    아니라 이전 것을 재게 된다.
+    """
+    close_open_measure_sessions(node_id, status="cancelled")
+
+    expires = datetime.now(timezone.utc) + timedelta(seconds=ttl_sec)
+    row = (
+        get_supabase().table("measure_sessions").insert({
+            "node_id": node_id,
+            "user_id": user_id,
+            "target": target,
+            "user_product_id": user_product_id,
+            "site": site,
+            "status": "waiting_white",
+            "expires_at": expires.isoformat(),
+        }).execute()
+    ).data
+    return (row or [{}])[0]
+
+
+def get_measure_session(session_id: str) -> Optional[Dict[str, Any]]:
+    """세션 1건. 시한이 지났으면 만료 처리한 결과를 돌려준다."""
+    rows = (
+        get_supabase().table("measure_sessions")
+        .select(_SESSION_COLS)
+        .eq("id", session_id)
+        .limit(1)
+        .execute()
+    ).data or []
+    return _expire_if_stale(rows[0]) if rows else None
+
+
+def get_open_measure_session(node_id: str) -> Optional[Dict[str, Any]]:
+    """
+    노드가 지금 처리해야 할 세션. 없으면 None.
+
+    노드는 이것을 2초 간격으로 묻는다. 열린 세션이 여럿일 일은 없지만
+    (생성 시 이전 것을 닫는다) 최신 하나만 본다.
+    """
+    rows = (
+        get_supabase().table("measure_sessions")
+        .select(_SESSION_COLS)
+        .eq("node_id", node_id)
+        .in_("status", list(OPEN_SESSION_STATUS))
+        .order("created_at", desc=True)
+        .limit(1)
+        .execute()
+    ).data or []
+    if not rows:
+        return None
+    row = _expire_if_stale(rows[0])
+    return row if row and row.get("status") in OPEN_SESSION_STATUS else None
+
+
+def update_measure_session(
+    session_id: str, patch: Dict[str, Any]
+) -> Optional[Dict[str, Any]]:
+    """세션 일부 필드 갱신. updated_at은 여기서 붙인다."""
+    if not patch:
+        return get_measure_session(session_id)
+
+    payload = dict(patch)
+    payload["updated_at"] = datetime.now(timezone.utc).isoformat()
+    rows = (
+        get_supabase().table("measure_sessions")
+        .update(payload)
+        .eq("id", session_id)
+        .execute()
+    ).data or []
+    return rows[0] if rows else None
+
+
+def close_open_measure_sessions(node_id: str, *, status: str = "cancelled") -> int:
+    """노드에 열려 있는 세션을 모두 닫는다. 닫은 건수를 돌려준다."""
+    rows = (
+        get_supabase().table("measure_sessions")
+        .update({
+            "status": status,
+            "updated_at": datetime.now(timezone.utc).isoformat(),
+        })
+        .eq("node_id", node_id)
+        .in_("status", list(OPEN_SESSION_STATUS))
+        .execute()
+    ).data or []
+    return len(rows)
