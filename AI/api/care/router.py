@@ -7,8 +7,9 @@
 엔드포인트:
     GET  /api/care/priority?user_id=&limit=            점검 우선순위 (탭1)
     GET  /api/care/dashboard?user_id=                  노드별 현재 환경 (대기 화면·탭4)
-    POST /api/care/measure/sessions?user_id=           광학 측정 시작
-    GET  /api/care/measure/sessions/{id}?user_id=      측정 진행·결과 조회
+    POST /api/care/measure/sessions?user_id=              광학 측정 시작
+    POST /api/care/measure/sessions/{id}/capture         시료를 올렸다는 신호
+    GET  /api/care/measure/sessions/{id}?user_id=        측정 진행·결과 조회
 """
 from __future__ import annotations
 
@@ -35,6 +36,7 @@ from db.product_reader import (
 )
 from db.iot.skin_reader import get_skin_measurements
 from db.iot.writer import (
+    OPEN_SESSION_STATUS,
     create_measure_session, discard_user_product, get_latest_reading,
     get_measure_session, get_optical_baseline, insert_optical,
     insert_user_product, update_measure_session, update_user_product,
@@ -1409,11 +1411,23 @@ def post_optical(
 
 # 상태별 화면 문구. done·failed는 세션에 남은 message를 그대로 쓴다.
 _MEASURE_PROMPT = {
-    "waiting_white": "백색 표준판을 측정부에 올리고 노드의 버튼을 눌러 주세요.",
-    "waiting_sample": "제품을 측정부에 올리고 버튼을 다시 눌러 주세요.",
+    "waiting_white": "백색 표준판을 측정부에 올린 뒤 측정을 눌러 주세요.",
+    "capturing_white": "백색 기준을 재고 있습니다. 그대로 두세요.",
+    "waiting_sample": "제품을 측정부에 올린 뒤 측정을 눌러 주세요.",
+    "capturing_sample": "제품을 재고 있습니다. 그대로 두세요.",
     "expired": "측정 시간이 지났습니다. 다시 시작해 주세요.",
     "cancelled": "측정을 취소했습니다.",
 }
+
+# 화면이 어느 단계를 안내해야 하는지. 누르기 전과 재는 중이 같은 단계다.
+_STAGE = {
+    "waiting_white": "white", "capturing_white": "white",
+    "waiting_sample": "sample", "capturing_sample": "sample",
+}
+
+# 사용자가 눌러야 진행되는 상태 → 눌렀을 때 넘어갈 상태.
+_ARM = {"waiting_white": "capturing_white",
+        "waiting_sample": "capturing_sample"}
 
 
 class MeasureStartRequest(BaseModel):
@@ -1427,7 +1441,12 @@ class MeasureSessionResponse(BaseModel):
     status: str = Field(
         ..., description="waiting_white | waiting_sample | done | failed | "
                          "expired | cancelled")
-    step: Optional[str] = Field(None, description="지금 재야 할 것: white | sample")
+    step: Optional[str] = Field(
+        None, description="지금 다루는 단계: white | sample")
+    # 노드가 재고 있는 중인지. 화면이 버튼을 감추고 기다리게 하는 신호다.
+    capturing: bool = False
+    # 사용자가 "측정"을 눌러야 다음으로 넘어가는 상태인지.
+    awaiting_tap: bool = False
     node_id: str
     node_label: Optional[str] = None
     user_product_id: Optional[str] = None
@@ -1487,7 +1506,9 @@ def _session_view(
     return MeasureSessionResponse(
         session_id=str(session["id"]),
         status=status,
-        step={"waiting_white": "white", "waiting_sample": "sample"}.get(status),
+        step=_STAGE.get(status),
+        capturing=status.startswith("capturing_"),
+        awaiting_tap=status in _ARM,
         node_id=session["node_id"],
         node_label=node_label,
         user_product_id=(str(session["user_product_id"])
@@ -1581,6 +1602,52 @@ def get_measure_session_status(
     return _session_view(session)
 
 
+@router.post(
+    "/measure/sessions/{session_id}/capture",
+    response_model=MeasureSessionResponse,
+    summary="측정 지시",
+    description=(
+        "시료를 올려놓았다는 신호. 이것을 받아야 노드가 잰다.\n\n"
+        "노드는 측정부에 무엇이 올라와 있는지 알 수 없다. 그것을 아는 사람은 "
+        "방금 손으로 올려놓은 사용자뿐이라, 화면에서 누른 것이 측정 신호가 "
+        "된다. 백색 표준판과 제품에 각각 한 번씩, 한 세션에 두 번 부른다."
+    ),
+)
+def capture_measure_session(
+    session_id: str,
+    user_id: str = Query(..., description="예선 한정. 본선에서는 토큰에서 추출한다."),
+) -> MeasureSessionResponse:
+    try:
+        session = get_measure_session(session_id)
+    except Exception:
+        logger.exception("측정 세션 조회 실패 session_id=%s", session_id)
+        raise HTTPException(status_code=500, detail="측정을 지시하지 못했습니다")
+
+    if session is None or str(session.get("user_id")) != str(user_id):
+        raise HTTPException(status_code=404, detail="없는 측정 세션입니다")
+
+    status = session["status"]
+
+    # 이미 재고 있으면 그대로 둔다. 화면을 두 번 눌렀다고 해서 방금 시작한
+    # 측정을 취소하거나 두 번 재게 만들 이유가 없다.
+    if status.startswith("capturing_"):
+        return _session_view(session)
+
+    if status not in _ARM:
+        raise HTTPException(
+            status_code=409,
+            detail=f"측정할 수 있는 상태가 아닙니다 (status={status})",
+        )
+
+    try:
+        updated = update_measure_session(session_id, {"status": _ARM[status]})
+    except Exception:
+        logger.exception("측정 지시 실패 session_id=%s", session_id)
+        raise HTTPException(status_code=500, detail="측정을 지시하지 못했습니다")
+
+    return _session_view(updated or dict(session, status=_ARM[status]))
+
+
 @router.delete(
     "/measure/sessions/{session_id}",
     status_code=204,
@@ -1604,7 +1671,7 @@ def cancel_measure_session(
         raise HTTPException(status_code=404, detail="없는 측정 세션입니다")
 
     # 이미 끝난 세션이면 그냥 둔다. 끝난 측정의 결과를 지울 이유가 없다.
-    if session["status"] not in ("waiting_white", "waiting_sample"):
+    if session["status"] not in OPEN_SESSION_STATUS:
         return
 
     try:

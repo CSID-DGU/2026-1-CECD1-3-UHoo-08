@@ -1,7 +1,6 @@
-// 화담 CARE — 측정 노드 펌웨어 (AS7341 + 버튼 트리거 + 측정 세션)
+// 화담 CARE — 측정 노드 펌웨어 (AS7341 + 측정 세션)
 //
 // 배선: AS7341  VIN→3V3, GND→GND, SCL→GPIO22, SDA→GPIO21  (SHT31 0x44와 같은 버스)
-//       버튼    GPIO33 ↔ GND                              (내부 풀업, 눌리면 LOW)
 //
 // ─────────────────────────────────────────────────────────────
 // 환경 노드(Node_SHT31_v2·Node_Ambient_v1)와 근본적으로 다른 점
@@ -16,15 +15,23 @@
 // 도착하면 쓸 데가 없다. 전송에 실패하면 버리고 다시 재게 한다.
 //
 // ─────────────────────────────────────────────────────────────
-// 이 노드에는 화면이 없다. 안내는 키오스크가 한다.
+// 이 노드에는 화면도 버튼도 없다. 안내와 트리거를 모두 키오스크가 한다.
 //
-//   키오스크  "측정하기"          → 서버에 세션 생성
-//   노드      GET .../session     → 일감 발견 (2초 간격 폴링)
-//   키오스크  "백색 표준판을 올리고 버튼을 눌러 주세요"
-//   노드      버튼 → 측정 → POST step=white
-//   키오스크  "제품을 올리고 버튼을 다시 눌러 주세요"
-//   노드      버튼 → 측정 → POST step=sample   ← 여기서 결과가 확정된다
-//   키오스크  GET .../sessions/{id} → 변화율 표시
+// 노드는 측정부에 무엇이 올라와 있는지 알 수 없다. 그것을 아는 사람은
+// 방금 손으로 올려놓은 사용자뿐이다. 사용자는 어차피 키오스크 화면을
+// 보고 있으므로, 거기서 누른 것을 측정 신호로 삼는다. 노드에 버튼을
+// 달면 시선은 화면에, 손은 노드에 두어야 해서 둘로 갈라진다.
+//
+//   키오스크  "측정하기"                → 서버에 세션 생성
+//   노드      GET .../session           → 2초 간격 폴링 (step은 아직 비어 있음)
+//   키오스크  "백색 표준판을 올린 뒤 측정을 눌러 주세요" → 사용자가 누름
+//   노드      폴링에 step=white 도착    → 즉시 측정 → POST step=white
+//   키오스크  "제품을 올린 뒤 측정을 눌러 주세요"        → 사용자가 누름
+//   노드      폴링에 step=sample 도착   → 즉시 측정 → POST step=sample
+//   키오스크  GET .../sessions/{id}     → 변화율 표시
+//
+// step이 비어 있는 동안에는 아무것도 하지 않는다. 그 상태에서 재면 아직
+// 아무것도 올려놓지 않은 허공을 재게 되고, 그 값이 기준값으로 굳는다.
 //
 // 시리얼 출력은 개발용이다. 실제 사용자는 키오스크 화면만 본다.
 //
@@ -63,13 +70,10 @@
 
 #define SDA_PIN 21
 #define SCL_PIN 22
-#define BTN_PIN 33
 
-const uint32_t POLL_MS        = 2000;      // 대기 중 폴링. 서버 MEASURE_POLL_SEC와 맞춘다
-// 세션을 이미 받아 버튼을 기다리는 동안에는 느리게 묻는다.
-// HTTPS 왕복은 1초 넘게 루프를 붙잡는데, 그 사이에 누른 버튼은 놓친다.
-// 이 구간에서 서버 쪽이 바뀌는 경우는 취소·만료뿐이라 급하지 않다.
-const uint32_t POLL_BUSY_MS   = 10000;
+// 폴링 간격. 사용자가 키오스크에서 누른 뒤 실제로 재기까지의 지연이 이 값이다.
+// 서버 MEASURE_POLL_SEC와 맞춘다.
+const uint32_t POLL_MS        = 2000;
 const uint32_t NTP_RESYNC_MS  = 21600000;  // 6시간
 const uint16_t LED_WARMUP_MS  = 200;       // LED가 밝기를 잡는 데 걸리는 시간
 const uint8_t  DARK_SAMPLES   = 3;         // 암전류 평균 횟수
@@ -97,11 +101,12 @@ Adafruit_AS7341 as7341;
 
 // ─── 상태 ─────────────────────────────────────────────
 
-enum Step { STEP_IDLE, STEP_WHITE, STEP_SAMPLE };
+enum Step { STEP_NONE, STEP_WHITE, STEP_SAMPLE };
 
-String   sessionId  = "";
-Step     step       = STEP_IDLE;
-uint32_t lastPoll   = 0;
+String   sessionId   = "";
+// 서버가 "지금 재라"고 한 단계. 사용자가 키오스크에서 누르기 전에는 NONE이다.
+Step     armedStep   = STEP_NONE;
+uint32_t lastPoll    = 0;
 uint32_t lastNtpSync = 0;
 
 as7341_gain_t curGain  = AS7341_GAIN_64X;
@@ -295,21 +300,23 @@ void measureDark(float* darkCh, float* darkClear, float* darkNir) {
 // ─── 세션 ─────────────────────────────────────────────
 
 // 폴링은 2초마다 같은 답을 돌려준다. 상태가 실제로 바뀔 때만 안내를 찍는다.
-void setStep(const String& id, const char* stepName) {
-  Step want = STEP_IDLE;
-  if (strcmp(stepName, "white") == 0)       want = STEP_WHITE;
-  else if (strcmp(stepName, "sample") == 0) want = STEP_SAMPLE;
+void applyPoll(const char* id, const char* stepName) {
+  Step want = STEP_NONE;
+  if (stepName) {
+    if (strcmp(stepName, "white") == 0)       want = STEP_WHITE;
+    else if (strcmp(stepName, "sample") == 0) want = STEP_SAMPLE;
+  }
 
-  bool changed = (sessionId != id) || (step != want);
-  sessionId = (want == STEP_IDLE) ? "" : id;
-  step = want;
+  String newId = id ? String(id) : String("");
+  bool changed = (sessionId != newId) || (armedStep != want);
+  sessionId = newId;
+  armedStep = want;
   if (!changed) return;
 
-  if (want == STEP_WHITE) {
-    Serial.println("\n[세션] 백색 표준판을 올리고 버튼을 누르세요.");
-  } else if (want == STEP_SAMPLE) {
-    Serial.println("[세션] 제품을 올리고 버튼을 누르세요.");
-  }
+  if (newId.length() == 0)      Serial.println("[세션] 대기 중.");
+  else if (want == STEP_NONE)   Serial.println("\n[세션] 열림. 키오스크에서 측정을 누르면 잽니다.");
+  else if (want == STEP_WHITE)  Serial.println("[세션] 백색 표준판 측정 지시를 받았습니다.");
+  else                          Serial.println("[세션] 시료 측정 지시를 받았습니다.");
 }
 
 // 서버가 세션의 주인이다. 노드는 자기 상태를 서버에 맞추기만 한다.
@@ -322,9 +329,7 @@ void pollSession() {
   String res = httpJson("GET", url, "", &code);
 
   if (code != 200) {
-    if (step != STEP_IDLE) {
-      Serial.printf("  폴링 실패 %d %s\n", code, res.c_str());
-    }
+    Serial.printf("  폴링 실패 %d %s\n", code, res.c_str());
     return;
   }
 
@@ -334,20 +339,12 @@ void pollSession() {
     return;
   }
 
-  const char* id = doc["session_id"];
-  const char* st = doc["step"];
-  if (!id || !st) {
-    if (step != STEP_IDLE) Serial.println("[세션] 종료됨 — 대기로 돌아갑니다.");
-    step = STEP_IDLE;
-    sessionId = "";
-    return;
-  }
-  setStep(String(id), st);
+  applyPoll(doc["session_id"], doc["step"]);
 }
 
 // 한 단계를 재서 올린다.
 void captureAndPost() {
-  const bool isWhite = (step == STEP_WHITE);
+  const bool isWhite = (armedStep == STEP_WHITE);
   const char* stepName = isWhite ? "white" : "sample";
 
   if (!timeIsSynced()) {
@@ -368,7 +365,7 @@ void captureAndPost() {
 
   uint16_t buf[12];
   if (!readChannels(buf, true)) {
-    Serial.println("  센서 읽기 실패 — 버튼을 다시 누르세요");
+    Serial.println("  센서 읽기 실패 — 키오스크에서 다시 눌러 주세요");
     return;
   }
 
@@ -413,40 +410,26 @@ void captureAndPost() {
     Serial.printf("  POST %s [%d] %s\n", stepName, code, res.c_str());
 
     if (code == 200) {
+      // 이 단계는 끝났다. 다음 지시는 사용자가 키오스크에서 다시 누를 때
+      // 폴링으로 온다. 여기서 바로 다음 단계로 넘어가면 안 된다 — 아직
+      // 시료를 바꿔 올리지 않았다.
+      armedStep = STEP_NONE;
       JsonDocument ack;
-      if (!deserializeJson(ack, res)) {
-        const char* next = ack["next_step"];
-        String sid = sessionId;   // setStep이 sessionId를 바꾸므로 복사해 넘긴다
-        setStep(sid, next ? next : "");
-        if (!next) Serial.println("[세션] 완료. 키오스크 화면을 보세요.");
+      if (!deserializeJson(ack, res) && !ack["next_step"].is<const char*>()) {
+        Serial.println("[세션] 완료. 키오스크 화면을 보세요.");
       }
       return;
     }
 
     // 4xx는 다시 보내도 같은 답이 온다(순서 어긋남·포화·세션 종료).
     // 서버가 세션을 닫았을 테니 다음 폴링에서 정리된다.
-    if (code >= 400 && code < 500) return;
+    if (code >= 400 && code < 500) { armedStep = STEP_NONE; return; }
 
     delay(1000);
   }
-  Serial.println("  전송 실패 — 버튼을 다시 누르세요");
-}
-
-// ─── 버튼 ─────────────────────────────────────────────
-
-// 눌린 순간(HIGH→LOW)만 한 번 잡는다. 접점이 튀는 구간을 시간으로 막는다.
-bool buttonPressed() {
-  static bool     lastLevel = HIGH;
-  static uint32_t lastEdge  = 0;
-  const uint16_t  DEBOUNCE_MS = 40;
-
-  bool level = digitalRead(BTN_PIN);
-  if (level == lastLevel) return false;
-  if (millis() - lastEdge < DEBOUNCE_MS) return false;
-
-  lastEdge = millis();
-  lastLevel = level;
-  return level == LOW;
+  // 지시는 서버에 그대로 남아 있다(capturing_*). 다음 폴링에서 다시
+  // 내려오므로, 여기서 armedStep을 비워도 사용자가 다시 누를 필요는 없다.
+  Serial.println("  전송 실패 — 다음 폴링에서 다시 시도합니다");
 }
 
 // ─── 메인 ─────────────────────────────────────────────
@@ -455,7 +438,6 @@ void setup() {
   Serial.begin(115200);
   delay(1500);
   Wire.begin(SDA_PIN, SCL_PIN);
-  pinMode(BTN_PIN, INPUT_PULLUP);
 
   Serial.printf("\n=== HwaDam CARE Node [%s] measure ===\n", NODE_ID);
 
@@ -476,14 +458,13 @@ void setup() {
 }
 
 void loop() {
-  // 서버 상태를 계속 따라간다. 세션이 새로 열렸는지, 취소·만료되었는지
-  // 모두 이 한 곳에서 알게 된다.
-  uint32_t interval = (step == STEP_IDLE) ? POLL_MS : POLL_BUSY_MS;
-  if (millis() - lastPoll >= interval) pollSession();
+  // 서버 상태를 계속 따라간다. 세션이 새로 열렸는지, 사용자가 측정을
+  // 눌렀는지, 취소·만료되었는지 모두 이 한 곳에서 알게 된다.
+  if (millis() - lastPoll >= POLL_MS) pollSession();
 
-  // 일감이 없을 때의 버튼은 무시한다. 무엇을 재라는 것인지 모르는 채로
-  // 측정하면 어느 제품의 값인지 알 수 없다.
-  if (step != STEP_IDLE && buttonPressed()) captureAndPost();
+  // 지시가 내려와 있을 때만 잰다. 세션이 열려 있어도 사용자가 아직
+  // 누르지 않았으면 측정부에 아무것도 없을 수 있다.
+  if (armedStep != STEP_NONE) captureAndPost();
 
   if (millis() - lastNtpSync > NTP_RESYNC_MS) syncTime();
 

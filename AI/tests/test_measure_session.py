@@ -135,14 +135,28 @@ class TestStartSession:
 class TestNodePolling:
     @patch("api.iot.router.get_open_measure_session")
     @patch("api.iot.router.get_node")
-    def test_returns_current_step(self, node, session):
+    def test_returns_step_once_armed(self, node, session):
         node.return_value = {"node_id": NODE, "user_id": USER,
                              "node_type": "measure", "location_label": None}
-        session.return_value = _session("waiting_sample")
+        session.return_value = _session("capturing_sample")
 
         res = _client().get(f"/api/iot/nodes/{NODE}/session", headers=_headers())
         assert res.status_code == 200
         assert res.json()["step"] == "sample"
+
+    @patch("api.iot.router.get_open_measure_session")
+    @patch("api.iot.router.get_node")
+    def test_no_step_before_user_taps(self, node, session):
+        # 세션은 열려 있지만 사용자가 아직 시료를 올려놓는 중이다.
+        # 여기서 재면 아무것도 없는 측정부를 잰다.
+        node.return_value = {"node_id": NODE, "user_id": USER,
+                             "node_type": "measure", "location_label": None}
+        session.return_value = _session("waiting_white")
+
+        res = _client().get(f"/api/iot/nodes/{NODE}/session", headers=_headers())
+        assert res.status_code == 200
+        assert res.json()["step"] is None
+        assert res.json()["session_id"] == SID
 
     @patch("api.iot.router.get_open_measure_session", return_value=None)
     @patch("api.iot.router.get_node")
@@ -167,7 +181,7 @@ class TestSampleUpload:
     @patch("api.iot.router.update_measure_session")
     @patch("api.iot.router.get_measure_session")
     def test_white_advances_to_sample(self, get, update):
-        get.return_value = _session("waiting_white")
+        get.return_value = _session("capturing_white")
         res = _client().post(f"/api/iot/sessions/{SID}/samples",
                              json=_sample_body("white", WHITE),
                              headers=_headers())
@@ -183,7 +197,7 @@ class TestSampleUpload:
     @patch("api.iot.router.get_measure_session")
     def test_first_sample_becomes_baseline(self, get, update, _base, insert):
         get.return_value = _session(
-            "waiting_sample", white_ref=WHITE,
+            "capturing_sample", white_ref=WHITE,
             meta={"gain": "64x", "led_ma": 10})
 
         res = _client().post(f"/api/iot/sessions/{SID}/samples",
@@ -205,7 +219,7 @@ class TestSampleUpload:
     @patch("api.iot.router.get_measure_session")
     def test_second_sample_reports_change(self, get, update, base, _insert):
         get.return_value = _session(
-            "waiting_sample", white_ref=WHITE,
+            "capturing_sample", white_ref=WHITE,
             meta={"gain": "64x", "led_ma": 10})
         base.return_value = {"channels": SAMPLE, "white_ref": WHITE}
 
@@ -224,15 +238,24 @@ class TestSampleUpload:
 
     @patch("api.iot.router.get_measure_session")
     def test_sample_before_white_is_rejected(self, get):
-        get.return_value = _session("waiting_white")
+        get.return_value = _session("capturing_white")
         res = _client().post(f"/api/iot/sessions/{SID}/samples",
                              json=_sample_body("sample", SAMPLE),
                              headers=_headers())
         assert res.status_code == 409
 
     @patch("api.iot.router.get_measure_session")
-    def test_another_node_cannot_fill_the_session(self, get):
+    def test_measurement_without_a_tap_is_rejected(self, get):
+        # 사용자가 누르기 전에 올라온 값은 요청한 측정이 아니다.
         get.return_value = _session("waiting_white")
+        res = _client().post(f"/api/iot/sessions/{SID}/samples",
+                             json=_sample_body("white", WHITE),
+                             headers=_headers())
+        assert res.status_code == 409
+
+    @patch("api.iot.router.get_measure_session")
+    def test_another_node_cannot_fill_the_session(self, get):
+        get.return_value = _session("capturing_white")
         res = _client().post(f"/api/iot/sessions/{SID}/samples",
                              json=_sample_body("white", WHITE,
                                                node_id="measure-99"),
@@ -242,7 +265,7 @@ class TestSampleUpload:
     @patch("api.iot.router.update_measure_session")
     @patch("api.iot.router.get_measure_session")
     def test_saturated_measurement_fails_the_session(self, get, update):
-        get.return_value = _session("waiting_white")
+        get.return_value = _session("capturing_white")
         res = _client().post(f"/api/iot/sessions/{SID}/samples",
                              json=_sample_body("white", WHITE, saturated=True),
                              headers=_headers())
@@ -253,7 +276,7 @@ class TestSampleUpload:
     @patch("api.iot.router.update_measure_session")
     @patch("api.iot.router.get_measure_session")
     def test_missing_channels_fail_the_session(self, get, update):
-        get.return_value = _session("waiting_white")
+        get.return_value = _session("capturing_white")
         partial = {k: v for k, v in WHITE.items() if k not in ("F3", "F4")}
         res = _client().post(f"/api/iot/sessions/{SID}/samples",
                              json=_sample_body("white", partial),
@@ -268,7 +291,7 @@ class TestSampleUpload:
     def test_gain_change_between_steps_fails(self, get, update, insert):
         # 게인이 다르면 두 값의 축척이 달라 시료/백색이 반사율이 아니게 된다.
         get.return_value = _session(
-            "waiting_sample", white_ref=WHITE,
+            "capturing_sample", white_ref=WHITE,
             meta={"gain": "64x", "led_ma": 10})
         res = _client().post(f"/api/iot/sessions/{SID}/samples",
                              json=_sample_body("sample", SAMPLE, gain="32x"),
@@ -279,7 +302,7 @@ class TestSampleUpload:
 
     @patch("api.iot.router.get_measure_session")
     def test_unsynced_clock_is_rejected(self, get):
-        get.return_value = _session("waiting_white")
+        get.return_value = _session("capturing_white")
         res = _client().post(f"/api/iot/sessions/{SID}/samples",
                              json=_sample_body("white", WHITE,
                                                ts="1970-01-01T00:00:00Z"),
@@ -294,6 +317,41 @@ class TestSampleUpload:
         assert res.status_code == 404
 
 
+class TestCapture:
+    """사용자가 "측정"을 누르는 자리."""
+
+    @patch("api.care.router.update_measure_session")
+    @patch("api.care.router.get_measure_session")
+    def test_tap_arms_the_node(self, get, update):
+        get.return_value = _session("waiting_white")
+        update.return_value = _session("capturing_white")
+
+        res = _client().post(f"/api/care/measure/sessions/{SID}/capture",
+                             params={"user_id": USER})
+        assert res.status_code == 200
+        assert update.call_args[0][1]["status"] == "capturing_white"
+        data = res.json()
+        assert data["capturing"] is True
+        assert data["step"] == "white"
+
+    @patch("api.care.router.update_measure_session")
+    @patch("api.care.router.get_measure_session")
+    def test_double_tap_does_not_restart(self, get, update):
+        # 이미 재는 중인 측정을 화면 두 번 눌렀다고 취소하거나 두 번 재면 안 된다.
+        get.return_value = _session("capturing_white")
+        res = _client().post(f"/api/care/measure/sessions/{SID}/capture",
+                             params={"user_id": USER})
+        assert res.status_code == 200
+        update.assert_not_called()
+
+    @patch("api.care.router.get_measure_session")
+    def test_cannot_tap_a_finished_session(self, get):
+        get.return_value = _session("done", delta_pct=3.2)
+        res = _client().post(f"/api/care/measure/sessions/{SID}/capture",
+                             params={"user_id": USER})
+        assert res.status_code == 409
+
+
 class TestKioskPolling:
     @patch("api.care.router.get_measure_session")
     def test_shows_result_when_done(self, get):
@@ -306,6 +364,16 @@ class TestKioskPolling:
         assert data["delta_pct"] == 6.4
         assert data["step"] is None
         assert "6.4%" in data["message"]
+
+    @patch("api.care.router.get_measure_session")
+    def test_waiting_state_asks_for_a_tap(self, get):
+        get.return_value = _session("waiting_sample")
+        res = _client().get(f"/api/care/measure/sessions/{SID}",
+                            params={"user_id": USER})
+        data = res.json()
+        assert data["step"] == "sample"
+        assert data["awaiting_tap"] is True
+        assert data["capturing"] is False
 
     @patch("api.care.router.get_measure_session")
     def test_other_users_session_is_not_visible(self, get):

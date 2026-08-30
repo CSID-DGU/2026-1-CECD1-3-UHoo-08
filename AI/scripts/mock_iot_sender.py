@@ -22,7 +22,7 @@ ESP32 쪽에서 남는 변수는 Wi-Fi 연결과 센서 값뿐이다.
     # 같은 명령을 한 번 더 실행하면 두 번째부터는 변화율이 나온다.
     # --drift 8 을 주면 처음 잰 색보다 8% 누렇게 변한 시료를 흉내 낸다.
 
-    # 키오스크가 연 세션을 기다렸다가 답한다 (노드 역할만)
+    # 노드 역할만 한다. 사람이 키오스크에서 "측정"을 누르기를 기다린다
     python -m scripts.mock_iot_sender --node measure-01 --optical
 
     # 포화 거부 동작 확인 — 세션이 failed로 닫히는지 본다
@@ -130,7 +130,7 @@ def _sample_channels(drift_pct: float) -> Dict[str, float]:
 def _open_session(
     client: httpx.Client, base: str, user_id: str, product_id: str, node_id: str
 ) -> str:
-    """키오스크가 하는 일. 세션을 열고 id를 받는다."""
+    """키오스크가 하는 일 ①. 세션을 열고 id를 받는다."""
     res = client.post(
         f"{base}/api/care/measure/sessions",
         params={"user_id": user_id},
@@ -145,25 +145,50 @@ def _open_session(
     return data["session_id"]
 
 
-def _wait_for_session(
+def _capture(
+    client: httpx.Client, base: str, user_id: str, session_id: str
+) -> None:
+    """
+    키오스크가 하는 일 ②. "올려놓았으니 재세요".
+
+    노드는 측정부에 무엇이 올라와 있는지 알 수 없다. 이 신호가 있어야
+    비로소 잰다. 한 세션에 백색·시료 두 번 부른다.
+    """
+    res = client.post(
+        f"{base}/api/care/measure/sessions/{session_id}/capture",
+        params={"user_id": user_id},
+    )
+    if res.status_code != 200:
+        raise SystemExit(f"측정 지시 실패 [{res.status_code}] {res.text}")
+    print(f"  [키오스크] 측정 누름 → {res.json()['status']}")
+
+
+def _wait_for_step(
     client: httpx.Client, base: str, node_id: str, headers: Dict[str, str],
     timeout_sec: int,
-) -> str:
-    """노드가 하는 일. 키오스크가 세션을 열어 줄 때까지 폴링한다."""
-    print(f"  세션 대기 중… (키오스크에서 측정을 시작하세요, 최대 {timeout_sec}초)")
+) -> tuple:
+    """
+    노드가 하는 일. 지시가 내려올 때까지 폴링한다.
+
+    세션이 열려 있어도 사용자가 아직 누르지 않았으면 step이 비어 있고,
+    그동안 노드는 아무것도 하지 않는다.
+    """
     deadline = time.time() + timeout_sec
     poll = 2
+    announced = False
     while time.time() < deadline:
         res = client.get(f"{base}/api/iot/nodes/{node_id}/session", headers=headers)
         if res.status_code != 200:
             raise SystemExit(f"세션 폴링 실패 [{res.status_code}] {res.text}")
         data = res.json()
         poll = data.get("poll_sec") or poll
-        if data.get("session_id"):
-            print(f"  세션 발견 {data['session_id']}  단계={data['step']}")
-            return data["session_id"]
+        if data.get("step"):
+            return data["session_id"], data["step"]
+        if not announced:
+            print(f"  [노드] 지시 대기 중… (최대 {timeout_sec}초)")
+            announced = True
         time.sleep(poll)
-    raise SystemExit("세션이 열리지 않아 종료합니다.")
+    raise SystemExit("측정 지시가 오지 않아 종료합니다.")
 
 
 def _post_sample(
@@ -197,37 +222,45 @@ def run_optical(args: argparse.Namespace) -> None:
     """
     광학 측정 한 번을 처음부터 끝까지 흉내 낸다.
 
-    --user/--product를 주면 키오스크 역할까지 겸해 세션을 직접 연다.
-    주지 않으면 노드 역할만 하고, 키오스크가 세션을 열어 주기를 기다린다.
+    --user/--product를 주면 키오스크 역할까지 겸해 세션을 열고 측정도 지시한다.
+    주지 않으면 노드 역할만 하고, 사람이 키오스크에서 누르기를 기다린다.
     """
     base = args.base.rstrip("/")
     headers = {"X-Node-Key": args.key} if args.key else {}
+    kiosk = bool(args.user and args.product)
 
     with httpx.Client(timeout=30) as client:
-        if args.user and args.product:
+        session_id = None
+        if kiosk:
             session_id = _open_session(
                 client, base, args.user, args.product, args.node)
         elif args.user or args.product:
             raise SystemExit("--user와 --product는 함께 주어야 합니다.")
-        else:
-            session_id = _wait_for_session(
+
+        # 백색 표준판 → 시료. 각 단계는 사용자가 키오스크에서 누를 때 시작된다.
+        for expected in ("white", "sample"):
+            if kiosk:
+                _capture(client, base, args.user, session_id)
+
+            session_id, step = _wait_for_step(
                 client, base, args.node, headers, args.wait)
+            if step != expected:
+                raise SystemExit(f"{expected} 차례인데 서버는 {step}을 요구합니다.")
 
-        # 백색 표준판 → 시료. 노드에서는 이 사이에 버튼을 한 번 더 누른다.
-        white = _white_channels()
-        ack = _post_sample(client, base, session_id, args.node, "white",
-                           white, headers)
-        if ack["status"] != "waiting_sample":
-            return
+            if step == "white":
+                channels = _white_channels()
+            else:
+                channels = _sample_channels(args.drift)
+                if args.saturate:
+                    # 포화한 측정을 흉내 낸다. 서버가 세션을 failed로 닫아야 한다.
+                    channels = {k: 65535.0 for k in channels}
 
-        sample = _sample_channels(args.drift)
-        if args.saturate:
-            # 포화한 측정을 흉내 낸다. 서버가 세션을 failed로 닫아야 한다.
-            sample = {k: 65535.0 for k in sample}
-        _post_sample(client, base, session_id, args.node, "sample",
-                     sample, headers, saturated=args.saturate)
+            ack = _post_sample(client, base, session_id, args.node, step,
+                               channels, headers, saturated=args.saturate)
+            if ack["status"] == "failed":
+                break
 
-        if not args.user:
+        if not kiosk:
             return
 
         # 키오스크가 결과를 읽는 자리.
@@ -313,7 +346,7 @@ def main() -> None:
     g.add_argument("--saturate", action="store_true",
                    help="포화한 측정을 보내 세션이 거부되는지 확인")
     g.add_argument("--wait", type=int, default=120,
-                   help="키오스크가 세션을 열 때까지 기다릴 시간(초)")
+                   help="키오스크에서 측정을 누를 때까지 기다릴 시간(초)")
 
     args = p.parse_args()
 

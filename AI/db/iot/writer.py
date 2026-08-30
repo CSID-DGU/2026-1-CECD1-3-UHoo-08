@@ -214,7 +214,11 @@ def upsert_thermal_profile(row: Dict[str, Any]) -> None:
 # 키오스크가 열고, 노드가 두 번에 나눠 채우고, 키오스크가 읽어 간다.
 
 # 아직 채워지는 중인 상태. 노드는 이 상태의 세션만 자기 일감으로 본다.
-OPEN_SESSION_STATUS = ("waiting_white", "waiting_sample")
+#
+# waiting_*   사용자가 시료를 올려놓는 중. 노드는 대기한다
+# capturing_* 키오스크에서 "측정"을 눌렀다. 노드가 폴링으로 발견해 잰다
+OPEN_SESSION_STATUS = ("waiting_white", "capturing_white",
+                       "waiting_sample", "capturing_sample")
 
 _SESSION_COLS = (
     "id, node_id, user_id, target, user_product_id, site, status, "

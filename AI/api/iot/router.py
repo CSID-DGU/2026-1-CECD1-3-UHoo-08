@@ -20,11 +20,17 @@ ESP32 노드가 Spring을 거치지 않고 직접 호출한다.
     비로소 잴 것이 생기고, 다 재면 그 결과를 기다리는 화면이 있다.
     그 한 번을 가리키는 것이 세션이다(015_create_measure_sessions).
 
-        키오스크  POST /api/care/measure/sessions   → 세션 생성
-        노드      GET  /api/iot/nodes/{id}/session  → 일감 발견, 버튼 대기
-        노드      POST .../samples  step=white      → 백색 표준판
-        노드      POST .../samples  step=sample     → 시료, 여기서 결과 확정
-        키오스크  GET  /api/care/measure/sessions/{id} → 결과 표시
+        키오스크  POST /api/care/measure/sessions        → 세션 생성
+        키오스크  POST /api/care/measure/.../capture     → "백색 올렸음, 재세요"
+        노드      GET  /api/iot/nodes/{id}/session       → 일감 발견 → 측정
+        노드      POST .../samples  step=white           → 백색 표준판
+        키오스크  POST /api/care/measure/.../capture     → "제품 올렸음, 재세요"
+        노드      POST .../samples  step=sample          → 여기서 결과 확정
+        키오스크  GET  /api/care/measure/sessions/{id}   → 결과 표시
+
+    노드는 "지금 시료가 올라와 있는지"를 알 수 없다. 그것을 아는 사람은 방금
+    손으로 올려놓은 사용자뿐이라, 사용자가 키오스크에서 누른 것이 측정 신호가
+    된다(capture). 그 전까지 노드는 세션을 보고도 아무것도 하지 않는다.
 """
 from __future__ import annotations
 
@@ -199,15 +205,25 @@ def get_latest(
 
 # ── 측정 세션 (측정 노드) ──────────────────────────────────────────
 
-# 세션 상태 → 노드가 지금 재야 할 것.
-_STEP_OF = {"waiting_white": "white", "waiting_sample": "sample"}
+# 노드가 지금 당장 재야 할 것.
+# 사용자가 키오스크에서 "측정"을 누른 뒤(capturing_*)에만 값이 있다.
+# waiting_*은 아직 시료를 올려놓는 중이므로 여기 없다.
+_ARMED_STEP = {"capturing_white": "white", "capturing_sample": "sample"}
 
 
 class NodeSession(BaseModel):
-    """노드가 폴링으로 받아 가는 일감. 없으면 status=idle."""
+    """
+    노드가 폴링으로 받아 가는 일감. 없으면 status=idle.
+
+    step이 채워져 있으면 "지금 재라"는 뜻이다. 세션이 열려 있어도 사용자가
+    아직 키오스크에서 누르지 않았으면 step은 비어 있고, 노드는 기다린다.
+    """
     session_id: Optional[str] = None
-    status: str = Field(..., description="idle | waiting_white | waiting_sample")
-    step: Optional[str] = Field(None, description="white | sample")
+    status: str = Field(
+        ..., description="idle | waiting_white | capturing_white | "
+                         "waiting_sample | capturing_sample")
+    step: Optional[str] = Field(
+        None, description="white | sample. 값이 있으면 지금 측정하라는 뜻")
     target: Optional[str] = Field(None, description="product | skin")
     poll_sec: int = Field(..., description="다음 폴링까지 권장 대기 시간(초)")
     expires_at: Optional[datetime] = None
@@ -256,9 +272,9 @@ class SampleAck(BaseModel):
     response_model=NodeSession,
     summary="측정 노드 일감 폴링",
     description=(
-        "측정 노드가 짧은 간격으로 호출한다. 키오스크가 연 세션이 있으면 "
-        "그 세션과 지금 재야 할 단계를 돌려주고, 없으면 status=idle이다. "
-        "노드는 일감이 있을 때만 버튼 입력을 받는다."
+        "측정 노드가 짧은 간격으로 호출한다. 사용자가 키오스크에서 측정을 "
+        "누른 상태면 step에 white 또는 sample이 들어오고, 노드는 그때 잰다. "
+        "세션이 열려 있어도 아직 누르지 않았으면 step은 비어 있다."
     ),
 )
 def get_node_session(
@@ -288,7 +304,7 @@ def get_node_session(
     return NodeSession(
         session_id=str(session["id"]),
         status=session["status"],
-        step=_STEP_OF.get(session["status"]),
+        step=_ARMED_STEP.get(session["status"]),
         target=session.get("target"),
         poll_sec=settings.MEASURE_POLL_SEC,
         expires_at=session.get("expires_at"),
@@ -393,13 +409,15 @@ def post_optical_sample(
             detail=f"이 세션의 노드가 아닙니다 (세션={session['node_id']})",
         )
 
-    if session["status"] not in _STEP_OF:
+    if session["status"] not in _ARMED_STEP:
+        # 아직 누르지 않았거나(waiting_*) 이미 닫힌 세션이다. 어느 쪽이든
+        # 지금 올라온 값은 사용자가 요청한 측정이 아니다.
         raise HTTPException(
             status_code=409,
-            detail=f"이미 닫힌 세션입니다 (status={session['status']})",
+            detail=f"지금은 측정할 차례가 아닙니다 (status={session['status']})",
         )
 
-    expected = _STEP_OF[session["status"]]
+    expected = _ARMED_STEP[session["status"]]
     if body.step != expected:
         raise HTTPException(
             status_code=409,
@@ -428,6 +446,9 @@ def post_optical_sample(
                 "meta": meta,
                 "status": "waiting_sample",
             })
+            # capturing_sample이 아니라 waiting_sample로 둔다. 사용자가
+            # 표준판을 치우고 제품으로 바꿔 올릴 시간이 필요하고, 다 됐다는
+            # 것은 다시 키오스크에서 누를 때 알 수 있다.
             return SampleAck(
                 session_id=session_id, status="waiting_sample",
                 next_step="sample",
