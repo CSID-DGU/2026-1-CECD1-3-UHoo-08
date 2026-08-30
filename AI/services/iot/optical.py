@@ -28,6 +28,11 @@ logger = logging.getLogger(__name__)
 # 가시광 채널만 쓴다. NIR·CLEAR는 제형보다 조명·거리에 더 크게 흔들린다.
 VISIBLE = ("F1", "F2", "F3", "F4", "F5", "F6", "F7", "F8")
 
+# 노드가 함께 보내는 진단용 채널. 비교에는 쓰지 않지만 저장은 한다.
+# CLEAR는 전체 밝기라 차광·거리가 흔들렸는지 사후에 보는 데 쓰이고,
+# NIR은 가시광 밖이라 조명이 바뀐 것인지 시료가 바뀐 것인지 가른다.
+DIAGNOSTIC = ("CLEAR", "NIR")
+
 # 광학 측정이 의미 있는 제형인지. product_thermal_profile.optical_grade와 같은 값.
 GRADE_GUIDE = {
     "suitable": (True, "색이 있는 제형이라 변화를 재기 좋습니다."),
@@ -100,3 +105,20 @@ def delta_pct(
     if not diffs:
         return None
     return round(sum(diffs) / len(diffs), 2)
+
+
+def missing_channels(channels: Optional[Dict[str, Any]]) -> List[str]:
+    """
+    비교에 필요한데 빠졌거나 숫자가 아닌 채널.
+
+    delta_pct는 채널이 하나만 살아 있어도 값을 내기 때문에, 여덟 개 중
+    두세 개만 도착해도 그럴듯한 숫자가 나온다. 전송이 깨진 것을 변화로
+    읽지 않도록 받는 쪽에서 먼저 막는다.
+    """
+    out: List[str] = []
+    for k in VISIBLE:
+        try:
+            float((channels or {})[k])
+        except (KeyError, TypeError, ValueError):
+            out.append(k)
+    return out

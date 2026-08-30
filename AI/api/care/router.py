@@ -5,8 +5,11 @@
 따라서 iot_router와 마찬가지로 /internal이 아닌 /api/care 아래에 둔다.
 
 엔드포인트:
-    GET /api/care/priority?user_id=&limit=     점검 우선순위 (탭1)
-    GET /api/care/dashboard?user_id=           노드별 현재 환경 (대기 화면·탭4)
+    GET  /api/care/priority?user_id=&limit=            점검 우선순위 (탭1)
+    GET  /api/care/dashboard?user_id=                  노드별 현재 환경 (대기 화면·탭4)
+    POST /api/care/measure/sessions?user_id=              광학 측정 시작
+    POST /api/care/measure/sessions/{id}/capture         시료를 올렸다는 신호
+    GET  /api/care/measure/sessions/{id}?user_id=        측정 진행·결과 조회
 """
 from __future__ import annotations
 
@@ -18,6 +21,7 @@ from typing import Any, Dict, List, Optional
 from fastapi import APIRouter, HTTPException, Query
 from pydantic import BaseModel, Field
 
+from config import settings
 from db.iot.reader import (
     get_care_products, get_readings, get_reading_span,
     get_thermal_profiles, list_nodes,
@@ -32,8 +36,10 @@ from db.product_reader import (
 )
 from db.iot.skin_reader import get_skin_measurements
 from db.iot.writer import (
-    discard_user_product, get_latest_reading, get_optical_baseline,
-    insert_optical, insert_user_product, update_user_product,
+    OPEN_SESSION_STATUS,
+    create_measure_session, discard_user_product, get_latest_reading,
+    get_measure_session, get_optical_baseline, insert_optical,
+    insert_user_product, update_measure_session, update_user_product,
     upsert_thermal_profile,
 )
 from services.iot.care_rules import _josa, build_brief, compare_indoor
@@ -1345,7 +1351,9 @@ class OpticalResponse(BaseModel):
     summary="색 측정 기록 (AS7341)",
     description=(
         "첫 측정은 기준값이 되고, 이후 측정은 그 기준과 비교한 변화율을 낸다. "
-        "변화율만 돌려주며 상했는지 여부는 판정하지 않는다."
+        "변화율만 돌려주며 상했는지 여부는 판정하지 않는다.\n\n"
+        "채널값을 이미 손에 쥔 쪽(시드 스크립트·테스트)이 직접 기록할 때 쓴다. "
+        "측정 노드로 재는 경로는 POST /api/care/measure/sessions다."
     ),
 )
 def post_optical(
@@ -1390,6 +1398,288 @@ def post_optical(
         baseline=False, delta_pct=delta,
         message=f"처음 잰 색과 {delta:.1f}% 다릅니다.",
     )
+
+
+# ── 측정 세션 (키오스크) ──────────────────────────────────────────
+#
+# 위의 /optical은 채널값을 이미 손에 쥔 쪽이 부르는 것이다. 키오스크는
+# 센서를 읽을 수 없어 그 값을 만들 수 없다. 측정 노드가 대신 재는데,
+# 노드에는 화면도 입력도 없어서 "지금 무엇을 재라"를 알려줄 방법이 필요하다.
+# 그 약속이 세션이다. 키오스크가 열고, 노드가 채우고, 키오스크가 읽는다.
+#
+# 흐름과 노드 쪽 엔드포인트는 api/iot/router.py 상단에 정리해 두었다.
+
+# 상태별 화면 문구. done·failed는 세션에 남은 message를 그대로 쓴다.
+_MEASURE_PROMPT = {
+    "waiting_white": "백색 표준판을 측정부에 올린 뒤 측정을 눌러 주세요.",
+    "capturing_white": "백색 기준을 재고 있습니다. 그대로 두세요.",
+    "waiting_sample": "제품을 측정부에 올린 뒤 측정을 눌러 주세요.",
+    "capturing_sample": "제품을 재고 있습니다. 그대로 두세요.",
+    "expired": "측정 시간이 지났습니다. 다시 시작해 주세요.",
+    "cancelled": "측정을 취소했습니다.",
+}
+
+# 화면이 어느 단계를 안내해야 하는지. 누르기 전과 재는 중이 같은 단계다.
+_STAGE = {
+    "waiting_white": "white", "capturing_white": "white",
+    "waiting_sample": "sample", "capturing_sample": "sample",
+}
+
+# 사용자가 눌러야 진행되는 상태 → 눌렀을 때 넘어갈 상태.
+_ARM = {"waiting_white": "capturing_white",
+        "waiting_sample": "capturing_sample"}
+
+
+class MeasureStartRequest(BaseModel):
+    user_product_id: str
+    # 측정 노드가 여러 대일 때만 지정한다. 비우면 사용자의 measure 노드를 쓴다.
+    node_id: Optional[str] = None
+
+
+class MeasureSessionResponse(BaseModel):
+    session_id: str
+    status: str = Field(
+        ..., description="waiting_white | waiting_sample | done | failed | "
+                         "expired | cancelled")
+    step: Optional[str] = Field(
+        None, description="지금 다루는 단계: white | sample")
+    # 노드가 재고 있는 중인지. 화면이 버튼을 감추고 기다리게 하는 신호다.
+    capturing: bool = False
+    # 사용자가 "측정"을 눌러야 다음으로 넘어가는 상태인지.
+    awaiting_tap: bool = False
+    node_id: str
+    node_label: Optional[str] = None
+    user_product_id: Optional[str] = None
+    # 결과. done일 때만 채워진다.
+    baseline: Optional[bool] = Field(
+        None, description="이번 측정이 기준값이 되었는지")
+    delta_pct: Optional[float] = None
+    message: str
+    poll_sec: int = Field(..., description="다음 조회까지 권장 대기 시간(초)")
+    expires_at: Optional[datetime] = None
+
+
+class MeasureStartResponse(MeasureSessionResponse):
+    # 시작 화면이 "이번이 첫 측정입니다"를 미리 말할 수 있게 한다.
+    # 첫 측정은 비교 대상이 없어 결과 화면이 다르다.
+    has_baseline: bool
+    optical_note: str = Field(..., description="이 제형을 색으로 재는 것의 한계")
+
+
+def _measure_node(user_id: str, node_id: Optional[str]) -> Dict[str, Any]:
+    """
+    측정을 맡길 노드. 없으면 409로 끊는다.
+
+    404가 아니라 409인 이유: 요청한 자원이 없는 것이 아니라 측정할 장비가
+    아직 연결되지 않은 상태다. 화면이 "노드를 먼저 연결하세요"라고 말할 수
+    있어야 한다.
+    """
+    try:
+        nodes = list_nodes()
+    except Exception:
+        logger.exception("노드 조회 실패 user_id=%s", user_id)
+        raise HTTPException(status_code=500, detail="노드를 조회하지 못했습니다")
+
+    mine = [n for n in nodes
+            if n.get("node_type") == "measure" and n.get("user_id") == user_id]
+
+    if node_id:
+        found = next((n for n in mine if n["node_id"] == node_id), None)
+        if found is None:
+            raise HTTPException(
+                status_code=404, detail=f"측정 노드가 아닙니다: {node_id}")
+        return found
+
+    if not mine:
+        raise HTTPException(
+            status_code=409,
+            detail="연결된 측정 노드가 없습니다. iot_nodes에 measure 노드를 등록하세요.",
+        )
+    return mine[0]
+
+
+def _session_view(
+    session: Dict[str, Any], node_label: Optional[str] = None
+) -> MeasureSessionResponse:
+    status = session["status"]
+    message = _MEASURE_PROMPT.get(status) or session.get("message") or "측정 중입니다."
+    return MeasureSessionResponse(
+        session_id=str(session["id"]),
+        status=status,
+        step=_STAGE.get(status),
+        capturing=status.startswith("capturing_"),
+        awaiting_tap=status in _ARM,
+        node_id=session["node_id"],
+        node_label=node_label,
+        user_product_id=(str(session["user_product_id"])
+                         if session.get("user_product_id") else None),
+        baseline=session.get("baseline"),
+        delta_pct=session.get("delta_pct"),
+        message=message,
+        poll_sec=settings.MEASURE_POLL_SEC,
+        expires_at=session.get("expires_at"),
+    )
+
+
+@router.post(
+    "/measure/sessions",
+    response_model=MeasureStartResponse,
+    summary="광학 측정 시작",
+    description=(
+        "측정 노드에 이 제품을 재라고 알린다. 세션이 열려 있는 동안 노드는 "
+        "버튼 입력을 받고, 백색 표준판 → 시료 순서로 두 번 전송한다. "
+        "색으로 잴 수 없는 제형이면 열지 않고 그 사유를 돌려준다."
+    ),
+)
+def start_measure_session(
+    body: MeasureStartRequest,
+    user_id: str = Query(..., description="예선 한정. 본선에서는 토큰에서 추출한다."),
+) -> MeasureStartResponse:
+    try:
+        products = get_care_products(user_id)
+    except Exception:
+        logger.exception("보유 제품 조회 실패 user_id=%s", user_id)
+        raise HTTPException(status_code=500, detail="측정을 시작하지 못했습니다")
+
+    item = next((p for p in products
+                 if str(p.get("user_product_id")) == str(body.user_product_id)),
+                None)
+    if item is None:
+        raise HTTPException(status_code=404, detail="등록한 제품이 아닙니다")
+
+    # 투명한 제형은 재봐야 조명 잡음만 남는다. 측정을 시켜 놓고 나중에
+    # 그 숫자를 근거처럼 보여주는 것이 더 나쁘므로 시작 전에 끊는다.
+    recommended, note = should_measure(item.get("optical_grade"))
+    if not recommended:
+        raise HTTPException(status_code=422, detail=note)
+
+    node = _measure_node(user_id, body.node_id)
+
+    try:
+        session = create_measure_session(
+            node["node_id"],
+            user_id=user_id,
+            target="product",
+            user_product_id=body.user_product_id,
+            ttl_sec=settings.MEASURE_SESSION_TTL_SEC,
+        )
+        has_base = bool(get_optical_baseline(body.user_product_id))
+    except Exception:
+        logger.exception("측정 세션 생성 실패 user_product_id=%s",
+                         body.user_product_id)
+        raise HTTPException(status_code=500, detail="측정을 시작하지 못했습니다")
+
+    view = _session_view(session, node.get("location_label"))
+    return MeasureStartResponse(
+        **view.model_dump(), has_baseline=has_base, optical_note=note)
+
+
+@router.get(
+    "/measure/sessions/{session_id}",
+    response_model=MeasureSessionResponse,
+    summary="측정 진행·결과 조회",
+    description=(
+        "키오스크가 측정이 끝날 때까지 짧은 간격으로 부른다. status가 "
+        "waiting_*이면 아직 진행 중이고, done이면 결과가 함께 온다. "
+        "변화율까지만 말하며 변질 여부는 판정하지 않는다."
+    ),
+)
+def get_measure_session_status(
+    session_id: str,
+    user_id: str = Query(..., description="예선 한정. 본선에서는 토큰에서 추출한다."),
+) -> MeasureSessionResponse:
+    try:
+        session = get_measure_session(session_id)
+    except Exception:
+        logger.exception("측정 세션 조회 실패 session_id=%s", session_id)
+        raise HTTPException(status_code=500, detail="측정 상태를 확인하지 못했습니다")
+
+    if session is None:
+        raise HTTPException(status_code=404, detail="없는 측정 세션입니다")
+    if str(session.get("user_id")) != str(user_id):
+        raise HTTPException(status_code=404, detail="없는 측정 세션입니다")
+
+    return _session_view(session)
+
+
+@router.post(
+    "/measure/sessions/{session_id}/capture",
+    response_model=MeasureSessionResponse,
+    summary="측정 지시",
+    description=(
+        "시료를 올려놓았다는 신호. 이것을 받아야 노드가 잰다.\n\n"
+        "노드는 측정부에 무엇이 올라와 있는지 알 수 없다. 그것을 아는 사람은 "
+        "방금 손으로 올려놓은 사용자뿐이라, 화면에서 누른 것이 측정 신호가 "
+        "된다. 백색 표준판과 제품에 각각 한 번씩, 한 세션에 두 번 부른다."
+    ),
+)
+def capture_measure_session(
+    session_id: str,
+    user_id: str = Query(..., description="예선 한정. 본선에서는 토큰에서 추출한다."),
+) -> MeasureSessionResponse:
+    try:
+        session = get_measure_session(session_id)
+    except Exception:
+        logger.exception("측정 세션 조회 실패 session_id=%s", session_id)
+        raise HTTPException(status_code=500, detail="측정을 지시하지 못했습니다")
+
+    if session is None or str(session.get("user_id")) != str(user_id):
+        raise HTTPException(status_code=404, detail="없는 측정 세션입니다")
+
+    status = session["status"]
+
+    # 이미 재고 있으면 그대로 둔다. 화면을 두 번 눌렀다고 해서 방금 시작한
+    # 측정을 취소하거나 두 번 재게 만들 이유가 없다.
+    if status.startswith("capturing_"):
+        return _session_view(session)
+
+    if status not in _ARM:
+        raise HTTPException(
+            status_code=409,
+            detail=f"측정할 수 있는 상태가 아닙니다 (status={status})",
+        )
+
+    try:
+        updated = update_measure_session(session_id, {"status": _ARM[status]})
+    except Exception:
+        logger.exception("측정 지시 실패 session_id=%s", session_id)
+        raise HTTPException(status_code=500, detail="측정을 지시하지 못했습니다")
+
+    return _session_view(updated or dict(session, status=_ARM[status]))
+
+
+@router.delete(
+    "/measure/sessions/{session_id}",
+    status_code=204,
+    summary="측정 취소",
+    description=(
+        "측정 화면에서 뒤로 나갈 때 부른다. 세션을 닫지 않으면 노드가 "
+        "시한이 다 될 때까지 그 세션을 붙들고 있어 다음 측정을 시작할 수 없다."
+    ),
+)
+def cancel_measure_session(
+    session_id: str,
+    user_id: str = Query(..., description="예선 한정. 본선에서는 토큰에서 추출한다."),
+) -> None:
+    try:
+        session = get_measure_session(session_id)
+    except Exception:
+        logger.exception("측정 세션 조회 실패 session_id=%s", session_id)
+        raise HTTPException(status_code=500, detail="측정을 취소하지 못했습니다")
+
+    if session is None or str(session.get("user_id")) != str(user_id):
+        raise HTTPException(status_code=404, detail="없는 측정 세션입니다")
+
+    # 이미 끝난 세션이면 그냥 둔다. 끝난 측정의 결과를 지울 이유가 없다.
+    if session["status"] not in OPEN_SESSION_STATUS:
+        return
+
+    try:
+        update_measure_session(session_id, {
+            "status": "cancelled", "message": "측정을 취소했습니다."})
+    except Exception:
+        logger.exception("측정 세션 취소 실패 session_id=%s", session_id)
+        raise HTTPException(status_code=500, detail="측정을 취소하지 못했습니다")
 
 
 @router.delete(

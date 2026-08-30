@@ -39,6 +39,13 @@ class Settings(BaseSettings):
     IOT_API_KEY: str = ""          # 비어 있으면 인증 생략 (개발용)
     IOT_MAX_BATCH: int = 288       # 10분 주기 × 2일치
 
+    # 측정 세션이 열린 채로 유지되는 시간.
+    # 사람이 백색 표준판을 올리고 시료로 바꿔 다시 재는 데 걸리는 시간이며,
+    # 도중에 자리를 뜬 세션이 노드를 계속 붙잡고 있지 않게 하는 상한이기도 하다.
+    MEASURE_SESSION_TTL_SEC: int = 300
+    # 측정 노드가 "내 일감 있나"를 묻는 간격. 펌웨어와 맞춰 둔다.
+    MEASURE_POLL_SEC: int = 2
+
     # 기상청 단기예보 (공공데이터포털)
     KMA_SERVICE_KEY: str = ""
 
