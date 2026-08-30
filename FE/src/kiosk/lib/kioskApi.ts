@@ -51,6 +51,23 @@ export class KioskApiError extends Error {
     if (this.status === null) return `연결 실패 — ${this.message}`;
     return `HTTP ${this.status}`;
   }
+
+  /**
+   * FastAPI가 HTTPException에 담아 보낸 사람이 읽을 문장.
+   *
+   * 4xx는 대부분 서버가 이유를 문장으로 적어 보낸다("연결된 측정 노드가
+   * 없습니다" 같은 것). 그 문장이 body 안에 갇혀 있으면 화면에는 "HTTP 409"만
+   * 뜨고, 정작 무엇을 하라는 것인지 알 수 없다.
+   */
+  get detail(): string | null {
+    if (!this.body) return null;
+    try {
+      const parsed = JSON.parse(this.body) as { detail?: unknown };
+      return typeof parsed.detail === "string" ? parsed.detail : null;
+    } catch {
+      return null;
+    }
+  }
 }
 
 export async function kioskGet<T>(
@@ -96,6 +113,50 @@ export async function kioskGet<T>(
     return JSON.parse(text) as T;
   } catch {
     throw new KioskApiError("JSON 파싱 실패", href, res.status, text.slice(0, 500));
+  }
+}
+
+/**
+ * DELETE 요청. 본문 없는 204를 정상으로 본다.
+ *
+ * 측정 화면에서 뒤로 나갈 때 세션을 닫는 데 쓴다. 닫지 않으면 노드가
+ * 시한이 다 될 때까지 그 세션을 붙들고 있어 다음 측정을 시작할 수 없다.
+ */
+export async function kioskDelete(
+  path: string,
+  params: Record<string, string | number | boolean | undefined> = {}
+): Promise<void> {
+  const url = new URL(API_BASE + path);
+  for (const [k, v] of Object.entries(params)) {
+    if (v !== undefined) url.searchParams.set(k, String(v));
+  }
+  const href = url.toString();
+
+  const controller = new AbortController();
+  const timer = window.setTimeout(() => controller.abort(), TIMEOUT_MS);
+
+  let res: Response;
+  try {
+    res = await fetch(href, {
+      method: "DELETE",
+      headers: { Accept: "application/json" },
+      signal: controller.signal,
+    });
+  } catch (e) {
+    const msg =
+      e instanceof Error
+        ? e.name === "AbortError"
+          ? `응답 없음 (${TIMEOUT_MS / 1000}초 초과)`
+          : `${e.name}: ${e.message}`
+        : String(e);
+    throw new KioskApiError(msg, href, null);
+  } finally {
+    window.clearTimeout(timer);
+  }
+
+  if (!res.ok) {
+    const text = await res.text();
+    throw new KioskApiError(res.statusText || "요청 실패", href, res.status, text.slice(0, 500));
   }
 }
 

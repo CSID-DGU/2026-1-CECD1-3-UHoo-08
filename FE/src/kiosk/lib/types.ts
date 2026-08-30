@@ -368,3 +368,50 @@ export type InspectionResponse = {
   /** 점검 목록에 표시할 짧은 항목명 */
   findings: string[];
 };
+// ── 측정 세션 (/api/care/measure/sessions) ───────────────────
+//
+// 키오스크는 센서를 읽을 수 없고 측정 노드에는 화면이 없다. 둘이 "지금
+// 이 한 번의 측정"을 같이 가리키는 것이 세션이다. 키오스크가 열고, 노드가
+// 두 번에 나눠 채우고(백색 표준판 → 시료), 키오스크가 읽어 간다.
+//
+// 상태가 waiting_*와 capturing_*로 갈라지는 이유: 노드는 측정부에 무엇이
+// 올라와 있는지 알 수 없다. 사용자가 화면에서 "측정"을 눌러야(capture)
+// 비로소 잰다. 그 전에 재면 아무것도 없는 측정부를 잰다.
+
+export type MeasureStatus =
+  | "waiting_white"
+  | "capturing_white"
+  | "waiting_sample"
+  | "capturing_sample"
+  | "done"
+  | "failed"
+  | "expired"
+  | "cancelled";
+
+export type MeasureSession = {
+  session_id: string;
+  status: MeasureStatus;
+  /** 지금 다루는 단계. 누르기 전과 재는 중이 같은 단계다. */
+  step: "white" | "sample" | null;
+  /** 노드가 재고 있는 중. 화면은 버튼을 감추고 기다린다. */
+  capturing: boolean;
+  /** 사용자가 눌러야 다음으로 넘어가는 상태. */
+  awaiting_tap: boolean;
+  node_id: string;
+  node_label: string | null;
+  user_product_id: string | null;
+  /** done일 때만. 이번 측정이 기준값이 되었는지. */
+  baseline: boolean | null;
+  /** done이고 기준값이 아닐 때만. 처음 잰 색과의 차이(%). */
+  delta_pct: number | null;
+  message: string;
+  poll_sec: number;
+  expires_at: string | null;
+};
+
+export type MeasureStartResponse = MeasureSession & {
+  /** 이미 기준값이 있는지. 첫 측정이면 결과 화면이 달라진다. */
+  has_baseline: boolean;
+  /** 이 제형을 색으로 재는 것의 한계 한 줄. 서버가 만든다. */
+  optical_note: string;
+};

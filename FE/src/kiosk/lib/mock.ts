@@ -168,7 +168,12 @@ const mockPriority: PriorityResponse = {
       score: 20 - i,
       band: "low" as const,
       reasons: ["개봉 2개월", "일반 성분(k 1)"],
-      detail: { measured_hours: 552, assumed_hours: 800, excursion_events: 0 },
+      detail: {
+        measured_hours: 552, assumed_hours: 800, excursion_events: 0,
+        // 하나는 투명 제형으로 둔다. 색으로 잴 수 없는 제품을 골랐을 때
+        // 측정 화면이 사유를 안내하고 멈추는지 목업에서도 확인해야 한다.
+        optical_grade: i === 0 ? "unsuitable" : "suitable",
+      },
     })),
   ],
   skipped: [
@@ -327,6 +332,7 @@ export function mockFor(
     };
   }
   if (path.startsWith("/api/care/events")) return mockEvents;
+  if (path.startsWith("/api/care/measure/sessions/")) return mockMeasureSession();
   const m = /\/api\/care\/products\/([^/]+)\/protocol/.exec(path);
   // 목업도 제품마다 다른 값을 준다. 하나로 고정하면 다른 제품을 골라도
   // 같은 화면이 나와 연결이 잘못된 것처럼 보인다.
@@ -405,6 +411,10 @@ const mockProtocolBase = {
  */
 export function mockPostFor(path: string, body: unknown): unknown | null {
   const answer = (body as { answer?: string } | null)?.answer;
+
+  if (path.startsWith("/api/care/measure/sessions")) {
+    return mockMeasurePost(path, body);
+  }
 
   if (/\/api\/care\/events\/\d+\/answer$/.test(path)) {
     const external = answer === "external_source";
@@ -498,5 +508,130 @@ function mockProtocolFor(id: string) {
     note: clear
       ? "투명 제형은 광학 측정 대상이 아닙니다. 감각으로 확인해 주세요."
       : mockProtocolBase.note,
+  };
+}
+
+// ── 측정 세션 ────────────────────────────────────────────────
+//
+// 노드 없이 화면 흐름을 끝까지 보기 위한 것이다. 실제로는 사용자가
+// "측정"을 누르면 노드가 폴링으로 그것을 발견해 재는데, 목업에는 노드가
+// 없으므로 잠깐 뒤 스스로 다음 상태로 넘어간다. 그 사이 화면은 실제와
+// 똑같이 "재는 중" 상태를 보여준다.
+
+const MOCK_CAPTURE_MS = 1800;
+
+type MockMeasure = {
+  session_id: string;
+  status: string;
+  user_product_id: string;
+  /** 이 시각이 지나면 다음 상태로 넘어간다. 노드가 재는 데 걸리는 시간. */
+  advanceAt: number | null;
+  baseline: boolean | null;
+  delta_pct: number | null;
+  message: string;
+};
+
+let measure: MockMeasure | null = null;
+
+/** 기준값을 이미 잡은 제품. 두 번째 측정부터 변화율이 나오는 것을 보여준다. */
+const measured = new Set<string>();
+
+export function mockClearMeasure(): void {
+  measure = null;
+}
+
+const MEASURE_MESSAGE: Record<string, string> = {
+  waiting_white: "백색 표준판을 측정부에 올린 뒤 측정을 눌러 주세요.",
+  capturing_white: "백색 기준을 재고 있습니다. 그대로 두세요.",
+  waiting_sample: "제품을 측정부에 올린 뒤 측정을 눌러 주세요.",
+  capturing_sample: "제품을 재고 있습니다. 그대로 두세요.",
+};
+
+/** 노드가 다 쟀을 시간이 지났으면 상태를 넘긴다. 조회할 때마다 확인한다. */
+function advance(): void {
+  if (!measure || measure.advanceAt === null) return;
+  if (Date.now() < measure.advanceAt) return;
+
+  measure.advanceAt = null;
+
+  if (measure.status === "capturing_white") {
+    measure.status = "waiting_sample";
+    measure.message = MEASURE_MESSAGE.waiting_sample;
+    return;
+  }
+
+  if (measure.status === "capturing_sample") {
+    const first = !measured.has(measure.user_product_id);
+    measured.add(measure.user_product_id);
+    measure.status = "done";
+    measure.baseline = first;
+    measure.delta_pct = first ? null : Math.round((3 + Math.random() * 6) * 10) / 10;
+    measure.message = first
+      ? "첫 색을 기록했습니다. 다음 측정부터 이 값과 비교합니다."
+      : `처음 잰 색과 ${measure.delta_pct}% 다릅니다.`;
+  }
+}
+
+function view(): unknown {
+  if (!measure) return null;
+  const s = measure.status;
+  return {
+    session_id: measure.session_id,
+    status: s,
+    step: s.endsWith("_white") ? "white" : s.endsWith("_sample") ? "sample" : null,
+    capturing: s.startsWith("capturing_"),
+    awaiting_tap: s === "waiting_white" || s === "waiting_sample",
+    node_id: "measure-01",
+    node_label: "휴대형",
+    user_product_id: measure.user_product_id,
+    baseline: measure.baseline,
+    delta_pct: measure.delta_pct,
+    message: measure.message,
+    poll_sec: 2,
+    expires_at: iso(5),
+  };
+}
+
+function mockMeasureSession(): unknown | null {
+  advance();
+  return view();
+}
+
+function mockMeasurePost(path: string, body: unknown): unknown | null {
+  if (path.endsWith("/capture")) {
+    advance();
+    if (!measure) return null;
+    if (measure.status === "waiting_white" || measure.status === "waiting_sample") {
+      measure.status = measure.status.replace("waiting", "capturing");
+      measure.message = MEASURE_MESSAGE[measure.status];
+      measure.advanceAt = Date.now() + MOCK_CAPTURE_MS;
+    }
+    return view();
+  }
+
+  const upid = (body as { user_product_id?: string } | null)?.user_product_id ?? "m1";
+
+  // 투명 제형은 서버가 422로 끊는다. 목업에서도 그 화면을 볼 수 있어야 한다.
+  const item = mockPriority.items.find((i) => i.user_product_id === upid);
+  const grade = (item?.detail?.optical_grade as string | undefined) ?? "suitable";
+  if (grade === "unsuitable") return null;
+
+  measure = {
+    session_id: `mock-${Date.now()}`,
+    status: "waiting_white",
+    user_product_id: upid,
+    advanceAt: null,
+    baseline: null,
+    delta_pct: null,
+    message: MEASURE_MESSAGE.waiting_white,
+  };
+
+  return {
+    ...(view() as Record<string, unknown>),
+    has_baseline: measured.has(upid),
+    optical_note:
+      grade === "conditional"
+        ? "반투명 제형이라 변화가 작게 나올 수 있습니다."
+        : "색이 있는 제형이라 변화를 재기 좋습니다.",
   };
 }
