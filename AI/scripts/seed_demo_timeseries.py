@@ -370,6 +370,19 @@ def build_skin(user_id: str, days: int, end: datetime,
     return out
 
 
+# 시드가 쓰는 백색 기준.
+#
+# 실제 AS7341로 흰 판을 재면 이렇게 평평하게 나오지 않는다. LED 스펙트럼과
+# 채널별 감도가 달라 채널마다 몇 배씩 차이가 난다. 이 값은 어디까지나
+# 시연용으로 지어낸 숫자다.
+#
+# 그래서 이 상수는 "시드가 만든 행"을 알아보는 표식이기도 하다.
+# reset_demo_state가 이것으로 시드 행과 실측을 가른다.
+SEED_WHITE_REF = {"F1": 4102, "F2": 4230, "F3": 4180, "F4": 4225,
+                  "F5": 4260, "F6": 4198, "F7": 4176, "F8": 4133,
+                  "CLEAR": 12480, "NIR": 3920}
+
+
 def build_optical(products: List[Dict[str, Any]], end: datetime,
                   rng: random.Random) -> Dict[str, List[Dict[str, Any]]]:
     """
@@ -406,9 +419,7 @@ def build_optical(products: List[Dict[str, Any]], end: datetime,
                              * (1 + rng.gauss(0, 0.004)), 1)
                     for k, v in base.items()}
 
-        white = {"F1": 4102, "F2": 4230, "F3": 4180, "F4": 4225,
-                 "F5": 4260, "F6": 4198, "F7": 4176, "F8": 4133,
-                 "CLEAR": 12480, "NIR": 3920}
+        white = dict(SEED_WHITE_REF)
 
         baselines.append({
             "user_product_id": p["user_product_id"],
