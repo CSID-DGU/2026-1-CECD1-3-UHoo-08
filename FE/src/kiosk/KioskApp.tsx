@@ -7,6 +7,7 @@ import { RecoScreen } from "./RecoScreen";
 import { EnvScreen, readSavedRegion } from "./EnvScreen";
 import { EventsScreen } from "./EventsScreen";
 import { ProtocolScreen } from "./ProtocolScreen";
+import { MeasureScreen, type MeasureTarget } from "./MeasureScreen";
 import { ProductPicker, toPickerProduct } from "./ProductPicker";
 import { TabBar, TopBar, type TabKey } from "./ui";
 import { KIOSK_USER_ID } from "./lib/kioskApi";
@@ -64,7 +65,12 @@ const EVENTS_INTERVAL_MS = 5 * 60_000;
 
 export function KioskApp() {
   const [screen, setScreen] = useState<ScreenKey>("idle");
-  const [target, setTarget] = useState<PriorityItem | null>(null);
+  // 측정할 제품. 점검 목록에서 고르거나 확인 절차의 색 항목에서 넘어온다.
+  const [target, setTarget] = useState<MeasureTarget | null>(null);
+  // 측정을 마치고 돌아갈 곳. 확인 절차 도중에 재러 왔다면 그리로 돌아가야
+  // 하고, 점검 목록에서 왔다면 목록으로 가야 한다. 하나로 고정하면 확인
+  // 절차가 중간에 끊긴다.
+  const [measureBack, setMeasureBack] = useState<ScreenKey>("priority");
   /**
    * 확인 결과 이상이 발견되어 대체품을 보러 넘어온 제품.
    *
@@ -183,10 +189,8 @@ export function KioskApp() {
           products={(priority.data?.items ?? []).map(toPickerProduct)}
           onPick={(ids) => {
             setPickingMeasure(false);
-            const found = priority.data?.items.find(
-              (i) => i.user_product_id === ids[0]
-            );
-            if (found) setTarget(found);
+            setTarget(toMeasureTarget(priority.data?.items ?? [], ids[0]));
+            setMeasureBack("priority");
             setScreen("measure");
           }}
           onClose={() => setPickingMeasure(false)}
@@ -300,7 +304,12 @@ export function KioskApp() {
             priority.refetch();
             setScreen(protocolBack);
           }}
-          onMeasure={() => setScreen("measure")}
+          onMeasure={(id) => {
+            // 확인 절차 도중에 색을 재러 간다. 재고 나면 절차로 돌아온다.
+            setTarget(toMeasureTarget(priority.data?.items ?? [], id));
+            setMeasureBack("protocol");
+            setScreen("measure");
+          }}
         />
       ) : screen === "protocol" ? (
         // target이 비어 있는데 protocol로 온 경우. 원래는 일어나지 않지만
@@ -315,18 +324,21 @@ export function KioskApp() {
           detail="점검 목록에서 제품을 눌러 주세요."
         />
       ) : screen === "measure" ? (
-        <Pending
-          title="광학 측정"
-          back="← 점검 우선순위"
-          onBack={() => setScreen("priority")}
+        <MeasureScreen
+          // key를 주어 제품이 바뀌면 세션 상태가 초기화된다.
+          // 없으면 앞 제품의 결과 화면이 그대로 남는다.
+          key={target?.user_product_id ?? "none"}
+          target={target}
           activeTab={activeTab}
           onTab={setScreen}
-          note={
-            target
-              ? `${target.name ?? "선택한 제품"} 측정 흐름은 다음 단계에서 구현합니다.`
-              : "측정 흐름은 다음 단계에서 구현합니다."
-          }
-          detail="백색 표준판으로 기준을 잡고 → 측정 → 확인 항목 안내 → 사용자 피드백 순으로 네 화면이 필요합니다. AS7341 재장착 반복성을 더 낮춘 뒤에 붙입니다."
+          backLabel={measureBack === "protocol" ? "확인 절차" : "점검 우선순위"}
+          onBack={() => {
+            // 색 변화는 점검 순위의 근거 중 하나다. 재고 나면 순위가
+            // 달라질 수 있으므로 목록을 다시 부른다. 폴링을 기다리면
+            // 방금 잰 결과가 반영되지 않은 목록을 본다.
+            priority.refetch();
+            setScreen(measureBack);
+          }}
         />
       ) : screen === "skinRun" ? (
         <Pending
@@ -351,6 +363,25 @@ export function KioskApp() {
       )}
     </KioskFrame>
   );
+}
+
+/**
+ * 점검 목록의 항목에서 측정 화면이 필요한 것만 뽑는다.
+ *
+ * optical_grade는 제품 자체의 성질이라 목록에 이미 실려 온다. 측정 화면이
+ * 그 값을 따로 조회하지 않아도 되도록 여기서 함께 넘긴다.
+ *
+ * 목록에 없는 제품(점수를 못 낸 것 등)이라도 색은 잴 수 있다. 그때는
+ * 등급을 모르는 채로 넘기고, 잴 수 있는지는 서버가 판단한다.
+ */
+function toMeasureTarget(items: PriorityItem[], id: string): MeasureTarget {
+  const found = items.find((i) => i.user_product_id === id);
+  return {
+    user_product_id: id,
+    name: found?.name ?? null,
+    brand: found?.brand ?? null,
+    optical_grade: (found?.detail.optical_grade as string | null) ?? null,
+  };
 }
 
 /**

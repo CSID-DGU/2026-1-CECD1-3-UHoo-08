@@ -1,5 +1,6 @@
-import { kioskGet, kioskPost, KioskApiError } from "./kioskApi";
-import { MOCK_ENABLED, mockFor, mockPostFor } from "./mock";
+import { kioskDelete, kioskGet, kioskPost, KioskApiError, KIOSK_USER_ID } from "./kioskApi";
+import { MOCK_ENABLED, mockClearMeasure, mockFor, mockPostFor } from "./mock";
+import type { MeasureSession, MeasureStartResponse } from "./types";
 
 /**
  * 화면이 쓰는 조회 함수.
@@ -50,3 +51,52 @@ export async function carePost<T>(
   }
   return kioskPost<T>(path, body, params);
 }
+/**
+ * DELETE 요청. 목업 모드에서는 서버에 보내지 않고 상태만 지운다.
+ */
+export async function careDelete(
+  path: string,
+  params: Record<string, string | number | boolean | undefined> = {}
+): Promise<void> {
+  if (MOCK_ENABLED) {
+    mockClearMeasure();
+    await new Promise((r) => setTimeout(r, 150));
+    return;
+  }
+  return kioskDelete(path, params);
+}
+
+// ── 측정 세션 ────────────────────────────────────────────────
+//
+// 네 호출이 한 번의 측정을 이룬다.
+//
+//   start   측정 노드에 이 제품을 재라고 알린다
+//   capture "올려놓았으니 재세요" — 백색 표준판과 제품에 한 번씩, 두 번
+//   status  노드가 채워 넣는 동안 짧은 간격으로 본다
+//   cancel  도중에 나갈 때. 닫지 않으면 노드가 시한까지 세션을 붙들고 있다
+
+const MEASURE_BASE = "/api/care/measure/sessions";
+
+export const measureApi = {
+  start: (userProductId: string) =>
+    carePost<MeasureStartResponse>(
+      MEASURE_BASE,
+      { user_product_id: userProductId },
+      { user_id: KIOSK_USER_ID }
+    ),
+
+  capture: (sessionId: string) =>
+    carePost<MeasureSession>(
+      `${MEASURE_BASE}/${sessionId}/capture`,
+      {},
+      { user_id: KIOSK_USER_ID }
+    ),
+
+  status: (sessionId: string) =>
+    careGet<MeasureSession>(`${MEASURE_BASE}/${sessionId}`, {
+      user_id: KIOSK_USER_ID,
+    }),
+
+  cancel: (sessionId: string) =>
+    careDelete(`${MEASURE_BASE}/${sessionId}`, { user_id: KIOSK_USER_ID }),
+};
