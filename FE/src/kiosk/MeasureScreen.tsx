@@ -1,7 +1,6 @@
-import { useCallback, useEffect, useState } from "react";
-import { TopBar, TabBar, STATUS, type TabKey } from "./ui";
+import { TopBar, TabBar, MeasureError, STATUS, type TabKey } from "./ui";
 import { measureApi } from "./lib/careApi";
-import { API_BASE, API_BASE_FROM_ENV, KioskApiError } from "./lib/kioskApi";
+import { useMeasureSession, type MeasurePhase } from "./lib/useMeasureSession";
 import type { MeasureSession, MeasureStartResponse } from "./lib/types";
 
 /**
@@ -43,18 +42,6 @@ const GRADE_NOTE: Record<string, string> = {
   unsuitable: "투명한 제형이라 색으로는 변화를 재기 어렵습니다.",
 };
 
-/** 더 이상 바뀌지 않는 상태. 여기 닿으면 폴링을 멈춘다. */
-const TERMINAL = ["done", "failed", "expired", "cancelled"] as const;
-
-/**
- * 노드가 이 시간 안에 답하지 않으면 무언가 잘못된 것이다.
- *
- * 한 번 재는 데 걸리는 시간은 적분 약 0.6초에 폴링 간격을 더해도 5초를
- * 넘지 않는다. 그보다 오래 걸리면 노드가 꺼져 있거나 Wi-Fi가 끊긴 것이다.
- * 세션 시한(5분)까지 기다리게 두면 사용자는 5분 동안 도는 표시만 본다.
- */
-const STALL_SEC = 15;
-
 export type MeasureTarget = {
   user_product_id: string;
   name: string | null;
@@ -74,130 +61,19 @@ type Props = {
 };
 
 export function MeasureScreen({ target, activeTab, onTab, onBack, backLabel }: Props) {
-  const [session, setSession] = useState<MeasureSession | null>(null);
-  const [start, setStart] = useState<MeasureStartResponse | null>(null);
-  const [busy, setBusy] = useState(false);
-  const [error, setError] = useState<KioskApiError | null>(null);
-  /**
-   * 노드가 재기 시작한 뒤 흐른 시간. 응답하지 않는 것을 알아채는 데 쓴다.
-   *
-   * 어느 단계를 재던 중이었는지(status)를 함께 담는다. 백색과 시료는 각각
-   * 따로 세야 하는데, 초 수만 담아 두면 시료를 재기 시작한 첫 순간에 백색을
-   * 재며 쌓인 값이 남아 "20초째 기다리는 중"이 잠깐 스친다.
-   */
-  const [progress, setProgress] = useState<{ status: string; sec: number } | null>(null);
-
-  const sessionId = session?.session_id ?? null;
-  const finished = session ? (TERMINAL as readonly string[]).includes(session.status) : false;
-
-  const fail = (e: unknown) =>
-    setError(e instanceof KioskApiError ? e : new KioskApiError(String(e), "-", null));
-
-  // ── 세션 상태 따라가기 ─────────────────────────────────────
-  // 노드가 값을 채워 넣는 동안 서버만 진행을 안다. 끝난 세션은 더 볼 것이
-  // 없으므로 폴링을 멈춘다. 결과 화면에서 계속 부르면 아무것도 달라지지
-  // 않는 요청이 화면이 닫힐 때까지 이어진다.
-  useEffect(() => {
-    if (!sessionId || finished) return;
-
-    let alive = true;
-    const tick = async () => {
-      try {
-        const next = await measureApi.status(sessionId);
-        if (alive) setSession(next);
-      } catch (e) {
-        // 폴링 실패는 화면을 갈아엎지 않는다. 잠깐 끊긴 것일 수 있고,
-        // 마지막으로 받은 상태를 계속 보여주는 편이 낫다.
-        if (alive && e instanceof KioskApiError && e.status !== null) setError(e);
-      }
-    };
-
-    const id = window.setInterval(() => void tick(), (session?.poll_sec ?? 2) * 1000);
-    return () => {
-      alive = false;
-      window.clearInterval(id);
-    };
-  }, [sessionId, finished, session?.poll_sec]);
-
-  // 노드가 재고 있는 동안만 시간을 센다.
-  useEffect(() => {
-    if (!session?.capturing) return;
-
-    const began = Date.now();
-    const status = session.status;
-    const id = window.setInterval(
-      () => setProgress({ status, sec: Math.floor((Date.now() - began) / 1000) }),
-      500
-    );
-    return () => window.clearInterval(id);
-  }, [session?.status, session?.capturing]);
-
-  const elapsed =
-    session?.capturing && progress?.status === session.status ? progress.sec : 0;
-  const stalled = elapsed >= STALL_SEC;
-
-  const begin = useCallback(async () => {
-    if (!target) return;
-    setBusy(true);
-    setError(null);
-    try {
-      const res = await measureApi.start(target.user_product_id);
-      setStart(res);
-      setSession(res);
-    } catch (e) {
-      fail(e);
-    } finally {
-      setBusy(false);
-    }
-  }, [target]);
-
-  const capture = async () => {
-    if (!sessionId) return;
-    setBusy(true);
-    setError(null);
-    try {
-      setSession(await measureApi.capture(sessionId));
-    } catch (e) {
-      fail(e);
-    } finally {
-      setBusy(false);
-    }
-  };
-
-  /**
-   * 열린 세션을 닫고 나간다.
-   *
-   * 닫지 않으면 노드가 시한이 다 될 때까지 그 세션을 붙들고 있어, 다음
-   * 사람이 측정을 시작해도 노드가 반응하지 않는다. 취소가 실패해도
-   * 화면은 나간다 — 시한이 지나면 서버가 알아서 만료시킨다.
-   */
-  const leave = async () => {
-    if (sessionId && !finished) {
-      try {
-        await measureApi.cancel(sessionId);
-      } catch {
-        /* 시한 만료에 맡긴다 */
-      }
-    }
-    onBack();
-  };
-
-  // 같은 제품을 다시 잰다. 실패했거나 한 번 더 확인하고 싶을 때.
-  const restart = () => {
-    setSession(null);
-    setStart(null);
-    setError(null);
-    void begin();
-  };
+  const m = useMeasureSession(
+    () => measureApi.start(target!.user_product_id),
+    onBack
+  );
+  const { session, start, busy, error, elapsed, stalled, phase } = m;
 
   const blocked = target?.optical_grade === "unsuitable";
-  const phase: Phase = !session ? "intro" : finished ? "result" : "run";
 
   return (
     <div className="flex h-full flex-col">
       <TopBar
         left={
-          <button onClick={() => void leave()} className="text-[25px] font-bold">
+          <button onClick={m.leave} className="text-[25px] font-bold">
             ← {backLabel}
           </button>
         }
@@ -217,8 +93,8 @@ export function MeasureScreen({ target, activeTab, onTab, onBack, backLabel }: P
             target={target}
             blocked={blocked}
             busy={busy}
-            onStart={() => void begin()}
-            onBack={() => void leave()}
+            onStart={m.begin}
+            onBack={m.leave}
           />
         ) : phase === "run" ? (
           <Run
@@ -227,26 +103,24 @@ export function MeasureScreen({ target, activeTab, onTab, onBack, backLabel }: P
             busy={busy}
             stalled={stalled}
             elapsed={elapsed}
-            onCapture={() => void capture()}
-            onCancel={() => void leave()}
+            onCapture={m.capture}
+            onCancel={m.leave}
           />
         ) : (
           <Result
             session={session!}
-            onRetry={restart}
-            onClose={() => void leave()}
+            onRetry={m.restart}
+            onClose={m.leave}
           />
         )}
 
-        {error ? <ErrorCard error={error} onClose={() => setError(null)} /> : null}
+        {error ? <MeasureError error={error} onClose={m.clearError} /> : null}
       </div>
 
       <TabBar active={activeTab} onChange={onTab} />
     </div>
   );
 }
-
-type Phase = "intro" | "run" | "result";
 
 // ── 단계 표시 ────────────────────────────────────────────────
 
@@ -256,7 +130,7 @@ type Phase = "intro" | "run" | "result";
  * 측정이 두 번이라는 것을 미리 보여주지 않으면, 백색 표준판을 재고 나서
  * "끝났나?" 하고 자리를 뜬다. 그러면 세션이 시한까지 열린 채 남는다.
  */
-function Steps({ phase, step }: { phase: Phase; step: "white" | "sample" | null }) {
+function Steps({ phase, step }: { phase: MeasurePhase; step: "white" | "sample" | null }) {
   const current =
     phase === "intro" ? 0 : phase === "result" ? 3 : step === "white" ? 1 : 2;
 
@@ -570,49 +444,6 @@ function Centered({ title, lines }: { title: string; lines: string[] }) {
           {l}
         </div>
       ))}
-    </div>
-  );
-}
-
-/**
- * 실패 카드.
- *
- * 아이패드에는 개발자 도구가 없다. 서버가 이유를 문장으로 보냈으면 그것을
- * 크게 보여주고, 그 아래에 주소와 응답 본문을 그대로 남긴다. 시연 중
- * 문제가 생기면 이 화면이 유일한 단서다.
- */
-function ErrorCard({ error, onClose }: { error: KioskApiError; onClose: () => void }) {
-  return (
-    <div className="mt-3 rounded-[16px] border-l-4 bg-[#FBE9E9] p-[20px]" style={{ borderColor: STATUS.red }}>
-      <div className="text-[22px] font-bold">
-        {error.detail ?? "측정을 진행하지 못했습니다"}
-      </div>
-      <div className="mt-1 text-[17px] font-medium text-gray-400">{error.summary}</div>
-
-      <div className="mt-3 rounded-[10px] bg-white p-3">
-        <div className="text-[13px] font-medium text-gray-300">요청한 주소</div>
-        <div className="mt-0.5 break-all font-mono text-[14px]">{error.url}</div>
-
-        {error.body ? (
-          <>
-            <div className="mt-2 text-[13px] font-medium text-gray-300">응답 본문</div>
-            <pre className="mt-0.5 max-h-[110px] overflow-auto rounded bg-gray-100 p-2 font-mono text-[13px] whitespace-pre-wrap">
-              {error.body}
-            </pre>
-          </>
-        ) : null}
-
-        <div className="mt-2 text-[13px] text-gray-300">
-          API 기준 주소 {API_BASE} ({API_BASE_FROM_ENV ? "환경변수" : "기본값"})
-        </div>
-      </div>
-
-      <button
-        onClick={onClose}
-        className="mt-3 h-[54px] w-full rounded-[13px] bg-white text-[18px] font-semibold text-gray-400"
-      >
-        닫기
-      </button>
     </div>
   );
 }

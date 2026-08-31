@@ -81,7 +81,20 @@ export const measureApi = {
   start: (userProductId: string) =>
     carePost<MeasureStartResponse>(
       MEASURE_BASE,
-      { user_product_id: userProductId },
+      { target: "product", user_product_id: userProductId },
+      { user_id: KIOSK_USER_ID }
+    ),
+
+  /**
+   * 피부 측정 시작.
+   *
+   * 부위를 반드시 보낸다. 같은 부위끼리만 비교가 성립하고, 서버는 정해진
+   * 목록 밖의 값을 받지 않는다.
+   */
+  startSkin: (site: string) =>
+    carePost<MeasureStartResponse>(
+      MEASURE_BASE,
+      { target: "skin", site },
       { user_id: KIOSK_USER_ID }
     ),
 

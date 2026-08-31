@@ -400,3 +400,130 @@ class TestKioskPolling:
                                params={"user_id": USER})
         assert res.status_code == 204
         update.assert_not_called()
+
+
+# ── 피부 측정 ────────────────────────────────────────────────────
+
+SKIN_SITE = "손등 안쪽"
+
+# 밝은 피부에 가까운 반사율. 백색을 1000으로 두고 그 비율로 만든다.
+SKIN_SAMPLE = {"F1": 200.0, "F2": 250.0, "F3": 320.0, "F4": 380.0,
+               "F5": 420.0, "F6": 550.0, "F7": 620.0, "F8": 650.0,
+               "CLEAR": 430.0, "NIR": 700.0}
+SKIN_WHITE = {k: 1000.0 for k in SKIN_SAMPLE}
+
+
+def _skin_session(status="capturing_sample", **over):
+    return _session(status, target="skin", user_product_id=None,
+                    site=SKIN_SITE, **over)
+
+
+class TestStartSkinSession:
+    @patch("api.care.router.count_site_measurements", return_value=0)
+    @patch("api.care.router.create_measure_session")
+    @patch("api.care.router.list_nodes")
+    def test_opens_with_a_site(self, nodes, create, _count):
+        nodes.return_value = [
+            {"node_id": NODE, "user_id": USER, "node_type": "measure",
+             "location_label": "휴대형"}]
+        create.return_value = _skin_session("waiting_white")
+
+        res = _client().post("/api/care/measure/sessions",
+                             params={"user_id": USER},
+                             json={"target": "skin", "site": SKIN_SITE})
+        assert res.status_code == 200
+        data = res.json()
+        assert data["target"] == "skin"
+        assert data["site"] == SKIN_SITE
+        assert data["has_baseline"] is False
+        assert create.call_args.kwargs["site"] == SKIN_SITE
+        # 피부 세션에 제품이 딸려가면 안 된다.
+        assert create.call_args.kwargs["user_product_id"] is None
+
+    def test_site_is_required(self):
+        res = _client().post("/api/care/measure/sessions",
+                             params={"user_id": USER},
+                             json={"target": "skin"})
+        assert res.status_code == 422
+
+    def test_unknown_site_is_refused(self):
+        # 목록 밖 값을 받으면 "손등"과 "손등 안쪽"이 따로 쌓여 추이가 갈린다.
+        res = _client().post("/api/care/measure/sessions",
+                             params={"user_id": USER},
+                             json={"target": "skin", "site": "손등"})
+        assert res.status_code == 422
+
+    @patch("api.care.router.get_care_products", return_value=[])
+    def test_product_target_still_needs_a_product(self, _products):
+        res = _client().post("/api/care/measure/sessions",
+                             params={"user_id": USER},
+                             json={"target": "product"})
+        assert res.status_code == 422
+
+
+class TestSkinUpload:
+    @patch("api.iot.router.count_site_measurements", return_value=0)
+    @patch("api.iot.router.insert_skin_measurement")
+    @patch("api.iot.router.update_measure_session")
+    @patch("api.iot.router.get_measure_session")
+    def test_first_measurement_is_a_baseline(self, get, update, insert, _count):
+        get.return_value = _skin_session(white_ref=SKIN_WHITE,
+                                         meta={"gain": "64x", "led_ma": 10})
+
+        res = _client().post(f"/api/iot/sessions/{SID}/samples",
+                             json=_sample_body("sample", SKIN_SAMPLE),
+                             headers=_headers())
+        assert res.status_code == 200
+        assert res.json()["status"] == "done"
+
+        # 첫 측정은 비교 대상이 없다. 변화량을 말하면 안 된다.
+        patch_arg = update.call_args[0][1]
+        assert patch_arg["baseline"] is True
+        assert "기준선" in patch_arg["message"]
+
+        lab = insert.call_args[0][1]
+        assert 65 < lab[0] < 80          # 밝은 피부의 L*
+        assert insert.call_args.kwargs["site"] == SKIN_SITE
+
+    @patch("api.iot.router.count_site_measurements", return_value=3)
+    @patch("api.iot.router.insert_skin_measurement")
+    @patch("api.iot.router.update_measure_session")
+    @patch("api.iot.router.get_measure_session")
+    def test_later_measurement_reports_values(self, get, update, insert, _count):
+        get.return_value = _skin_session(white_ref=SKIN_WHITE,
+                                         meta={"gain": "64x", "led_ma": 10})
+        res = _client().post(f"/api/iot/sessions/{SID}/samples",
+                             json=_sample_body("sample", SKIN_SAMPLE),
+                             headers=_headers())
+        assert res.status_code == 200
+        patch_arg = update.call_args[0][1]
+        assert patch_arg["baseline"] is False
+        assert "ITA" in patch_arg["message"]
+
+    @patch("api.iot.router.insert_skin_measurement")
+    @patch("api.iot.router.update_measure_session")
+    @patch("api.iot.router.get_measure_session")
+    def test_without_white_reference_it_fails(self, get, update, insert):
+        # 백색 기준 없이는 색으로 옮길 수 없다. 조명 밝기가 그대로
+        # 피부색이 되므로, 값을 남기지 않고 세션을 실패로 닫는다.
+        get.return_value = _skin_session(white_ref=None,
+                                         meta={"gain": "64x", "led_ma": 10})
+        res = _client().post(f"/api/iot/sessions/{SID}/samples",
+                             json=_sample_body("sample", SKIN_SAMPLE),
+                             headers=_headers())
+        assert res.json()["status"] == "failed"
+        insert.assert_not_called()
+
+    @patch("api.iot.router.insert_skin_measurement")
+    @patch("api.iot.router.update_measure_session")
+    @patch("api.iot.router.get_measure_session")
+    def test_gloss_is_never_stored(self, get, update, insert):
+        # AS7341로는 광택을 잴 수 없다. 컬럼이 있다고 채우면 화면이
+        # 그것을 근거처럼 보여주게 된다.
+        get.return_value = _skin_session(white_ref=SKIN_WHITE,
+                                         meta={"gain": "64x", "led_ma": 10})
+        with patch("api.iot.router.count_site_measurements", return_value=1):
+            _client().post(f"/api/iot/sessions/{SID}/samples",
+                           json=_sample_body("sample", SKIN_SAMPLE),
+                           headers=_headers())
+        assert "gloss" not in insert.call_args.kwargs

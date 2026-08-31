@@ -28,6 +28,12 @@ ESP32 쪽에서 남는 변수는 Wi-Fi 연결과 센서 값뿐이다.
     # 포화 거부 동작 확인 — 세션이 failed로 닫히는지 본다
     python -m scripts.mock_iot_sender --node measure-01 --optical \
         --user <user_id> --product <user_product_id> --saturate
+
+측정 노드(measure) — 피부 측정:
+    python -m scripts.mock_iot_sender --node measure-01 --optical \
+        --user <user_id> --site "손등 안쪽"
+
+    # --tan 으로 조금 그을린 피부를, --redness 로 붉은기가 오른 피부를 흉내 낸다
 """
 from __future__ import annotations
 
@@ -69,6 +75,23 @@ _NOISE_PCT = 0.8
 # 노화는 파란 쪽 반사율이 먼저 떨어진다(누레진다). --drift를 그 방향으로 준다.
 _DRIFT_WEIGHT = {"F1": 1.0, "F2": 0.9, "F3": 0.7, "F4": 0.4,
                  "F5": 0.2, "F6": 0.0, "F7": 0.0, "F8": 0.0}
+
+# 피부 반사율. 문헌상 밝은 톤의 전형적인 모양이다. 파란 쪽이 낮고
+# 붉은 쪽이 높은데, 헤모글로빈과 멜라닌이 단파장을 더 많이 흡수하기 때문이다.
+_SKIN_REFLECT = {"F1": 0.20, "F2": 0.25, "F3": 0.32, "F4": 0.38,
+                 "F5": 0.42, "F6": 0.55, "F7": 0.62, "F8": 0.65,
+                 "CLEAR": 0.43, "NIR": 0.70}
+
+# 그을림은 멜라닌이 늘어 전 파장이 함께 어두워지되 단파장이 더 많이 줄어든다.
+_TAN_WEIGHT = {"F1": 1.4, "F2": 1.3, "F3": 1.2, "F4": 1.0,
+               "F5": 0.9, "F6": 0.7, "F7": 0.6, "F8": 0.5,
+               "CLEAR": 0.9, "NIR": 0.3}
+
+# 홍반은 헤모글로빈이 늘어 초록(F5·F6)을 더 흡수하고 붉은 쪽은 그대로다.
+# 그래서 a*가 오른다.
+_RED_WEIGHT = {"F1": 0.3, "F2": 0.5, "F3": 0.8, "F4": 1.2,
+               "F5": 1.6, "F6": 1.2, "F7": 0.1, "F8": 0.0,
+               "CLEAR": 0.8, "NIR": 0.0}
 
 
 def _synthesize(node_type: str, ts: datetime) -> dict:
@@ -127,20 +150,43 @@ def _sample_channels(drift_pct: float) -> Dict[str, float]:
     return out
 
 
+def _skin_channels(tan_pct: float, red_pct: float) -> Dict[str, float]:
+    """피부 채널값. 백색을 1000으로 두고 반사율을 그대로 곱한다."""
+    out: Dict[str, float] = {}
+    for k, r in _SKIN_REFLECT.items():
+        v = r * (1.0 - tan_pct / 100.0 * _TAN_WEIGHT.get(k, 0.0))
+        v *= (1.0 - red_pct / 100.0 * _RED_WEIGHT.get(k, 0.0))
+        out[k] = round(_jitter(max(0.01, v) * 1000.0), 1)
+    return out
+
+
+def _skin_white() -> Dict[str, float]:
+    """피부 측정의 백색 표준판. 반사율이 그대로 보이도록 1000으로 둔다."""
+    return {k: round(_jitter(1000.0), 1) for k in _SKIN_REFLECT}
+
+
 def _open_session(
-    client: httpx.Client, base: str, user_id: str, product_id: str, node_id: str
+    client: httpx.Client, base: str, user_id: str, node_id: str,
+    *, product_id: str = None, site: str = None
 ) -> str:
     """키오스크가 하는 일 ①. 세션을 열고 id를 받는다."""
+    body = {"node_id": node_id}
+    if site:
+        body.update({"target": "skin", "site": site})
+    else:
+        body["user_product_id"] = product_id
+
     res = client.post(
         f"{base}/api/care/measure/sessions",
         params={"user_id": user_id},
-        json={"user_product_id": product_id, "node_id": node_id},
+        json=body,
     )
     if res.status_code != 200:
         raise SystemExit(f"세션 생성 실패 [{res.status_code}] {res.text}")
     data = res.json()
     print(f"  세션 {data['session_id']}  노드={data['node_id']}")
-    print(f"  {'첫 측정입니다 (기준값이 됩니다)' if not data['has_baseline'] else '기준값이 있습니다'}")
+    print("  " + ("첫 측정입니다 (기준이 됩니다)" if not data["has_baseline"]
+                  else "이전 측정이 있습니다"))
     print(f"  {data['optical_note']}")
     return data["session_id"]
 
@@ -227,15 +273,18 @@ def run_optical(args: argparse.Namespace) -> None:
     """
     base = args.base.rstrip("/")
     headers = {"X-Node-Key": args.key} if args.key else {}
-    kiosk = bool(args.user and args.product)
+    skin = bool(args.site)
+    kiosk = bool(args.user and (args.product or skin))
 
     with httpx.Client(timeout=30) as client:
         session_id = None
         if kiosk:
             session_id = _open_session(
-                client, base, args.user, args.product, args.node)
+                client, base, args.user, args.node,
+                product_id=args.product, site=args.site)
         elif args.user or args.product:
-            raise SystemExit("--user와 --product는 함께 주어야 합니다.")
+            raise SystemExit(
+                "세션을 직접 열려면 --user와 함께 --product 또는 --site가 필요합니다.")
 
         # 백색 표준판 → 시료. 각 단계는 사용자가 키오스크에서 누를 때 시작된다.
         for expected in ("white", "sample"):
@@ -248,9 +297,10 @@ def run_optical(args: argparse.Namespace) -> None:
                 raise SystemExit(f"{expected} 차례인데 서버는 {step}을 요구합니다.")
 
             if step == "white":
-                channels = _white_channels()
+                channels = _skin_white() if skin else _white_channels()
             else:
-                channels = _sample_channels(args.drift)
+                channels = (_skin_channels(args.tan, args.redness) if skin
+                            else _sample_channels(args.drift))
                 if args.saturate:
                     # 포화한 측정을 흉내 낸다. 서버가 세션을 failed로 닫아야 한다.
                     channels = {k: 65535.0 for k in channels}
@@ -270,7 +320,17 @@ def run_optical(args: argparse.Namespace) -> None:
             raise SystemExit(f"결과 조회 실패 [{res.status_code}] {res.text}")
         data = res.json()
         print(f"\n  결과  status={data['status']}")
-        if data.get("baseline"):
+
+        sk = data.get("skin")
+        if sk:
+            print(f"  부위 {sk['site']}  ({sk['measured_n']}번째 측정)")
+            print(f"  L* {sk['lab_l']}  a* {sk['lab_a']}  b* {sk['lab_b']}")
+            print(f"  ITA° {sk['ita']} ({sk['ita_class']})  "
+                  f"홍반 지수 {sk['erythema']}")
+            if sk.get("ita_delta") is not None:
+                print(f"  직전 대비  ITA° {sk['ita_delta']:+}  "
+                      f"홍반 {sk['erythema_delta']:+}")
+        elif data.get("baseline"):
             print("  이번 측정이 기준값이 되었습니다. 변화율은 다음 측정부터 나옵니다.")
         elif data.get("delta_pct") is not None:
             print(f"  변화율 {data['delta_pct']}%")
@@ -347,6 +407,12 @@ def main() -> None:
                    help="포화한 측정을 보내 세션이 거부되는지 확인")
     g.add_argument("--wait", type=int, default=120,
                    help="키오스크에서 측정을 누를 때까지 기다릴 시간(초)")
+    g.add_argument("--site", default=None,
+                   help='피부 측정. 부위를 지정한다 (예: "손등 안쪽")')
+    g.add_argument("--tan", type=float, default=0.0,
+                   help="피부가 몇 %% 그을렸는지 (ITA°가 내려간다)")
+    g.add_argument("--redness", type=float, default=0.0,
+                   help="붉은기가 몇 %% 올랐는지 (홍반 지수가 올라간다)")
 
     args = p.parse_args()
 

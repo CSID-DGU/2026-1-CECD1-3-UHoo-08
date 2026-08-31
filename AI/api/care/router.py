@@ -16,7 +16,7 @@ from __future__ import annotations
 import logging
 
 from datetime import date, datetime, timedelta, timezone
-from typing import Any, Dict, List, Optional
+from typing import Any, Dict, List, Literal, Optional
 
 from fastapi import APIRouter, HTTPException, Query
 from pydantic import BaseModel, Field
@@ -34,7 +34,9 @@ from db.product_reader import (
     get_product_features, get_product_meta, search_products_by_category,
     search_products_by_name,
 )
-from db.iot.skin_reader import get_skin_measurements
+from db.iot.skin_reader import (
+    count_site_measurements, get_skin_measurements, get_site_history, list_sites,
+)
 from db.iot.writer import (
     OPEN_SESSION_STATUS,
     create_measure_session, discard_user_product, get_latest_reading,
@@ -76,6 +78,11 @@ SKIN_WINDOW_HOURS = 24
 
 # 피부 추이에 보여줄 측정 횟수. 화면이 2주 추이를 그린다.
 SKIN_TREND_N = 14
+
+# 잴 수 있는 부위. 값이 그대로 skin_measurements.site에 쌓이고, 추이는
+# 같은 문자열끼리만 묶인다. 화면이 자유 입력을 받으면 "손등"과 "손등 안쪽"이
+# 다른 부위로 갈려 한 사람의 추이가 둘로 나뉜다. 그래서 서버가 목록을 쥔다.
+SKIN_SITES = ("손등 안쪽", "볼", "이마", "팔 안쪽")
 
 
 # ── 응답 모델 ─────────────────────────────────────────────────────
@@ -526,6 +533,13 @@ class SkinResponse(BaseModel):
     latest: Optional[SkinMeasurementModel] = None
     trend: List[SkinTrendPoint]
     trend_note: Optional[str] = None
+    # 지금 보고 있는 부위와, 재 본 적 있는 부위 목록.
+    # 부위가 다르면 값도 달라서, 어디를 잰 것인지 밝히지 않으면 화면의
+    # 숫자가 무엇의 숫자인지 알 수 없다.
+    site: Optional[str] = None
+    sites: List[str] = []
+    # 고를 수 있는 부위 전체. 측정 화면이 이 목록으로 버튼을 만든다.
+    site_options: List[str] = []
 
 
 def _worst_psri(indoor: List[Dict[str, Any]], now: datetime) -> Dict[str, Any]:
@@ -572,6 +586,8 @@ def _worst_psri(indoor: List[Dict[str, Any]], now: datetime) -> Dict[str, Any]:
 )
 def get_skin(
     user_id: str = Query(..., description="예선 한정. 본선에서는 토큰에서 추출한다."),
+    site: Optional[str] = Query(
+        None, description="이 부위만 본다. 비우면 가장 최근에 잰 부위"),
 ) -> SkinResponse:
     now = datetime.now(timezone.utc)
 
@@ -592,11 +608,16 @@ def get_skin(
     trend: List[SkinTrendPoint] = []
     note = None
 
-    if rows:
-        # 부위가 다르면 값도 다르다. 최신 측정의 부위로만 추이를 그린다.
-        site = rows[0].get("site")
-        same = [r for r in rows if r.get("site") == site]
+    shown_site = None
+    same: List[Dict[str, Any]] = []
 
+    if rows:
+        # 부위가 다르면 값도 다르다. 고른 부위만, 고르지 않았으면 가장 최근에
+        # 잰 부위만 본다. 섞어서 그리면 부위를 옮긴 것이 피부 변화로 보인다.
+        shown_site = site or rows[0].get("site")
+        same = [r for r in rows if r.get("site") == shown_site]
+
+    if rows and same:
         # 최신순으로 왔으므로 뒤집어 시간순으로 만든다
         asc = list(reversed(same))[-SKIN_TREND_N:]
 
@@ -628,7 +649,16 @@ def get_skin(
 
         note = _trend_note(asc)
 
+    try:
+        seen_sites = list_sites(user_id)
+    except Exception:
+        logger.exception("측정 부위 조회 실패 user_id=%s", user_id)
+        seen_sites = []
+
     return SkinResponse(
+        site=shown_site,
+        sites=seen_sites,
+        site_options=list(SKIN_SITES),
         generated_at=now.isoformat(),
         psri=PsriBreakdown(
             score=psri["score"],
@@ -1410,13 +1440,25 @@ def post_optical(
 # 흐름과 노드 쪽 엔드포인트는 api/iot/router.py 상단에 정리해 두었다.
 
 # 상태별 화면 문구. done·failed는 세션에 남은 message를 그대로 쓴다.
+#
+# 시료 단계의 문구는 무엇을 재느냐에 따라 다르다. 피부를 재는데 "제품을
+# 올려 주세요"라고 하면 화면 제목과 안내가 서로 다른 말을 하게 된다.
 _MEASURE_PROMPT = {
     "waiting_white": "백색 표준판을 측정부에 올린 뒤 측정을 눌러 주세요.",
     "capturing_white": "백색 기준을 재고 있습니다. 그대로 두세요.",
-    "waiting_sample": "제품을 측정부에 올린 뒤 측정을 눌러 주세요.",
-    "capturing_sample": "제품을 재고 있습니다. 그대로 두세요.",
     "expired": "측정 시간이 지났습니다. 다시 시작해 주세요.",
     "cancelled": "측정을 취소했습니다.",
+}
+
+_SAMPLE_PROMPT = {
+    "product": {
+        "waiting_sample": "제품을 측정부에 올린 뒤 측정을 눌러 주세요.",
+        "capturing_sample": "제품을 재고 있습니다. 그대로 두세요.",
+    },
+    "skin": {
+        "waiting_sample": "측정부를 피부에 밀착시킨 뒤 측정을 눌러 주세요.",
+        "capturing_sample": "피부를 재고 있습니다. 그대로 대고 계세요.",
+    },
 }
 
 # 화면이 어느 단계를 안내해야 하는지. 누르기 전과 재는 중이 같은 단계다.
@@ -1431,7 +1473,11 @@ _ARM = {"waiting_white": "capturing_white",
 
 
 class MeasureStartRequest(BaseModel):
-    user_product_id: str
+    target: Literal["product", "skin"] = "product"
+    # 화장품을 잴 때 필수.
+    user_product_id: Optional[str] = None
+    # 피부를 잴 때 필수. 같은 부위끼리만 비교가 성립한다.
+    site: Optional[str] = None
     # 측정 노드가 여러 대일 때만 지정한다. 비우면 사용자의 measure 노드를 쓴다.
     node_id: Optional[str] = None
 
@@ -1449,7 +1495,9 @@ class MeasureSessionResponse(BaseModel):
     awaiting_tap: bool = False
     node_id: str
     node_label: Optional[str] = None
+    target: str = "product"
     user_product_id: Optional[str] = None
+    site: Optional[str] = None
     # 결과. done일 때만 채워진다.
     baseline: Optional[bool] = Field(
         None, description="이번 측정이 기준값이 되었는지")
@@ -1457,13 +1505,81 @@ class MeasureSessionResponse(BaseModel):
     message: str
     poll_sec: int = Field(..., description="다음 조회까지 권장 대기 시간(초)")
     expires_at: Optional[datetime] = None
+    # 피부 측정이 끝났을 때만 채워진다.
+    skin: Optional[SkinResult] = None
+
+
+class SkinResult(BaseModel):
+    """
+    피부 측정 결과.
+
+    화장품의 delta_pct 자리에 들어가는 것. 화장품은 "처음과 몇 % 다른가"
+    하나면 되지만, 피부는 밝기(ITA°)와 붉은기(홍반)가 따로 움직여
+    두 값을 함께 봐야 한다.
+    """
+    site: Optional[str] = None
+    lab_l: Optional[float] = None
+    lab_a: Optional[float] = None
+    lab_b: Optional[float] = None
+    ita: Optional[float] = Field(None, description="Individual Typology Angle")
+    ita_class: Optional[str] = None
+    erythema: Optional[float] = Field(None, description="홍반 지수 (a*)")
+    # 같은 부위의 직전 측정과 비교. 첫 측정이면 비어 있다.
+    ita_delta: Optional[float] = None
+    erythema_delta: Optional[float] = None
+    # 이 부위를 몇 번 쟀는지. 1이면 기준선이다.
+    measured_n: int = 0
 
 
 class MeasureStartResponse(MeasureSessionResponse):
     # 시작 화면이 "이번이 첫 측정입니다"를 미리 말할 수 있게 한다.
     # 첫 측정은 비교 대상이 없어 결과 화면이 다르다.
     has_baseline: bool
-    optical_note: str = Field(..., description="이 제형을 색으로 재는 것의 한계")
+    # 화장품은 제형의 한계, 피부는 부위 안내. 둘 다 한 줄이라 같은 칸을 쓴다.
+    optical_note: str = Field(..., description="이 측정에 대해 미리 알려야 할 한 줄")
+
+
+def _check_product(user_id: str, user_product_id: Optional[str]) -> str:
+    """화장품을 잴 수 있는지. 잴 수 있으면 미리 알려줄 한 줄을 돌려준다."""
+    if not user_product_id:
+        raise HTTPException(status_code=422, detail="측정할 제품을 지정해 주세요")
+
+    try:
+        products = get_care_products(user_id)
+    except Exception:
+        logger.exception("보유 제품 조회 실패 user_id=%s", user_id)
+        raise HTTPException(status_code=500, detail="측정을 시작하지 못했습니다")
+
+    item = next((p for p in products
+                 if str(p.get("user_product_id")) == str(user_product_id)), None)
+    if item is None:
+        raise HTTPException(status_code=404, detail="등록한 제품이 아닙니다")
+
+    # 투명한 제형은 재봐야 조명 잡음만 남는다. 측정을 시켜 놓고 나중에
+    # 그 숫자를 근거처럼 보여주는 것이 더 나쁘므로 시작 전에 끊는다.
+    recommended, note = should_measure(item.get("optical_grade"))
+    if not recommended:
+        raise HTTPException(status_code=422, detail=note)
+    return note
+
+
+def _check_skin_site(site: Optional[str]) -> str:
+    """
+    부위를 확인한다.
+
+    목록 밖의 값을 받지 않는 이유: site는 그대로 DB에 쌓이고, 추이는 같은
+    문자열끼리만 묶인다. "손등"과 "손등 안쪽"이 섞이면 한 사람의 추이가
+    둘로 갈라져 둘 다 점이 부족해진다.
+    """
+    if not site:
+        raise HTTPException(status_code=422, detail="측정할 부위를 골라 주세요")
+    if site not in SKIN_SITES:
+        raise HTTPException(
+            status_code=422,
+            detail=f"고를 수 있는 부위: {', '.join(SKIN_SITES)}",
+        )
+    return (f"{site}{_josa(site, '을', '를')} 잽니다. "
+            f"다음에도 같은 자리를 재야 비교가 됩니다.")
 
 
 def _measure_node(user_id: str, node_id: Optional[str]) -> Dict[str, Any]:
@@ -1498,11 +1614,58 @@ def _measure_node(user_id: str, node_id: Optional[str]) -> Dict[str, Any]:
     return mine[0]
 
 
+def _skin_result(user_id: str, site: Optional[str]) -> Optional[SkinResult]:
+    """
+    방금 잰 피부 측정과 직전 측정의 차이.
+
+    세션 테이블에 넣지 않고 읽을 때 계산한다. ITA°와 홍반 지수는
+    skin_measurements의 Lab에서 나오는 파생값이고, 그 계산이 바뀌면
+    세션에 굳어 있던 숫자만 옛 식으로 남는다.
+    """
+    if not site:
+        return None
+    try:
+        rows = get_site_history(user_id, site, limit=2)
+    except Exception:
+        logger.exception("피부 측정 조회 실패 user=%s site=%s", user_id, site)
+        return None
+    if not rows:
+        return None
+
+    cur = rows[0]
+    prev = rows[1] if len(rows) > 1 else None
+
+    def diff(key: str) -> Optional[float]:
+        if not prev or cur.get(key) is None or prev.get(key) is None:
+            return None
+        return round(float(cur[key]) - float(prev[key]), 2)
+
+    try:
+        n = count_site_measurements(user_id, site)
+    except Exception:
+        n = len(rows)
+
+    return SkinResult(
+        site=site,
+        lab_l=cur.get("lab_l"), lab_a=cur.get("lab_a"), lab_b=cur.get("lab_b"),
+        ita=cur.get("ita"), ita_class=cur.get("ita_class"),
+        erythema=cur.get("erythema"),
+        ita_delta=diff("ita"), erythema_delta=diff("erythema"),
+        measured_n=n,
+    )
+
+
 def _session_view(
     session: Dict[str, Any], node_label: Optional[str] = None
 ) -> MeasureSessionResponse:
     status = session["status"]
-    message = _MEASURE_PROMPT.get(status) or session.get("message") or "측정 중입니다."
+    target = session.get("target") or "product"
+    message = (
+        _MEASURE_PROMPT.get(status)
+        or _SAMPLE_PROMPT.get(target, _SAMPLE_PROMPT["product"]).get(status)
+        or session.get("message")
+        or "측정 중입니다."
+    )
     return MeasureSessionResponse(
         session_id=str(session["id"]),
         status=status,
@@ -1511,13 +1674,17 @@ def _session_view(
         awaiting_tap=status in _ARM,
         node_id=session["node_id"],
         node_label=node_label,
+        target=target,
         user_product_id=(str(session["user_product_id"])
                          if session.get("user_product_id") else None),
+        site=session.get("site"),
         baseline=session.get("baseline"),
         delta_pct=session.get("delta_pct"),
         message=message,
         poll_sec=settings.MEASURE_POLL_SEC,
         expires_at=session.get("expires_at"),
+        skin=(_skin_result(str(session.get("user_id")), session.get("site"))
+              if session.get("target") == "skin" and status == "done" else None),
     )
 
 
@@ -1535,23 +1702,10 @@ def start_measure_session(
     body: MeasureStartRequest,
     user_id: str = Query(..., description="예선 한정. 본선에서는 토큰에서 추출한다."),
 ) -> MeasureStartResponse:
-    try:
-        products = get_care_products(user_id)
-    except Exception:
-        logger.exception("보유 제품 조회 실패 user_id=%s", user_id)
-        raise HTTPException(status_code=500, detail="측정을 시작하지 못했습니다")
-
-    item = next((p for p in products
-                 if str(p.get("user_product_id")) == str(body.user_product_id)),
-                None)
-    if item is None:
-        raise HTTPException(status_code=404, detail="등록한 제품이 아닙니다")
-
-    # 투명한 제형은 재봐야 조명 잡음만 남는다. 측정을 시켜 놓고 나중에
-    # 그 숫자를 근거처럼 보여주는 것이 더 나쁘므로 시작 전에 끊는다.
-    recommended, note = should_measure(item.get("optical_grade"))
-    if not recommended:
-        raise HTTPException(status_code=422, detail=note)
+    if body.target == "skin":
+        note = _check_skin_site(body.site)
+    else:
+        note = _check_product(user_id, body.user_product_id)
 
     node = _measure_node(user_id, body.node_id)
 
@@ -1559,14 +1713,20 @@ def start_measure_session(
         session = create_measure_session(
             node["node_id"],
             user_id=user_id,
-            target="product",
-            user_product_id=body.user_product_id,
+            target=body.target,
+            user_product_id=body.user_product_id if body.target == "product" else None,
+            site=body.site if body.target == "skin" else None,
             ttl_sec=settings.MEASURE_SESSION_TTL_SEC,
         )
-        has_base = bool(get_optical_baseline(body.user_product_id))
+        has_base = (
+            count_site_measurements(user_id, body.site or "") > 0
+            if body.target == "skin"
+            else bool(get_optical_baseline(str(body.user_product_id)))
+        )
+    except HTTPException:
+        raise
     except Exception:
-        logger.exception("측정 세션 생성 실패 user_product_id=%s",
-                         body.user_product_id)
+        logger.exception("측정 세션 생성 실패 target=%s", body.target)
         raise HTTPException(status_code=500, detail="측정을 시작하지 못했습니다")
 
     view = _session_view(session, node.get("location_label"))
