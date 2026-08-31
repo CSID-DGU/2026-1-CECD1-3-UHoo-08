@@ -6,6 +6,7 @@
     python -m scripts.reset_demo_state --events --apply    # 이벤트만
     python -m scripts.reset_demo_state --checks --apply    # 확인 이력만
     python -m scripts.reset_demo_state --optical --apply   # 색 측정만
+    python -m scripts.reset_demo_state --skin --apply      # 피부 측정만
     python -m scripts.reset_demo_state --optical --product <id> --apply
     python -m scripts.reset_demo_state --optical --product <id> --wipe --apply
 
@@ -14,6 +15,7 @@
     user_feedback         확인 이력 삭제
     user_products         last_checked_at을 비움
     optical_measurements  실제로 잰 색 측정만 삭제 (시드 이력은 남긴다)
+    skin_measurements     〃
     measure_sessions      측정 세션 삭제
 
 측정값(sensor_readings)과 제품 목록은 건드리지 않는다. 그건 시드가
@@ -39,6 +41,15 @@
 
 시드 이력이 없는 제품(직접 등록한 것)은 실측을 지우면 비게 되고, 다음
 측정이 새 기준값이 된다. 그것도 "원래대로"가 맞다.
+
+── 피부 측정도 같다 ────────────────────────────────────────────────
+seed_demo_timeseries.build_skin이 "손등 안쪽"으로 24건을 만들어 둔다.
+그 Lab은 채널값에서 계산한 것이 아니라 그럴듯한 숫자를 직접 적은 것이라,
+실측과는 만들어진 방식이 다르다. 절대값끼리 크게 어긋나지는 않지만
+"직전 대비" 변화량은 시드 마지막 값과 실측을 빼는 것이라 의미가 없다.
+
+시드 행은 channels가 비어 있는 것으로 알아본다. 실제 노드가 보낸 측정은
+원본 채널값을 함께 남기기 때문이다(017_skin_measurement_channels).
 """
 from __future__ import annotations
 
@@ -77,6 +88,7 @@ def main() -> None:
     ap.add_argument("--events", action="store_true", help="이벤트만 되돌린다")
     ap.add_argument("--checks", action="store_true", help="확인 이력만 지운다")
     ap.add_argument("--optical", action="store_true", help="색 측정만 지운다")
+    ap.add_argument("--skin", action="store_true", help="피부 측정만 지운다")
     # 제품 하나만 되돌리는 쪽이 대개 맞다. 시드 이력과 실측이 섞이면 안 되는
     # 것은 같은 제품 안에서지, 제품끼리는 서로 무관하다. 실제로 잴 제품만
     # 비우면 나머지 제품의 시연용 이력은 그대로 남는다.
@@ -89,14 +101,17 @@ def main() -> None:
     # 나온다. 그럴 제품은 비워야 다음 측정이 새 기준값이 된다.
     ap.add_argument("--wipe", action="store_true",
                     help="시드 이력까지 모두 지운다 (실제 측정을 시작할 때)")
+    ap.add_argument("--site", default=None,
+                    help="이 부위의 피부 측정만 지운다 (예: \"손등 안쪽\")")
     ap.add_argument("--apply", action="store_true")
     args = ap.parse_args()
 
     # 아무것도 지정하지 않으면 전부.
-    picked = args.events or args.checks or args.optical
+    picked = args.events or args.checks or args.optical or args.skin
     do_events = args.events or not picked
     do_checks = args.checks or not picked
     do_optical = args.optical or not picked
+    do_skin = args.skin or not picked
 
     sb = get_supabase()
 
@@ -241,6 +256,53 @@ def main() -> None:
             print(f"  기준값이 사라지는 제품 {len(emptied)}개 "
                   f"— 다음 측정이 새 기준값이 됩니다")
 
+    # ── 피부 측정 ────────────────────────────────────────────────
+    #
+    # 색 측정과 같은 구조다. 시드 행은 channels가 비어 있는 것으로 알아본다.
+    # 실제 노드가 보낸 측정은 원본 채널값을 함께 남기기 때문이다.
+    skin_rows: list = []
+    skin_doomed: list = []
+    skin_kept: list = []
+    if do_skin:
+        q = (sb.table("skin_measurements")
+             .select("id, ts, site, lab_l, lab_a, lab_b, channels")
+             .eq("user_id", args.user).order("ts"))
+        if args.site:
+            q = q.eq("site", args.site)
+        skin_rows = (q.execute()).data or []
+
+        skin_seeded = [r for r in skin_rows if not r.get("channels")]
+        skin_real = [r for r in skin_rows if r.get("channels")]
+        skin_doomed = skin_rows if args.wipe else skin_real
+        skin_kept = [] if args.wipe else skin_seeded
+
+        scope = f"부위 {args.site}" if args.site else "전체 부위"
+        mode = "비우기(WIPE)" if args.wipe else "시연 상태로 되돌리기"
+        print()
+        print("=" * 78)
+        print(f"④ 피부 측정 ({scope}) — {mode}")
+        print("=" * 78)
+        print(f"  삭제  {len(skin_doomed)}건"
+              + (f"  (실측 {len(skin_real)} + 시드 {len(skin_seeded)})" if args.wipe
+                 else f"  (실측만. 시드 {len(skin_seeded)}건은 남긴다)"))
+
+        if skin_doomed:
+            print(f"  기간  {str(skin_doomed[0]['ts'])[:16]} ~ "
+                  f"{str(skin_doomed[-1]['ts'])[:16]}")
+        else:
+            print("  지울 실측  없음")
+
+        # 부위별로 몇 건이 남는지. 남는 것이 없으면 다음 측정이 기준선이다.
+        left: dict = {}
+        for r in skin_kept:
+            left[r.get("site") or "(부위 없음)"] = left.get(r.get("site") or "(부위 없음)", 0) + 1
+        for site, n in left.items():
+            print(f"  {site}  {n}건 유지")
+
+        emptied = ({r.get("site") for r in skin_doomed} - set(left))
+        for site in sorted(x for x in emptied if x):
+            print(f"  {site}  비워짐 — 다음 측정이 기준선이 됩니다")
+
     if not args.apply:
         print()
         print("=" * 78)
@@ -291,15 +353,27 @@ def main() -> None:
         print(f"  색 측정 {len(ids)}건 삭제 · {len(kept)}건 유지 · "
               f"측정 세션 {sessions}건 삭제")
 
+    if do_skin and skin_doomed:
+        ids = [r["id"] for r in skin_doomed]
+        for i in range(0, len(ids), CHUNK):
+            (sb.table("skin_measurements").delete()
+             .in_("id", ids[i:i + CHUNK]).execute())
+        print(f"  피부 측정 {len(ids)}건 삭제 · {len(skin_kept)}건 유지")
+
     print()
     print("  키오스크를 새로고침하면 질문이 다시 나타납니다.")
+    if do_skin and not args.wipe:
+        print("  피부 측정도 시드가 만든 상태로 돌아갔습니다.")
+        print("  실제로 잴 부위는 --skin --site 로 비우거나, 시드가 쓰지 않는")
+        print("  부위(볼·이마·팔 안쪽)를 고르면 깨끗한 기준선에서 시작합니다.")
+
     if do_optical and not args.wipe:
         print("  색 측정은 시드가 만든 상태로 돌아갔습니다.")
         print("  이 상태에서 실제로 재면 다시 수백 %가 나옵니다. 시드 기준값과")
         print("  실측은 백색 기준의 모양이 달라 비교가 성립하지 않기 때문입니다.")
         print("  실제로 잴 제품은 --wipe로 비우세요.")
-    elif do_optical:
-        print("  색 측정을 비웠습니다. 다음 측정이 새 기준값이 됩니다.")
+    elif do_optical or do_skin:
+        print("  측정을 비웠습니다. 다음 측정이 새 기준값이 됩니다.")
         print("  백색 표준판과 제품을 각각 올려 두 번 재야 한 건이 됩니다.")
 
 

@@ -236,6 +236,12 @@ export type SkinResponse = {
   latest: SkinMeasurement | null;
   trend: SkinTrendPoint[];
   trend_note: string | null;
+  /** 지금 보고 있는 부위. 부위가 다르면 값도 달라 함께 밝힌다. */
+  site: string | null;
+  /** 재 본 적 있는 부위. 최근에 잰 것이 앞에 온다. */
+  sites: string[];
+  /** 고를 수 있는 부위 전체. 측정 화면이 이 목록으로 버튼을 만든다. */
+  site_options: string[];
 };
 
 // ── GET /api/care/recommendations ────────────────────────────
@@ -388,6 +394,27 @@ export type MeasureStatus =
   | "expired"
   | "cancelled";
 
+/**
+ * 피부 측정 결과.
+ *
+ * 화장품의 delta_pct 자리에 들어가는 것. 화장품은 "처음과 몇 % 다른가"
+ * 하나면 되지만, 피부는 밝기(ITA°)와 붉은기(홍반)가 따로 움직인다.
+ */
+export type SkinResult = {
+  site: string | null;
+  lab_l: number | null;
+  lab_a: number | null;
+  lab_b: number | null;
+  ita: number | null;
+  ita_class: string | null;
+  erythema: number | null;
+  /** 같은 부위의 직전 측정과 비교. 첫 측정이면 null. */
+  ita_delta: number | null;
+  erythema_delta: number | null;
+  /** 이 부위를 몇 번 쟀는지. 1이면 기준선이다. */
+  measured_n: number;
+};
+
 export type MeasureSession = {
   session_id: string;
   status: MeasureStatus;
@@ -399,7 +426,10 @@ export type MeasureSession = {
   awaiting_tap: boolean;
   node_id: string;
   node_label: string | null;
+  target: "product" | "skin";
   user_product_id: string | null;
+  /** 피부 측정에서 재는 부위. */
+  site: string | null;
   /** done일 때만. 이번 측정이 기준값이 되었는지. */
   baseline: boolean | null;
   /** done이고 기준값이 아닐 때만. 처음 잰 색과의 차이(%). */
@@ -407,11 +437,13 @@ export type MeasureSession = {
   message: string;
   poll_sec: number;
   expires_at: string | null;
+  /** 피부 측정이 끝났을 때만 채워진다. */
+  skin: SkinResult | null;
 };
 
 export type MeasureStartResponse = MeasureSession & {
   /** 이미 기준값이 있는지. 첫 측정이면 결과 화면이 달라진다. */
   has_baseline: boolean;
-  /** 이 제형을 색으로 재는 것의 한계 한 줄. 서버가 만든다. */
+  /** 미리 알려야 할 한 줄. 화장품은 제형의 한계, 피부는 부위 안내. */
   optical_note: string;
 };

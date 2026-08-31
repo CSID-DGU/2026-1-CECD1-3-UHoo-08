@@ -191,6 +191,42 @@ def insert_optical(
     return (row or [{}])[0]
 
 
+def insert_skin_measurement(
+    user_id: str,
+    lab: tuple,
+    *,
+    site: Optional[str],
+    channels: Dict[str, Any],
+    white_ref: Optional[Dict[str, Any]],
+    ts: str,
+) -> Dict[str, Any]:
+    """
+    피부 측정 한 건 기록.
+
+    gloss는 넣지 않는다. skin_measurements에 컬럼이 있고 시드는 값을 채우지만,
+    AS7341로는 광택을 잴 수 없다. 광택은 정반사 성분이라 각도를 바꿔 두 번
+    재야 나오는데, 우리 측정부는 밀착 고정이라 각도가 하나다. 산출 근거가
+    없는 값을 넣으면 화면이 그것을 근거처럼 보여주게 된다.
+
+    channels·white_ref를 함께 남긴다. Lab은 계산 결과라, 변환식을 고치면
+    다시 만들 수 있어야 한다(017_skin_measurement_channels).
+    """
+    l, a, b = lab
+    row = (
+        get_supabase().table("skin_measurements").insert({
+            "user_id": user_id,
+            "ts": ts,
+            "lab_l": l,
+            "lab_a": a,
+            "lab_b": b,
+            "site": site,
+            "channels": channels,
+            "white_ref": white_ref,
+        }).execute()
+    ).data
+    return (row or [{}])[0]
+
+
 def upsert_thermal_profile(row: Dict[str, Any]) -> None:
     """
     제품 열 프로파일을 넣는다. 이미 있으면 건드리지 않는다.

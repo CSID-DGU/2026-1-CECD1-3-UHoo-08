@@ -47,9 +47,11 @@ from config import settings
 from db.iot.writer import (
     get_latest_reading, get_measure_session, get_node,
     get_open_measure_session, get_optical_baseline, insert_optical,
-    insert_readings, update_measure_session,
+    insert_readings, insert_skin_measurement, update_measure_session,
 )
+from db.iot.skin_reader import count_site_measurements, ita_degree
 from services.iot.optical import delta_pct, missing_channels
+from services.iot.skin_color import to_lab
 
 logger = logging.getLogger(__name__)
 
@@ -323,28 +325,78 @@ def _fail(session_id: str, message: str) -> SampleAck:
         session_id=session_id, status="failed", next_step=None, message=message)
 
 
+def _finalize_skin(session: Dict[str, Any], sample: OpticalSample) -> SampleAck:
+    """
+    피부 측정을 마친다.
+
+    화장품과 달리 기준값과 비교하지 않는다. 화장품은 "처음 잰 그 제품"과
+    지금을 견주지만, 피부는 절대 색(L*a*b*)을 그때그때 내고 같은 부위의
+    이력으로 추이를 본다. 사람의 피부는 계절과 컨디션에 따라 오르내리는
+    것이지, 한 시점을 기준 삼아 얼마나 어긋났는지 볼 대상이 아니다.
+
+    변환은 서버에서 한다. 노드에 넣으면 식을 고칠 때마다 펌웨어를 다시
+    구워야 하고, 지난 측정을 다시 계산할 수도 없다.
+    """
+    session_id = str(session["id"])
+    white = session.get("white_ref") or {}
+    site = session.get("site")
+
+    lab = to_lab(sample.channels, white)
+    if lab is None:
+        return _fail(session_id,
+                     "백색 기준이 없어 색으로 옮기지 못했습니다. 다시 재 주세요.")
+
+    l, a, b = lab
+    ita = ita_degree(l, b)
+
+    try:
+        first = count_site_measurements(str(session["user_id"]), site or "") == 0
+    except Exception:
+        logger.exception("피부 측정 횟수 조회 실패 user=%s", session.get("user_id"))
+        first = False
+
+    insert_skin_measurement(
+        str(session["user_id"]), lab,
+        site=site, channels=sample.channels,
+        white_ref=white or None, ts=sample.ts.isoformat(),
+    )
+
+    # 첫 측정은 기준선이다. 비교할 대상이 없는데 변화량을 말할 수 없다.
+    if first:
+        message = "기준선을 잡았습니다. 다음 측정부터 변화를 보여드릴게요."
+    elif ita is not None:
+        message = f"ITA° {ita:.1f}, 홍반 지수 {a:.1f}로 측정되었습니다."
+    else:
+        message = "측정을 마쳤습니다."
+
+    update_measure_session(session_id, {
+        "channels": sample.channels,
+        "status": "done",
+        "baseline": first,
+        "message": message,
+    })
+    return SampleAck(session_id=session_id, status="done", next_step=None,
+                     message=message)
+
+
 def _finalize(session: Dict[str, Any], sample: OpticalSample) -> SampleAck:
     """
     시료까지 도착했다. 여기서 한 번의 측정이 완성된다.
 
     화장품이면 기준값과 비교해 optical_measurements에 기록한다. 첫 측정은
     비교 대상이 없어 그 자체가 기준값이 되고, delta는 남기지 않는다.
+
+    피부는 비교 방식이 달라 _finalize_skin이 따로 처리한다.
     """
     session_id = str(session["id"])
     white = session.get("white_ref") or {}
     channels = sample.channels
 
-    if session.get("target") != "product" or not session.get("user_product_id"):
-        # 피부 측정. 채널만 남기고 세션을 닫는다.
-        # AS7341 채널을 CIE Lab으로 바꾸는 변환과 skin_measurements 적재는
-        # 이슈 #3에서 services/iot/skin_color.py로 들어온다.
-        update_measure_session(session_id, {
-            "channels": channels,
-            "status": "done",
-            "message": "측정을 마쳤습니다.",
-        })
-        return SampleAck(session_id=session_id, status="done", next_step=None,
-                         message="측정을 마쳤습니다.")
+    if session.get("target") == "skin":
+        return _finalize_skin(session, sample)
+
+    if not session.get("user_product_id"):
+        return _fail(session_id, "측정 대상이 없는 세션입니다.")
 
     upid = str(session["user_product_id"])
     now = sample.ts.isoformat()

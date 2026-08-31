@@ -161,3 +161,58 @@ export function Loading({ label = "불러오는 중" }: { label?: string }) {
     </div>
   );
 }
+
+/**
+ * 측정 중 실패 카드.
+ *
+ * ErrorPanel은 화면 전체를 덮는다. 측정은 도중에 실패해도 어디까지 갔는지가
+ * 남아 있어야 하므로, 단계 표시와 안내를 지우지 않고 그 아래에 붙인다.
+ *
+ * 서버가 이유를 문장으로 보냈으면(HTTPException의 detail) 그것을 크게
+ * 보여준다. "연결된 측정 노드가 없습니다"가 body 안에 갇히고 화면에는
+ * "HTTP 409"만 뜨면, 무엇을 하라는 것인지 알 수 없다.
+ */
+export function MeasureError({
+  error,
+  onClose,
+}: {
+  error: KioskApiError;
+  onClose: () => void;
+}) {
+  return (
+    <div
+      className="mt-3 rounded-[16px] border-l-4 bg-[#FBE9E9] p-[20px]"
+      style={{ borderColor: STATUS.red }}
+    >
+      <div className="text-[22px] font-bold">
+        {error.detail ?? "측정을 진행하지 못했습니다"}
+      </div>
+      <div className="mt-1 text-[17px] font-medium text-gray-400">{error.summary}</div>
+
+      <div className="mt-3 rounded-[10px] bg-white p-3">
+        <div className="text-[13px] font-medium text-gray-300">요청한 주소</div>
+        <div className="mt-0.5 break-all font-mono text-[14px]">{error.url}</div>
+
+        {error.body ? (
+          <>
+            <div className="mt-2 text-[13px] font-medium text-gray-300">응답 본문</div>
+            <pre className="mt-0.5 max-h-[110px] overflow-auto rounded bg-gray-100 p-2 font-mono text-[13px] whitespace-pre-wrap">
+              {error.body}
+            </pre>
+          </>
+        ) : null}
+
+        <div className="mt-2 text-[13px] text-gray-300">
+          API 기준 주소 {API_BASE} ({API_BASE_FROM_ENV ? "환경변수" : "기본값"})
+        </div>
+      </div>
+
+      <button
+        onClick={onClose}
+        className="mt-3 h-[54px] w-full rounded-[13px] bg-white text-[18px] font-semibold text-gray-400"
+      >
+        닫기
+      </button>
+    </div>
+  );
+}

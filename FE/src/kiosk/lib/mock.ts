@@ -275,6 +275,9 @@ const mockSkin: SkinResponse = {
     { date: "8/25", erythema: 12.8, ita: 41.2 },
   ],
   trend_note: "저습 구간(8/19~8/23) 이후 상승 경향",
+  site: "손등 안쪽",
+  sites: ["손등 안쪽"],
+  site_options: ["손등 안쪽", "볼", "이마", "팔 안쪽"],
 };
 
 const mockReco: RecommendationsResponse = {
@@ -523,7 +526,10 @@ const MOCK_CAPTURE_MS = 1800;
 type MockMeasure = {
   session_id: string;
   status: string;
+  target: "product" | "skin";
   user_product_id: string;
+  site: string | null;
+  skin: unknown;
   /** 이 시각이 지나면 다음 상태로 넘어간다. 노드가 재는 데 걸리는 시간. */
   advanceAt: number | null;
   baseline: boolean | null;
@@ -540,12 +546,26 @@ export function mockClearMeasure(): void {
   measure = null;
 }
 
+/** 피부 측정 목업. 부위별로 몇 번 쟀는지 세어 첫 측정 분기를 보여준다. */
+const skinMeasured = new Map<string, number>();
+
 const MEASURE_MESSAGE: Record<string, string> = {
   waiting_white: "백색 표준판을 측정부에 올린 뒤 측정을 눌러 주세요.",
   capturing_white: "백색 기준을 재고 있습니다. 그대로 두세요.",
   waiting_sample: "제품을 측정부에 올린 뒤 측정을 눌러 주세요.",
   capturing_sample: "제품을 재고 있습니다. 그대로 두세요.",
 };
+
+/** 시료 단계 문구는 무엇을 재느냐에 따라 다르다. 서버와 같게 맞춘다. */
+const SKIN_MESSAGE: Record<string, string> = {
+  waiting_sample: "측정부를 피부에 밀착시킨 뒤 측정을 눌러 주세요.",
+  capturing_sample: "피부를 재고 있습니다. 그대로 대고 계세요.",
+};
+
+function messageFor(status: string, target: "product" | "skin"): string {
+  if (target === "skin" && SKIN_MESSAGE[status]) return SKIN_MESSAGE[status];
+  return MEASURE_MESSAGE[status];
+}
 
 /** 노드가 다 쟀을 시간이 지났으면 상태를 넘긴다. 조회할 때마다 확인한다. */
 function advance(): void {
@@ -556,14 +576,44 @@ function advance(): void {
 
   if (measure.status === "capturing_white") {
     measure.status = "waiting_sample";
-    measure.message = MEASURE_MESSAGE.waiting_sample;
+    measure.message = messageFor("waiting_sample", measure.target);
     return;
   }
 
   if (measure.status === "capturing_sample") {
+    measure.status = "done";
+
+    if (measure.target === "skin") {
+      const site = measure.site ?? "손등 안쪽";
+      const n = (skinMeasured.get(site) ?? 0) + 1;
+      skinMeasured.set(site, n);
+      const first = n === 1;
+
+      // 두 번째부터 조금씩 그을리고 붉어지는 것으로 둔다.
+      const ita = Math.round((43.6 - (n - 1) * 2.4) * 10) / 10;
+      const ery = Math.round((8.9 + (n - 1) * 1.3) * 10) / 10;
+
+      measure.baseline = first;
+      measure.skin = {
+        site,
+        lab_l: Math.round((73.4 - (n - 1) * 1.9) * 100) / 100,
+        lab_a: ery,
+        lab_b: Math.round((24.6 - (n - 1) * 0.4) * 100) / 100,
+        ita,
+        ita_class: ita > 41 ? "Light" : ita > 28 ? "Intermediate" : "Tan",
+        erythema: ery,
+        ita_delta: first ? null : -2.4,
+        erythema_delta: first ? null : 1.3,
+        measured_n: n,
+      };
+      measure.message = first
+        ? "기준선을 잡았습니다. 다음 측정부터 변화를 보여드릴게요."
+        : `ITA° ${ita}, 홍반 지수 ${ery}로 측정되었습니다.`;
+      return;
+    }
+
     const first = !measured.has(measure.user_product_id);
     measured.add(measure.user_product_id);
-    measure.status = "done";
     measure.baseline = first;
     measure.delta_pct = first ? null : Math.round((3 + Math.random() * 6) * 10) / 10;
     measure.message = first
@@ -583,12 +633,15 @@ function view(): unknown {
     awaiting_tap: s === "waiting_white" || s === "waiting_sample",
     node_id: "measure-01",
     node_label: "휴대형",
+    target: measure.target,
     user_product_id: measure.user_product_id,
+    site: measure.site,
     baseline: measure.baseline,
     delta_pct: measure.delta_pct,
     message: measure.message,
     poll_sec: 2,
     expires_at: iso(5),
+    skin: measure.status === "done" ? measure.skin : null,
   };
 }
 
@@ -603,23 +656,39 @@ function mockMeasurePost(path: string, body: unknown): unknown | null {
     if (!measure) return null;
     if (measure.status === "waiting_white" || measure.status === "waiting_sample") {
       measure.status = measure.status.replace("waiting", "capturing");
-      measure.message = MEASURE_MESSAGE[measure.status];
+      measure.message = messageFor(measure.status, measure.target);
       measure.advanceAt = Date.now() + MOCK_CAPTURE_MS;
     }
     return view();
   }
 
-  const upid = (body as { user_product_id?: string } | null)?.user_product_id ?? "m1";
+  const req = (body ?? {}) as { user_product_id?: string; target?: string; site?: string };
+  const skin = req.target === "skin";
+  const upid = req.user_product_id ?? "m1";
+  const site = req.site ?? null;
 
-  // 투명 제형은 서버가 422로 끊는다. 목업에서도 그 화면을 볼 수 있어야 한다.
-  const item = mockPriority.items.find((i) => i.user_product_id === upid);
-  const grade = (item?.detail?.optical_grade as string | undefined) ?? "suitable";
-  if (grade === "unsuitable") return null;
+  let note: string;
+  if (skin) {
+    if (!site) return null;
+    note = `${site}을(를) 잽니다. 다음에도 같은 자리를 재야 비교가 됩니다.`;
+  } else {
+    // 투명 제형은 서버가 422로 끊는다. 목업에서도 그 화면을 볼 수 있어야 한다.
+    const item = mockPriority.items.find((i) => i.user_product_id === upid);
+    const grade = (item?.detail?.optical_grade as string | undefined) ?? "suitable";
+    if (grade === "unsuitable") return null;
+    note =
+      grade === "conditional"
+        ? "반투명 제형이라 변화가 작게 나올 수 있습니다."
+        : "색이 있는 제형이라 변화를 재기 좋습니다.";
+  }
 
   measure = {
     session_id: `mock-${Date.now()}`,
     status: "waiting_white",
+    target: skin ? "skin" : "product",
     user_product_id: upid,
+    site,
+    skin: null,
     advanceAt: null,
     baseline: null,
     delta_pct: null,
@@ -628,10 +697,9 @@ function mockMeasurePost(path: string, body: unknown): unknown | null {
 
   return {
     ...(view() as Record<string, unknown>),
-    has_baseline: measured.has(upid),
-    optical_note:
-      grade === "conditional"
-        ? "반투명 제형이라 변화가 작게 나올 수 있습니다."
-        : "색이 있는 제형이라 변화를 재기 좋습니다.",
+    has_baseline: skin
+      ? (skinMeasured.get(site ?? "") ?? 0) > 0
+      : measured.has(upid),
+    optical_note: note,
   };
 }

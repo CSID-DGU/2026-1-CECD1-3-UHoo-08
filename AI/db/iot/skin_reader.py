@@ -107,5 +107,54 @@ def get_skin_measurements(
     return out
 
 
+def get_site_history(
+    user_id: str, site: str, *, limit: int = 2
+) -> List[Dict[str, Any]]:
+    """
+    한 부위의 최근 측정. 최신순.
+
+    부위를 지정해 따로 읽는 이유는 변화량 때문이다. 손등을 재고 다음에
+    볼을 재면 값이 크게 달라지는데, 그것은 피부가 변한 것이 아니라 다른
+    데를 잰 것이다. 직전과 비교할 때는 반드시 같은 부위여야 한다.
+    """
+    return get_skin_measurements(user_id, limit=limit, site=site)
+
+
+def count_site_measurements(user_id: str, site: str) -> int:
+    """
+    이 부위를 몇 번 쟀는지.
+
+    첫 측정인지 판단하는 데 쓴다. 첫 측정은 비교 대상이 없어 기준선이
+    되고, 화면도 변화량 대신 "기준선을 잡았다"고 말해야 한다.
+    """
+    res = (
+        get_supabase().table("skin_measurements")
+        .select("id", count="exact")
+        .eq("user_id", user_id)
+        .eq("site", site)
+        .execute()
+    )
+    return res.count or 0
+
+
+def list_sites(user_id: str) -> List[str]:
+    """이 사용자가 재 본 적 있는 부위. 최근에 잰 것이 앞에 온다."""
+    rows = (
+        get_supabase().table("skin_measurements")
+        .select("site, ts")
+        .eq("user_id", user_id)
+        .order("ts", desc=True)
+        .limit(200)
+        .execute()
+    ).data or []
+
+    seen: List[str] = []
+    for r in rows:
+        site = r.get("site")
+        if site and site not in seen:
+            seen.append(site)
+    return seen
+
+
 # 이상 이벤트 조회는 db/iot/event_reader.py로 옮겼다.
 # 피부 측정과 이상 이벤트는 서로 관계가 없는데 한 파일에 있었다.

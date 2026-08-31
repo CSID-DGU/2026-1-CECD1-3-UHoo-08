@@ -8,6 +8,7 @@ import { EnvScreen, readSavedRegion } from "./EnvScreen";
 import { EventsScreen } from "./EventsScreen";
 import { ProtocolScreen } from "./ProtocolScreen";
 import { MeasureScreen, type MeasureTarget } from "./MeasureScreen";
+import { SkinRunScreen } from "./SkinRunScreen";
 import { ProductPicker, toPickerProduct } from "./ProductPicker";
 import { TabBar, TopBar, type TabKey } from "./ui";
 import { KIOSK_USER_ID } from "./lib/kioskApi";
@@ -341,14 +342,19 @@ export function KioskApp() {
           }}
         />
       ) : screen === "skinRun" ? (
-        <Pending
-          title="피부 측정"
-          back="← 피부"
-          onBack={() => setScreen("skin")}
+        <SkinRunScreen
+          // 부위 목록은 서버가 쥔다. 화면이 자유 입력을 받으면 "손등"과
+          // "손등 안쪽"이 다른 부위로 쌓여 추이가 둘로 갈린다.
+          siteOptions={skin.data?.site_options ?? []}
+          knownSites={skin.data?.sites ?? []}
           activeTab={activeTab}
           onTab={setScreen}
-          note="측정 노드 연결과 측정 절차가 아직 없습니다."
-          detail="측정부를 손등 안쪽에 대고 차광 커버가 완전히 닿은 상태로 재야 합니다. 같은 부위를 반복해야 비교가 성립하므로, 부위 안내 화면이 함께 필요합니다."
+          onBack={() => {
+            // 방금 잰 값이 추이에 들어가야 한다. 폴링(10분)을 기다리면
+            // 측정하고 돌아온 화면에 그 측정이 없다.
+            skin.refetch();
+            setScreen("skin");
+          }}
         />
       ) : (
         <Pending
