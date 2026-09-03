@@ -25,7 +25,7 @@ import logging
 from dataclasses import dataclass
 from typing import Any, Dict, List, Optional
 
-from db.product_reader import search_products_by_name
+from db.product_reader import search_products_by_name, search_products_by_traits
 from services.iot.humidity import absolute_humidity
 
 logger = logging.getLogger(__name__)
@@ -39,11 +39,21 @@ TEMP_WATCH_C = 25
 
 @dataclass
 class Candidate:
-    """조건 하나와, 그 조건에 맞는 제품을 찾을 검색어."""
+    """
+    조건 하나와, 그 조건에 맞는 제품을 찾을 방법.
+
+    categories/product_types/concerns가 1순위다. keywords는 분류로 아무것도
+    못 찾았을 때만 쓰는 상품명 부분일치 대비책이다. 조건어를 상품명에서 찾는
+    방식은 "자외선차단"·"진정"처럼 사람이 쓰는 말이 상품명에 안 들어가 있어
+    한 건도 못 걸리는 일이 잦다.
+    """
     key: str
     keywords: List[str]
     reason: str
     order: int
+    categories: Optional[List[str]] = None
+    product_types: Optional[List[str]] = None
+    concerns: Optional[List[str]] = None
 
 
 def _f(v: Any) -> Optional[float]:
@@ -149,6 +159,8 @@ def build_node_candidates(hist: NodeHistory, label: str) -> List[Candidate]:
             f"{label} 최근 {span} 중 {pct}%가 {TEMP_WATCH_C:.0f}℃를 넘었습니다 "
             f"(최고 {hist.max_temp:.1f}℃) — 열에 덜 예민한 가벼운 제형",
             10,
+            categories=["skincare"],
+            concerns=["진정"],
         ))
 
     if hist.dry_ratio >= 0.3 and hist.mean_ah is not None:
@@ -159,14 +171,18 @@ def build_node_candidates(hist: NodeHistory, label: str) -> List[Candidate]:
             f"{label} 최근 {span} 중 {pct}%가 건조 기준 아래였습니다 "
             f"(평균 {hist.mean_ah:.1f} g/m³) — 보습 위주",
             20,
+            categories=["skincare"],
+            concerns=["보습"],
         ))
 
     if hist.mean_pm25 is not None and hist.mean_pm25 > PM25_NORMAL:
         out.append(Candidate(
             "pm-history",
             ["클렌징", "폼", "클렌저"],
-            f"{label} 최근 {span} 평균 초미세먼지 {hist.mean_pm25:.0f} ㎍/m³ — 세정 강화",
+            f"{label} 최근 {span} 평균 초미세먼지 {hist.mean_pm25:.0f} ㎍/m³ — 모공·트러블 관리",
             30,
+            categories=["skincare"],
+            concerns=["모공", "트러블", "칙칙함"],
         ))
 
     if not out:
@@ -182,6 +198,8 @@ def build_node_candidates(hist: NodeHistory, label: str) -> List[Candidate]:
             ["수분", "보습", "토너"],
             f"{label} 최근 {span} {' · '.join(bits)}로 안정적이었습니다 — 꾸준히 쓰기 좋은 제품",
             90,
+            categories=["skincare"],
+            concerns=["보습", "진정"],
         ))
 
     out.sort(key=lambda c: c.order)
@@ -237,6 +255,7 @@ def build_candidates(
             ["선크림", "자외선차단", "선스틱"],
             f"외출 지역 자외선 지수 {uv:.0f} — 차단 권장",
             10,
+            categories=["sun"],
         ))
 
     o_pm = _f((outdoor or {}).get("pm25"))
@@ -244,8 +263,10 @@ def build_candidates(
         out.append(Candidate(
             "pm",
             ["클렌징", "폼", "클렌저"],
-            f"실외 PM2.5 {o_pm:.0f} ㎍/m³ — 세정 강화 권장",
+            f"실외 PM2.5 {o_pm:.0f} ㎍/m³ — 모공·트러블 관리",
             30,
+            categories=["skincare"],
+            concerns=["모공", "트러블", "칙칙함"],
         ))
 
     driest = None
@@ -263,6 +284,8 @@ def build_candidates(
             ["수분", "히알루론", "세라마이드", "크림"],
             f"{label} 절대습도 {ah:.1f} g/m³ — 건조 기준 이하",
             5,
+            categories=["skincare"],
+            concerns=["보습"],
         ))
 
     hottest = None
@@ -280,6 +303,8 @@ def build_candidates(
             ["진정", "시카", "쿨링", "토너"],
             f"{label} {t:.1f}℃ — 진정 케어 권장",
             40,
+            categories=["skincare"],
+            concerns=["진정"],
         ))
 
     # 아무 조건도 안 걸리면 기본 케어를 하나 둔다. 빈 화면보다는 낫고,
@@ -290,10 +315,53 @@ def build_candidates(
             ["수분", "토너"],
             "오늘 환경에 특별한 이슈가 없습니다 — 기본 케어",
             90,
+            categories=["skincare"],
+            concerns=["보습", "진정"],
         ))
 
     out.sort(key=lambda c: c.order)
     return out
+
+
+def _candidate_pool(cand: Candidate, want: int) -> List[Dict[str, Any]]:
+    """조건 하나에 맞는 제품 목록. 분류 우선, 못 찾으면 상품명 부분일치."""
+    if cand.categories or cand.product_types or cand.concerns:
+        try:
+            metas = search_products_by_traits(
+                categories=cand.categories,
+                product_types=cand.product_types,
+                concerns=cand.concerns,
+                limit=want,
+            )
+        except Exception:
+            logger.exception("제품 검색 실패 candidate=%s", cand.key)
+            metas = []
+        if metas:
+            return metas
+
+    out: List[Dict[str, Any]] = []
+    seen_ids = set()
+    for kw in cand.keywords:
+        try:
+            for m in search_products_by_name(kw, limit=want):
+                if m["id"] not in seen_ids:
+                    seen_ids.add(m["id"])
+                    out.append(m)
+        except Exception:
+            logger.exception("제품 검색 실패 keyword=%s", kw)
+    return out
+
+
+def _as_item(meta: Dict[str, Any], reason: str) -> Dict[str, Any]:
+    return {
+        "product_id": meta["id"],
+        "name": meta["name"],
+        "brand": meta.get("brand"),
+        "image_url": meta.get("image_url"),
+        # 앱 목록이 가격을 함께 보여준다.
+        "price": meta.get("price"),
+        "reason": reason,
+    }
 
 
 def pick_products(
@@ -303,51 +371,45 @@ def pick_products(
     exclude_ids: Optional[set] = None,
 ) -> List[Dict[str, Any]]:
     """
-    후보 조건마다 제품을 하나씩 찾는다.
+    조건마다 제품을 고른다.
 
-    같은 제품이 여러 조건에 걸릴 수 있으므로 이미 고른 것은 건너뛴다.
-    조건 하나당 하나씩만 고르는 이유는, 세 칸이 전부 수분 크림이면
-    "환경을 반영했다"는 말이 무색해지기 때문이다.
+    1차로 조건 하나당 하나씩 뽑는다. 세 칸이 전부 수분 크림이면 "환경을
+    반영했다"는 말이 무색해지므로, 서로 다른 근거를 먼저 채운다.
+
+    조건 수가 limit보다 적으면 1차만으로는 칸이 빈다. 실제로 환경에 특이사항이
+    없는 날은 조건이 하나뿐이라 카드도 하나만 나왔다. 이유가 같더라도 그 이유에
+    맞는 제품이 DB에 더 있다면 보여주는 편이 낫다. 2차로 우선순위가 높은
+    조건부터 다시 돌며 남은 칸을 채운다.
+
+    그래도 못 채우면 비운다. 조건과 무관한 제품으로 채우지는 않는다.
     """
     seen = set(exclude_ids or ())
     out: List[Dict[str, Any]] = []
 
-    for cand in candidates:
+    # 조건마다 후보를 한 번씩만 조회해 두고 두 차례에 걸쳐 쓴다.
+    pools = [(c, _candidate_pool(c, limit + len(seen))) for c in candidates]
+
+    for cand, pool in pools:
         if len(out) >= limit:
             break
-
-        found = None
-        for kw in cand.keywords:
-            try:
-                metas = search_products_by_name(kw, limit=10)
-            except Exception:
-                logger.exception("제품 검색 실패 keyword=%s", kw)
-                continue
-
-            for m in metas:
-                if m["id"] in seen:
-                    continue
-                found = m
-                break
-            if found:
-                break
-
+        found = next((m for m in pool if m["id"] not in seen), None)
         if not found:
             # 조건에 맞는 제품이 DB에 없다. 억지로 다른 것을 넣지 않는다.
-            logger.info("추천 후보 %s에 맞는 제품 없음 (검색어 %s)",
-                        cand.key, ", ".join(cand.keywords))
+            logger.info("추천 후보 %s에 맞는 제품 없음", cand.key)
             continue
-
         seen.add(found["id"])
-        out.append({
-            "product_id": found["id"],
-            "name": found["name"],
-            "brand": found.get("brand"),
-            "image_url": found.get("image_url"),
-            # 앱 목록이 가격을 함께 보여준다.
-            "price": found.get("price"),
-            "reason": cand.reason,
-        })
+        out.append(_as_item(found, cand.reason))
+
+    for cand, pool in pools:
+        if len(out) >= limit:
+            break
+        for m in pool:
+            if len(out) >= limit:
+                break
+            if m["id"] in seen:
+                continue
+            seen.add(m["id"])
+            out.append(_as_item(m, cand.reason))
 
     return out
 
