@@ -3,7 +3,7 @@
 
 Gemini (Google Search grounding)로 올리브영 실제 판매 제품을 조회하고,
 feature_json 스키마에 맞게 추출한 뒤 Supabase에 저장한다.
-제품 이미지는 Gemini에게 직접 요청하여 inline_data로 받아 Storage에 업로드한다.
+제품 이미지는 services.product_image가 판매 페이지 og:image에서 확보해 Storage에 업로드한다.
 """
 from __future__ import annotations
 
@@ -14,14 +14,12 @@ from concurrent.futures import ThreadPoolExecutor, as_completed
 from datetime import datetime
 from typing import Any, Dict, List, Optional
 
-import cloudscraper
 from google import genai
 from google.genai import types
 
 from config import settings
 from db.supabase_client import get_supabase
-
-_scraper = cloudscraper.create_scraper()
+from services.product_image import ensure_product_image, fetch_image, store_image
 
 # ── 카테고리 메타 ──────────────────────────────────────────────────────────
 
@@ -72,7 +70,6 @@ _FEATURE_SCHEMA = {
 }""",
 }
 
-_STORAGE_BUCKET = "product_image"
 
 
 # ── 프롬프트 (제품 정보만 — 이미지는 별도 호출) ──────────────────────────────
@@ -120,71 +117,6 @@ def _make_prompt(category: str, limit: int) -> str:
 - brand는 영문 대문자 공식 브랜드명
 - 모든 가격은 숫자만 (원 기호 제외)
 """
-
-
-# ── 이미지 URL 조회 및 다운로드 ───────────────────────────────────────────
-
-def _find_image_url_via_gemini(brand: str, name: str) -> Optional[str]:
-    """Gemini Google Search로 올리브영 상품 이미지 CDN URL 조회."""
-    client = genai.Client(api_key=settings.GEMINI_API_KEY)
-    try:
-        response = client.models.generate_content(
-            model=settings.GEMINI_MODEL,
-            contents=(
-                f"올리브영에서 판매하는 {brand} {name} 상품의 대표 이미지 URL을 찾아라. "
-                f"image.oliveyoung.co.kr 도메인의 실제 이미지 URL만 반환하라. "
-                f"URL 외에 아무것도 출력하지 마라."
-            ),
-            config=types.GenerateContentConfig(
-                tools=[types.Tool(google_search=types.GoogleSearch())],
-                temperature=0,
-            ),
-        )
-        url = (response.text or "").strip()
-        if url.startswith("http") and "oliveyoung" in url:
-            print(f"[이미지] Gemini 조회 성공: {url}")
-            return url
-        print(f"[이미지] Gemini 조회 실패 (유효하지 않은 URL): {url!r}")
-    except Exception as e:
-        print(f"[이미지] Gemini 조회 오류 {brand} {name}: {e}")
-    return None
-
-
-def _fetch_image_from_url(image_url: str) -> tuple[Optional[bytes], str]:
-    """CDN 이미지 URL에서 직접 bytes 다운로드."""
-    try:
-        r = _scraper.get(image_url, timeout=15)
-        print(f"[이미지] 다운로드 status={r.status_code} url={image_url}")
-        if r.status_code != 200:
-            return None, ""
-        content_type = r.headers.get("Content-Type", "image/jpeg").split(";")[0].strip()
-        print(f"[이미지] 성공 size={len(r.content)} type={content_type}")
-        return r.content, content_type
-    except Exception as e:
-        print(f"[이미지 다운로드 실패] {image_url}: {e}")
-    return None, ""
-
-
-# ── Supabase Storage 업로드 ────────────────────────────────────────────────
-
-def _ext_from_content_type(ct: str) -> str:
-    return {"image/jpeg": "jpg", "image/png": "png", "image/webp": "webp"}.get(ct, "jpg")
-
-
-def _upload_image(product_id: str, image_bytes: bytes, content_type: str) -> Optional[str]:
-    """Supabase Storage에 업로드 후 public URL 반환."""
-    sb = get_supabase()
-    path = f"{product_id}.{_ext_from_content_type(content_type)}"
-    try:
-        sb.storage.from_(_STORAGE_BUCKET).upload(
-            path=path,
-            file=image_bytes,
-            file_options={"content-type": content_type, "upsert": "true"},
-        )
-        return sb.storage.from_(_STORAGE_BUCKET).get_public_url(path)
-    except Exception as e:
-        print(f"[Storage 업로드 실패] {product_id}: {e}")
-        return None
 
 
 # ── DB 저장 ────────────────────────────────────────────────────────────────
@@ -237,21 +169,15 @@ def _upsert_product(product: Dict[str, Any], category: str) -> Optional[str]:
 
 
 def _resolve_image(product_id: str, brand: str, name: str, cdn_image_url: Optional[str]) -> Optional[str]:
-    url = cdn_image_url or _find_image_url_via_gemini(brand, name)
-    if not url:
+    """Storage 사본의 public URL을 반환. 검증 못 한 외부 URL은 저장하지 않는다."""
+    fetched = fetch_image(brand, name, hint_url=cdn_image_url)
+    if not fetched:
         return None
-    img_bytes, ct = _fetch_image_from_url(url)
-    if img_bytes:
-        return _upload_image(product_id, img_bytes, ct)
-    return None
+    return store_image(product_id, *fetched)
 
 
 def _set_product_image(product_id: str, brand: str, name: str, cdn_image_url: Optional[str]) -> None:
-    public_url = _resolve_image(product_id, brand, name, cdn_image_url)
-    if public_url:
-        get_supabase().table("products").update(
-            {"image_url": public_url}
-        ).eq("product_id", product_id).execute()
+    ensure_product_image(product_id, brand, name, hint_url=cdn_image_url)
 
 
 def _build_stores(price_options: List[Dict[str, Any]]) -> List[Dict[str, Any]]:

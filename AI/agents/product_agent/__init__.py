@@ -30,6 +30,7 @@ try:
         save_enriched,
         save_new_product,
     )
+    from services.product_image import ensure_product_image
     _REPO_AVAILABLE = True
 except ImportError:
     _REPO_AVAILABLE = False
@@ -65,14 +66,23 @@ def run(product: ExtractedProduct) -> ProductResponse:
             else:
                 category_val = (product.category or {}).get("main") if isinstance(product.category, dict) else product.category
                 original_price = (enriched.get("price_data") or {}).get("original_price")
-                image_url = enriched.get("image_url") or None
                 new_id = save_new_product({
                     "name": product.product_name,
                     "brand": product.brand,
                     "category": category_val,
                     "original_price": original_price,
-                    "image_url": image_url,
                 })
+                # 검증 안 된 외부 URL을 넣으면 대부분 403으로 깨진다.
+                # 실제로 받아본 뒤 Storage 사본 URL만 image_url에 남긴다.
+                try:
+                    ensure_product_image(
+                        new_id,
+                        product.brand or "",
+                        product.product_name or "",
+                        hint_url=enriched.get("image_url") or getattr(product, "image_url", None),
+                    )
+                except Exception as e:
+                    print(f"[product_agent] 이미지 확보 실패 {new_id}: {e}")
                 db_product = {"product_id": new_id}
                 save_enriched(new_id, enriched)
                 feature_json = enriched.get("product_features")
