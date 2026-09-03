@@ -202,3 +202,57 @@ def search_products_by_name(keyword: str, limit: int = 20) -> List[ProductMeta]:
         .execute()
     )
     return [_row_to_meta(row) for row in (res.data or [])]
+
+
+def search_products_by_traits(
+    *,
+    categories: Optional[List[str]] = None,
+    product_types: Optional[List[str]] = None,
+    concerns: Optional[List[str]] = None,
+    limit: int = 20,
+) -> List[ProductMeta]:
+    """
+    카테고리·제품종류·피부고민으로 제품을 찾는다.
+
+    상품명 부분일치(search_products_by_name)로는 "자외선차단"·"진정"·"쿨링"처럼
+    사람이 쓰는 조건어가 상품명에 그대로 들어있지 않아 한 건도 못 찾는다.
+    실제로 sun 카테고리에 20건이 있는데도 "선크림"으로는 3건만 잡혔다.
+    분류와 feature_json은 그 조건을 그대로 담고 있으므로 이쪽을 본다.
+
+    feature_json은 행마다 dict이거나 JSON 문자열이라 파싱해서 파이썬에서 거른다.
+    조건을 많이 만족하는 제품이 앞에 오도록 정렬한다.
+    """
+    sb = get_supabase()
+    q = sb.table("products").select(f"{_COLUMNS}, feature_json")
+    if categories:
+        q = q.in_("category", [c for c in categories if c])
+    rows = q.limit(500).execute().data or []
+
+    wanted_types = {t for t in (product_types or []) if t}
+    wanted_concerns = {c for c in (concerns or []) if c}
+
+    scored: List[tuple] = []
+    for row in rows:
+        feat = row.get("feature_json")
+        if isinstance(feat, str):
+            try:
+                feat = json.loads(feat)
+            except (ValueError, TypeError):
+                feat = None
+        feat = feat if isinstance(feat, dict) else {}
+
+        score = 0
+        if wanted_types:
+            ptype = (feat.get("product_type") or "").strip()
+            if ptype in wanted_types:
+                score += 2
+        if wanted_concerns:
+            have = {str(c).strip() for c in (feat.get("skin_concern") or []) if c}
+            score += len(have & wanted_concerns)
+
+        # 조건을 하나도 안 걸었으면 카테고리만으로 고른 것이라 전부 후보다.
+        if score or not (wanted_types or wanted_concerns):
+            scored.append((score, row))
+
+    scored.sort(key=lambda sr: sr[0], reverse=True)
+    return [_row_to_meta(r) for _, r in scored[:limit]]
