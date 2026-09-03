@@ -220,7 +220,10 @@ def _upsert_product_data(product_id: str, product: Dict[str, Any], feature_json:
     }
     if original_price:
         payload["original_price"] = original_price
-    sb.table("products").upsert(payload, on_conflict="product_id").execute()
+    # save_enriched와 같은 이유로 update를 쓴다. upsert는 name 등 payload에
+    # 없는 컬럼을 null로 만든 행을 삽입 시도해 NOT NULL 제약에 걸린다.
+    payload.pop("product_id")
+    sb.table("products").update(payload).eq("product_id", product_id).execute()
 
 
 # ── 공개 함수 ──────────────────────────────────────────────────────────────

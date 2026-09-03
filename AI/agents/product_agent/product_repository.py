@@ -142,7 +142,11 @@ def save_enriched(product_id: str, enriched: dict) -> None:
     if feature_json:
         payload["feature_json"] = _json.dumps(feature_json, ensure_ascii=False)
 
-    sb.table("products").upsert(payload, on_conflict="product_id").execute()
+    # upsert가 아니라 update다. upsert는 payload에 없는 컬럼까지 포함한 행을
+    # 새로 만들어 보므로 name NOT NULL에 걸려 통째로 실패하고, 통과하더라도
+    # brand·category·image_url을 null로 덮어쓴다. 여기는 기존 행의 보강용이다.
+    product_id_val = payload.pop("product_id")
+    sb.table("products").update(payload).eq("product_id", product_id_val).execute()
 
     # review_embeddings 저장 (백그라운드 처리, 실패해도 무시)
     if review_data:
