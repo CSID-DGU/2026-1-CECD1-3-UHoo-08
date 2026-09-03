@@ -252,7 +252,8 @@ def _aging_text(af: Optional[float]) -> Optional[str]:
     description=(
         "각 노드의 최신 측정값과 누적 수집량. 온습도 숫자만으로는 의미가 "
         "전달되지 않으므로 절대습도와 노화 가속 배율(20℃ 기준)을 함께 준다. "
-        f"최근 {DEFAULT_STALE_MINUTES}분간 측정이 없는 노드는 오프라인으로 표시한다."
+        f"최근 {DEFAULT_STALE_MINUTES}분간 측정이 없는 노드는 오프라인으로 표시한다. "
+        "measure(휴대형) 노드는 목록에 넣지 않는다."
     ),
 )
 def get_dashboard(
@@ -271,6 +272,16 @@ def get_dashboard(
 
     if user_id:
         nodes = [n for n in nodes if n.get("user_id") == user_id]
+
+    # measure(휴대형 광학) 노드는 뺀다. 이 노드는 sensor_readings에 값을 쓰지
+    # 않는다. 사람이 키오스크에서 측정을 누를 때만 재고, 그 결과는
+    # measure_sessions로 간다(015_create_measure_sessions). 그래서 최신
+    # sensor_readings 기준으로 online을 판정하면 전원이 켜져 있어도 항상
+    # 오프라인이 되고, 대기 화면에 "센서 1대가 30분 넘게 값을 보내지
+    # 않았습니다"가 상시로 뜬다. 늘 떠 있는 경고는 환경 노드가 진짜로 끊긴
+    # 날에도 아무도 보지 않게 만든다. _indoor_nodes가 measure를 빼는 것과
+    # 같은 판단이다.
+    nodes = [n for n in nodes if n.get("node_type") != "measure"]
 
     out: List[NodeStatus] = []
     total_readings = 0
